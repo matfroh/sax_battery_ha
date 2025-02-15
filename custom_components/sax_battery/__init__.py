@@ -17,6 +17,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.helpers.entity import Entity
 from homeassistant.components.modbus import async_setup as modbus_setup
 from homeassistant.components.modbus.const import CONF_TYPE, MODBUS_DOMAIN, CONF_DELAY, CONF_MESSAGE_WAIT_MILLIS, CONF_TIMEOUT
+from homeassistant.helpers.selector import selector
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,6 +26,8 @@ PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
 
 CONF_BATTERIES = "batteries"
 CONF_MASTER_BATTERY = "master_battery"
+CONF_SMARTMETER_POWER = "smartmeter_power"
+CONF_SMARTMETER_PF = "smartmeter_pf"
 
 BATTERY_SCHEMA = vol.Schema({
     vol.Required(CONF_HOST): str,
@@ -39,6 +42,8 @@ CONFIG_SCHEMA = vol.Schema(
                     vol.Length(min=1), vol.Schema({str: BATTERY_SCHEMA})
                 ),
                 vol.Optional(CONF_MASTER_BATTERY): str,
+                vol.Optional(CONF_SMARTMETER_POWER): selector({"entity": {"domain": "sensor"}}),
+                vol.Optional(CONF_SMARTMETER_PF): selector({"entity": {"domain": "sensor"}}),
             }
         )
     },
@@ -56,9 +61,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     batteries = conf[CONF_BATTERIES]
     master_battery = conf.get(CONF_MASTER_BATTERY, next(iter(batteries)))
+    smartmeter_power = conf.get(CONF_SMARTMETER_POWER)
+    smartmeter_pf = conf.get(CONF_SMARTMETER_PF)
 
     hass.data[DOMAIN][CONF_BATTERIES] = batteries
     hass.data[DOMAIN][CONF_MASTER_BATTERY] = master_battery
+    hass.data[DOMAIN][CONF_SMARTMETER_POWER] = smartmeter_power
+    hass.data[DOMAIN][CONF_SMARTMETER_PF] = smartmeter_pf
 
     # Set up Modbus connections for each battery
     for name, battery_config in batteries.items():
