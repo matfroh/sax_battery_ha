@@ -1,7 +1,7 @@
 """Config flow for SAX Battery integration."""
 from typing import Any, Dict, Optional
 import voluptuous as vol
-
+import uuid
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
@@ -13,6 +13,7 @@ from .const import (
     CONF_POWER_SENSOR,
     CONF_PF_SENSOR,
     CONF_MASTER_BATTERY,
+    CONF_DEVICE_ID,
     DEFAULT_PORT,
 )
 
@@ -25,6 +26,8 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self._data: Dict[str, Any] = {}
         self._battery_count: Optional[int] = None
+        self._device_id: str = str(uuid.uuid4())  # Generate unique device ID
+
 
     async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Handle the initial step."""
@@ -34,6 +37,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Store battery count and move to battery configuration
             self._battery_count = user_input[CONF_BATTERY_COUNT]
             self._data.update(user_input)
+            self._data[CONF_DEVICE_ID] = self._device_id  # Store device ID            
             return await self.async_step_sensors()
 
         # Initial form - just ask for battery count

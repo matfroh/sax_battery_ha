@@ -8,6 +8,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from pymodbus.client import ModbusTcpClient
 from .const import (
     DOMAIN,
+    CONF_DEVICE_ID,
     SAX_STATUS,
     SAX_SOC,
     SAX_POWER,
@@ -62,6 +63,7 @@ class SAXBatteryData:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry):
         self.hass = hass
         self.entry = entry
+        self.device_id = entry.data.get(CONF_DEVICE_ID)  
         self.master_battery = None
         self.batteries = {}
         self.modbus_clients = {}

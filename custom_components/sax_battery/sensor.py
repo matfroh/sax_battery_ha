@@ -52,6 +52,15 @@ class SAXBatterySensor(SensorEntity):
         self._battery_id = battery_id
         self._attr_unique_id = f"{DOMAIN}_{battery_id}_{self.__class__.__name__}"
         
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, self.battery._data_manager.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
     @property
     def should_poll(self):
         """Return True if entity has to be polled for state."""

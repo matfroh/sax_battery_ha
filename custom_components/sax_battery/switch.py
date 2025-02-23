@@ -29,6 +29,15 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
         self._attr_name = f"Battery {battery.battery_id.upper()} On/Off"
         self._attr_has_entity_name = True
         self._registers = self.battery._data_manager.modbus_registers[battery.battery_id][SAX_STATUS]
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, self.battery._data_manager.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
         
     @property
     def is_on(self):
