@@ -18,7 +18,7 @@ SAX_CYCLES = "sax_cycles"
 SAX_TEMP = "sax_temp"
 SAX_ENERGY_PRODUCED = "sax_energy_produced"
 SAX_ENERGY_CONSUMED = "sax_energy_consumed"
-
+SAX_COMBINED_POWER = "sax_combined_power"
 # ... Add any other register names you are using as constants
 
 # Other potential constants (if needed)
