@@ -5,4 +5,4 @@ In case you have multiple batteries, one will need to be setup as master.
 Once installed, you will get all the sensors available according to the documentation and a switch for all batteries.
 
 
-Work in progress for for battery management, limiting discharge and charging levels as well as calculating the power to charge or discharge the battery, letting Home Assistant stear the battery.
+Work in progress for battery management, limiting discharge and charging levels as well as calculating the power to charge or discharge the battery, letting Home Assistant stear the battery.
