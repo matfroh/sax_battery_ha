@@ -1,7 +1,27 @@
-### sensor.py
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
-from homeassistant.const import UnitOfPower, PERCENTAGE
-from .const import DOMAIN
+"""Sensor platform for SAX Battery integration."""
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass
+)
+from homeassistant.const import (
+    UnitOfPower,
+    UnitOfEnergy,
+    UnitOfTemperature,
+    PERCENTAGE,
+)
+from .const import (
+    DOMAIN,
+    SAX_STATUS,
+    SAX_SOC,
+    SAX_POWER,
+    SAX_SMARTMETER,
+    SAX_CAPACITY,
+    SAX_CYCLES,
+    SAX_TEMP,
+    SAX_ENERGY_PRODUCED,
+    SAX_ENERGY_CONSUMED,
+)
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up the SAX Battery sensors."""
@@ -10,8 +30,15 @@ async def async_setup_entry(hass, entry, async_add_entities):
     entities = []
     for battery_id, battery in sax_battery_data.batteries.items():
         entities.extend([
+            SAXBatteryStatusSensor(battery, battery_id),
             SAXBatterySOCSensor(battery, battery_id),
             SAXBatteryPowerSensor(battery, battery_id),
+            SAXBatterySmartmeterSensor(battery, battery_id),
+            SAXBatteryCapacitySensor(battery, battery_id),
+            SAXBatteryCyclesSensor(battery, battery_id),
+            SAXBatteryTempSensor(battery, battery_id),
+            SAXBatteryEnergyProducedSensor(battery, battery_id),
+            SAXBatteryEnergyConsumedSensor(battery, battery_id),
         ])
     
     async_add_entities(entities)
@@ -20,16 +47,30 @@ class SAXBatterySensor(SensorEntity):
     """Base class for SAX Battery sensors."""
     
     def __init__(self, battery, battery_id):
+        """Initialize the sensor."""
         self.battery = battery
         self._battery_id = battery_id
         self._attr_unique_id = f"{DOMAIN}_{battery_id}_{self.__class__.__name__}"
         
     @property
     def should_poll(self):
+        """Return True if entity has to be polled for state."""
         return True
         
     async def async_update(self):
+        """Update the sensor."""
         await self.battery.async_update()
+
+class SAXBatteryStatusSensor(SAXBatterySensor):
+    """SAX Battery Status sensor."""
+    
+    def __init__(self, battery, battery_id):
+        super().__init__(battery, battery_id)
+        self._attr_name = f"Battery {battery_id.upper()} Status"
+        
+    @property
+    def native_value(self):
+        return self.battery.data.get(SAX_STATUS)
 
 class SAXBatterySOCSensor(SAXBatterySensor):
     """SAX Battery State of Charge (SOC) sensor."""
@@ -39,14 +80,11 @@ class SAXBatterySOCSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.BATTERY
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = PERCENTAGE
-        
-    @property
-    def name(self):
-        return f"{self._battery_id.upper()} SOC"
+        self._attr_name = f"Battery {battery_id.upper()} SOC"
         
     @property
     def native_value(self):
-        return self.battery.data.get("sax_soc")
+        return self.battery.data.get(SAX_SOC)
 
 class SAXBatteryPowerSensor(SAXBatterySensor):
     """SAX Battery Power sensor."""
@@ -56,11 +94,90 @@ class SAXBatteryPowerSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        
-    @property
-    def name(self):
-        return f"{self._battery_id.upper()} Power"
+        self._attr_name = f"Battery {battery_id.upper()} Power"
         
     @property
     def native_value(self):
-        return self.battery.data.get("sax_power")
+        return self.battery.data.get(SAX_POWER)
+
+class SAXBatterySmartmeterSensor(SAXBatterySensor):
+    """SAX Battery Smartmeter sensor."""
+    
+    def __init__(self, battery, battery_id):
+        super().__init__(battery, battery_id)
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_name = f"Battery {battery_id.upper()} Smartmeter"
+        
+    @property
+    def native_value(self):
+        return self.battery.data.get(SAX_SMARTMETER)
+
+class SAXBatteryCapacitySensor(SAXBatterySensor):
+    """SAX Battery Capacity sensor."""
+    
+    def __init__(self, battery, battery_id):
+        super().__init__(battery, battery_id)
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+        self._attr_name = f"Battery {battery_id.upper()} Capacity"
+        
+    @property
+    def native_value(self):
+        return self.battery.data.get(SAX_CAPACITY)
+
+class SAXBatteryCyclesSensor(SAXBatterySensor):
+    """SAX Battery Cycles sensor."""
+    
+    def __init__(self, battery, battery_id):
+        super().__init__(battery, battery_id)
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_name = f"Battery {battery_id.upper()} Cycles"
+        
+    @property
+    def native_value(self):
+        return self.battery.data.get(SAX_CYCLES)
+
+class SAXBatteryTempSensor(SAXBatterySensor):
+    """SAX Battery Temperature sensor."""
+    
+    def __init__(self, battery, battery_id):
+        super().__init__(battery, battery_id)
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_name = f"Battery {battery_id.upper()} Temperature"
+        
+    @property
+    def native_value(self):
+        return self.battery.data.get(SAX_TEMP)
+
+class SAXBatteryEnergyProducedSensor(SAXBatterySensor):
+    """SAX Battery Energy Produced sensor."""
+    
+    def __init__(self, battery, battery_id):
+        super().__init__(battery, battery_id)
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+        self._attr_name = f"Battery {battery_id.upper()} Energy Produced"
+        
+    @property
+    def native_value(self):
+        return self.battery.data.get(SAX_ENERGY_PRODUCED)
+
+class SAXBatteryEnergyConsumedSensor(SAXBatterySensor):
+    """SAX Battery Energy Consumed sensor."""
+    
+    def __init__(self, battery, battery_id):
+        super().__init__(battery, battery_id)
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+        self._attr_name = f"Battery {battery_id.upper()} Energy Consumed"
+        
+    @property
+    def native_value(self):
+        return self.battery.data.get(SAX_ENERGY_CONSUMED)
