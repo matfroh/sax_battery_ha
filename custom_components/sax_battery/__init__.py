@@ -22,7 +22,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.NUMBER]
 
 async def async_setup(hass: HomeAssistant, config):
     """Set up the SAX Battery integration."""
