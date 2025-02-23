@@ -28,11 +28,13 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
         self._attr_unique_id = f"{DOMAIN}_{battery.battery_id}_switch"
         self._attr_name = f"Battery {battery.battery_id.upper()} On/Off"
         self._attr_has_entity_name = True
+        self._registers = self.battery._data_manager.modbus_registers[battery.battery_id][SAX_STATUS]
         
     @property
     def is_on(self):
         """Return true if switch is on."""
-        return self.battery.data.get(SAX_STATUS) == 1
+        status = self.battery.data.get(SAX_STATUS)
+        return status == self._registers["state_on"]
         
     async def async_turn_on(self, **kwargs):
         """Turn the switch on."""
@@ -40,13 +42,13 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]
             result = await self.battery.hass.async_add_executor_job(
                 client.write_register,
-                45,  # address
-                1,   # value
-                64   # slave
+                self._registers["address"],
+                self._registers["command_on"],
+                64  # slave
             )
             if not hasattr(result, 'isError') or not result.isError():
-                self.battery.data[SAX_STATUS] = 1
-                self.async_write_ha_state()
+                # Update will handle state verification
+                await self.async_update()
             else:
                 _LOGGER.error(f"Error turning on battery {self.battery.battery_id}: {result}")
         except Exception as err:
@@ -58,13 +60,13 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]
             result = await self.battery.hass.async_add_executor_job(
                 client.write_register,
-                45,  # address
-                0,   # value
-                64   # slave
+                self._registers["address"],
+                self._registers["command_off"],
+                64  # slave
             )
             if not hasattr(result, 'isError') or not result.isError():
-                self.battery.data[SAX_STATUS] = 0
-                self.async_write_ha_state()
+                # Update will handle state verification
+                await self.async_update()
             else:
                 _LOGGER.error(f"Error turning off battery {self.battery.battery_id}: {result}")
         except Exception as err:

@@ -56,6 +56,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     
     return unload_ok
 
+
 class SAXBatteryData:
     """Manages SAX Battery Modbus communication and data."""
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry):
@@ -67,6 +68,7 @@ class SAXBatteryData:
         self.power_sensor_entity_id = entry.data.get("power_sensor_entity_id")
         self.pf_sensor_entity_id = entry.data.get("pf_sensor_entity_id")
         self.modbus_registers = {}
+        self.last_updates = {}  # Initialize empty dictionary for last updates
         
     async def async_init(self):
         """Initialize Modbus connections and battery data."""
@@ -95,23 +97,86 @@ class SAXBatteryData:
                 self.modbus_clients[battery_id] = client
                 _LOGGER.info(f"Successfully connected to battery at {host}:{port}")
                 
-
+                # Initialize the registers configuration
+                self.modbus_registers[battery_id] = {
+                    SAX_STATUS: {
+                        "address": 45,
+                        "count": 1,
+                        "data_type": "int",
+                        "slave": 64,
+                        "scan_interval": 1,
+                        "state_on": 3,
+                        "state_off": 1,
+                        "command_on": 2,
+                        "command_off": 1
+                    },
+                    SAX_SOC: {
+                        "address": 46,
+                        "count": 1,
+                        "data_type": "int",
+                        "slave": 64,
+                        "scan_interval": 1
+                    },
+                    SAX_POWER: {
+                        "address": 47,
+                        "count": 1,
+                        "data_type": "int",
+                        "offset": -16384,
+                        "slave": 64,
+                        "scan_interval": 1
+                    },
+                    SAX_SMARTMETER: {
+                        "address": 48,
+                        "count": 1,
+                        "data_type": "int",
+                        "offset": -16384,
+                        "slave": 64,
+                        "scan_interval": 1
+                    },
+                    SAX_CAPACITY: {
+                        "address": 40115,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 10,
+                        "slave": 40,
+                        "scan_interval": 120
+                    },
+                    SAX_CYCLES: {
+                        "address": 40116,
+                        "count": 1,
+                        "data_type": "int16",
+                        "slave": 40,
+                        "scan_interval": 3600
+                    },
+                    SAX_TEMP: {
+                        "address": 40117,
+                        "count": 1,
+                        "data_type": "int16",
+                        "slave": 40,
+                        "scan_interval": 120
+                    },
+                    SAX_ENERGY_PRODUCED: {
+                        "address": 40096,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "slave": 40,
+                        "scan_interval": 120
+                    },
+                    SAX_ENERGY_CONSUMED: {
+                        "address": 40097,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "slave": 40,
+                        "scan_interval": 120
+                    }
+                }
+                
+                # Initialize last update times for this battery's registers
+                self.last_updates[battery_id] = {
+                    register: 0 for register in self.modbus_registers[battery_id]
+                }
                 
                 self.batteries[battery_id] = SAXBattery(self.hass, self, battery_id)
-            
-            # Add registers for this battery
-                self.modbus_registers[battery_id] = {
-                    SAX_STATUS: {"address": 45, "count": 1, "data_type": "int"},
-                    SAX_SOC: {"address": 46, "count": 1, "data_type": "int"},
-                    SAX_POWER: {"address": 47, "count": 1, "data_type": "int", "offset": -16384},
-                    SAX_SMARTMETER: {"address": 48, "count": 1, "data_type": "int", "offset": -16384},
-                    SAX_CAPACITY: {"address": 40115, "count": 1, "data_type": "int16", "scale": 10},
-                    SAX_CYCLES: {"address": 40116, "count": 1, "data_type": "int16"},
-                    SAX_TEMP: {"address": 40117, "count": 1, "data_type": "int16"},
-                    SAX_ENERGY_PRODUCED: {"address": 40096, "count": 1, "data_type": "uint16"},
-                    SAX_ENERGY_CONSUMED: {"address": 40097, "count": 1, "data_type": "uint16"},
-                }
-            
                 await self.batteries[battery_id].async_init()
             
             except Exception as err:
@@ -126,56 +191,66 @@ class SAXBatteryData:
             _LOGGER.error(f"Master battery {master_battery_id} not found in configured batteries")
             raise ConfigEntryNotReady(f"Master battery {master_battery_id} not found")
 
+###
 class SAXBattery:
     """Represents a single SAX Battery."""
     def __init__(self, hass, data, battery_id):
+        """Initialize the battery."""
         self.hass = hass
         self.data = {}  # Will store the latest readings
         self._data_manager = data
         self.battery_id = battery_id
+        self._last_updates = data.last_updates[battery_id]
 
     async def async_init(self):
-        """Initialize the battery."""
-        # Initial data fetch
+        """Initialize battery readings."""
         await self.async_update()
+
+    async def read_modbus_register(self, client, register_info):
+        """Read a Modbus register with proper error handling."""
+        try:
+            result = await self.hass.async_add_executor_job(
+                client.read_holding_registers,
+                register_info["address"],
+                register_info["count"],
+                register_info["slave"]  # Use register-specific slave ID
+            )
+            
+            if not hasattr(result, 'isError') or not result.isError():
+                value = result.registers[0]
+                # Apply offset and scale if present
+                value = (value + register_info.get("offset", 0)) * register_info.get("scale", 1)
+                return value
+            else:
+                _LOGGER.error(f"Modbus error reading address {register_info['address']}: {result}")
+                return None
+        except Exception as err:
+            _LOGGER.error(f"Failed to read register {register_info['address']}: {err}")
+            return None
 
     async def async_update(self):
         """Update the battery data."""
         try:
             client = self._data_manager.modbus_clients[self.battery_id]
             registers = self._data_manager.modbus_registers[self.battery_id]
+            current_time = self.hass.loop.time()  # Get current time
             
             for register_name, register_info in registers.items():
-                result = await self.read_modbus_register(
-                    client,
-                    register_info["address"],
-                    register_info["count"],
-                    register_info.get("offset", 0),
-                    register_info.get("scale", 1)
-                )
-                self.data[register_name] = result
+                # Check if enough time has passed since last update
+                time_since_update = current_time - self._last_updates[register_name]
+                if time_since_update < register_info["scan_interval"]:
+                    continue
                 
+                try:
+                    result = await self.read_modbus_register(client, register_info)
+                    if result is not None:
+                        self.data[register_name] = result
+                        self._last_updates[register_name] = current_time
+                except Exception as err:
+                    _LOGGER.error(f"Error updating register {register_name}: {err}")
+                    
         except Exception as err:
             _LOGGER.error(f"Error updating battery {self.battery_id}: {err}")
             return False
             
         return True
-
-    async def read_modbus_register(self, client, address, count, offset=0, scale=1):
-        """Read a Modbus register with proper error handling."""
-        try:
-            result = await self.hass.async_add_executor_job(
-            	client.read_holding_registers,
-                address,
-                count,
-                64
-            )
-            if not hasattr(result, 'isError') or not result.isError():
-                value = result.registers[0]
-                return (value + offset) * scale
-            else:
-                _LOGGER.error(f"Modbus error reading address {address}: {result}")
-                return None
-        except Exception as err:
-            _LOGGER.error(f"Failed to read register {address}: {err}")
-            return None
