@@ -1,6 +1,8 @@
 This is the initial version of a custom component for Home Assistant to manage one or multiple SAX batteries.
 To install, copy the files in the custom components folder and use the UI to add the new integration.
 During setup, you will be asked to provide a smartmeter interface and a power factor measure.
-For now, you will get the actual power reading of each battery pack and the SOC.
+In case you have multiple batteries, one will need to be setup as master.
+Once installed, you will get all the sensors available according to the documentation and a switch for all batteries.
 
-Work in progress for switches, further sensors and battery management.
+
+Work in progress for for battery management, limiting discharge and charging levels as well as calculating the power to charge or discharge the battery, letting Home Assistant stear the battery.
