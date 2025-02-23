@@ -42,7 +42,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required(CONF_BATTERY_COUNT, default=1): vol.All(
                     vol.Coerce(int),
-                    vol.Range(min=1, max=10)
+                    vol.Range(min=1, max=3)
                 ),
             }),
             errors=errors,
