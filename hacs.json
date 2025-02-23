@@ -1,0 +1,9 @@
+{
+  "name": "SAX Power Home battery management",
+  "homeassistant": "2025.1.0",
+  "filename": "sax_battery_ha-main.zip",
+  "zip_release": true,
+  "hide_default_branch": true,
+  "render_readme": true,
+  "hacs": "0.19.1"
+}
