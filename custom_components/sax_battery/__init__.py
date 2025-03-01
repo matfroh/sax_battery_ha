@@ -212,13 +212,14 @@ class SAXBattery:
         """Read a Modbus register with proper error handling."""
         try:
             result = await self.hass.async_add_executor_job(
-                client.read_holding_registers,
-                register_info["address"],
-                register_info["count"],
-                register_info["slave"]  # Use register-specific slave ID
+                lambda: client.read_holding_registers(
+                    address=register_info["address"],
+                    count=register_info["count"],
+                    slave=register_info["slave"]  # Use register-specific slave ID
+                )
             )
-            
-            if not hasattr(result, 'isError') or not result.isError():
+        
+            if hasattr(result, 'registers'):
                 value = result.registers[0]
                 # Apply offset and scale if present
                 value = (value + register_info.get("offset", 0)) * register_info.get("scale", 1)
