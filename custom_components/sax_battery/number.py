@@ -87,12 +87,13 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 self._data_manager.master_battery.battery_id
             ]
             result = await self._data_manager.hass.async_add_executor_job(
-                client.write_register,
-                43,  # Register for max discharge
-                int(value),
-                64   # slave
+                lambda: client.write_register(
+                    address=44,  # Register for max charge
+                    value=int(value),
+                    slave=64
+                )
             )
-            if not hasattr(result, 'isError') or not result.isError():
+            if hasattr(result, 'registers') or (not hasattr(result, 'isError') or not result.isError()):
                 self._attr_native_value = value
             else:
                 _LOGGER.error(f"Error setting max discharge: {result}")
