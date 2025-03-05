@@ -162,14 +162,14 @@ class SAXBatteryData:
                         "count": 1,
                         "data_type": "uint16",
                         "slave": 40,
-                        "scan_interval": 120
+                        "scan_interval": 3600
                     },
                     SAX_ENERGY_CONSUMED: {
                         "address": 40097,
                         "count": 1,
                         "data_type": "uint16",
                         "slave": 40,
-                        "scan_interval": 120
+                        "scan_interval": 3600
                     }
                 }
                 
