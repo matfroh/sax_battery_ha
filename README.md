@@ -35,5 +35,5 @@ Watch out: for battery stearing, setup all necessary protection to avoid deep di
 
 
 ---
-[add-integration]: https://my.home-assistant.io/redirect/config_flow_start?domain=sax_battery_ha
+[add-integration]: https://my.home-assistant.io/redirect/config_flow_start?domain=sax_battery
 [add-integration-badge]: https://my.home-assistant.io/badges/config_flow_start.svg
