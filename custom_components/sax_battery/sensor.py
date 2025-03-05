@@ -134,7 +134,6 @@ class SAXBatteryCapacitySensor(SAXBatterySensor):
     
     def __init__(self, battery, battery_id):
         super().__init__(battery, battery_id)
-        self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
         self._attr_name = f"Battery {battery_id.upper()} Capacity"
