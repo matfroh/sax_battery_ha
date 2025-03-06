@@ -33,6 +33,7 @@ Power limiter to charge or discharge works but the device does not allow reading
 Please note that to stear the battery, limit power, you need to have the feature activated by the customer service of the battery manufacturer. A simple email can solve it. Please refer to the documentation.
 Watch out: for battery stearing, setup all necessary protection to avoid deep discharge (bringing battery to SOC 0%) as this might damage your battery system. Recommendation is to start setting thresholds for discharge at 15% to avoid battery to go below 10%. 
 
+![Set the current in actions](saxpilot.png)
 
 ---
 [add-integration]: https://my.home-assistant.io/redirect/config_flow_start?domain=sax_battery
