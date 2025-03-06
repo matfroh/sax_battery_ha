@@ -29,7 +29,7 @@ After restart, your sensors should immediately appear and give you current value
 
 ## How to test:
 
-Power limiter to charge or discharge still fails to read but if enabled by the technology provider, it should still pass the value.
+Power limiter to charge or discharge works but the device does not allow reading that value, so by default, slider is set to maximum and unless there is an error, the value passed is taken as working.
 Please note that to stear the battery, limit power, you need to have the feature activated by the customer service of the battery manufacturer. A simple email can solve it. Please refer to the documentation.
 Watch out: for battery stearing, setup all necessary protection to avoid deep discharge (bringing battery to SOC 0%) as this might damage your battery system. Recommendation is to start setting thresholds for discharge at 15% to avoid battery to go below 10%. 
 
