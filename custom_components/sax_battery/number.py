@@ -16,6 +16,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     sax_battery_data = hass.data[DOMAIN][entry.entry_id]
     battery_count = len(sax_battery_data.batteries)
     
+    
     entities = [
         SAXBatteryMaxChargeNumber(sax_battery_data, battery_count * 3500),
         SAXBatteryMaxDischargeNumber(sax_battery_data, battery_count * 4600)
@@ -32,7 +33,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
         self._attr_name = "Maximum Charge Power"
         self._attr_native_min_value = 0
         self._attr_native_max_value = max_value
-        self._attr_native_step = 100
+        self._attr_native_step = 50
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_native_value = max_value
         self._last_written_value = None  # Track the last written value
@@ -79,6 +80,11 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 self._data_manager.master_battery.battery_id
             ]
             
+            # Get the battery count
+            battery_count = len(self._data_manager.batteries)
+            # Calculate the per-battery value
+            per_battery_value = int(value / battery_count)
+            
             import asyncio
             # Add a small delay before writing
             await asyncio.sleep(0.1)
@@ -89,7 +95,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
             result = await self._data_manager.hass.async_add_executor_job(
                 lambda: client.write_registers(
                     44,  # Register for max charge
-                    [int(value)],  # Pass value as a list
+                    [per_battery_value],  # Pass value as a list
                     slave=64
                 )
             )
@@ -114,7 +120,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
         self._attr_name = "Maximum Discharge Power"
         self._attr_native_min_value = 0
         self._attr_native_max_value = max_value
-        self._attr_native_step = 100
+        self._attr_native_step = 50
         self._attr_native_unit_of_measurement = UnitOfPower.WATT     
         self._attr_native_value = max_value   
         self._last_written_value = None  # Track the last written value
@@ -160,7 +166,12 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
             client = self._data_manager.master_battery._data_manager.modbus_clients[
                 self._data_manager.master_battery.battery_id
             ]
-            
+
+            # Get the battery count
+            battery_count = len(self._data_manager.batteries)
+            # Calculate the per-battery value
+            per_battery_value = int(value / battery_count)
+
             import asyncio
             # Add a small delay before writing
             await asyncio.sleep(0.1)
@@ -171,7 +182,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
             result = await self._data_manager.hass.async_add_executor_job(
                 lambda: client.write_registers(
                     43,  # Register for max discharge
-                    [int(value)],  # Pass value as a list
+                    [per_battery_value],  # Pass value as a list
                     slave=64
                 )
             )
