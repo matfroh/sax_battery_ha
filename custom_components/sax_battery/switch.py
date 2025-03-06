@@ -44,22 +44,30 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
         """Return true if switch is on."""
         status = self.battery.data.get(SAX_STATUS)
         return status == self._registers["state_on"]
-        
+
     async def async_turn_on(self, **kwargs):
         """Turn the switch on."""
         try:
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]
+            slave_id = self._registers.get("slave", 64)
+            
+            import asyncio
+            await asyncio.sleep(0.1)
+            
+            _LOGGER.debug(f"Turning ON battery {self.battery.battery_id} - Writing {self._registers['command_on']} to register {self._registers['address']}")
+            
+            # Use write_registers (plural) instead of write_register
             result = await self.battery.hass.async_add_executor_job(
-                client.write_register,
-                self._registers["address"],
-                self._registers["command_on"],
-                64  # slave
+                lambda: client.write_registers(
+                    self._registers["address"],
+                    [self._registers["command_on"]],  # Note the list format
+                    slave=slave_id
+                )
             )
-            if not hasattr(result, 'isError') or not result.isError():
-                # Update will handle state verification
-                await self.async_update()
-            else:
-                _LOGGER.error(f"Error turning on battery {self.battery.battery_id}: {result}")
+            
+            await asyncio.sleep(10)
+            await self.async_update()
+            
         except Exception as err:
             _LOGGER.error(f"Failed to turn on battery {self.battery.battery_id}: {err}")
             
@@ -67,20 +75,28 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
         """Turn the switch off."""
         try:
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]
-            result = await self.battery.hass.async_add_executor_job(
-                client.write_register,
-                self._registers["address"],
-                self._registers["command_off"],
-                64  # slave
-            )
-            if not hasattr(result, 'isError') or not result.isError():
-                # Update will handle state verification
-                await self.async_update()
-            else:
-                _LOGGER.error(f"Error turning off battery {self.battery.battery_id}: {result}")
-        except Exception as err:
-            _LOGGER.error(f"Failed to turn off battery {self.battery.battery_id}: {err}")
+            slave_id = self._registers.get("slave", 64)
             
+            import asyncio
+            await asyncio.sleep(0.1)
+            
+            _LOGGER.debug(f"Turning OFF battery {self.battery.battery_id} - Writing {self._registers['command_off']} to register {self._registers['address']}")
+            
+            # Use write_registers (plural) instead of write_register
+            result = await self.battery.hass.async_add_executor_job(
+                lambda: client.write_registers(
+                    self._registers["address"],
+                    [self._registers["command_off"]],  # Note the list format
+                    slave=slave_id
+                )
+            )
+            
+            await asyncio.sleep(10)
+            await self.async_update()
+            
+        except Exception as err:
+            _LOGGER.error(f"Failed to turn off battery {self.battery.battery_id}: {err}")        
+        
     @property
     def available(self):
         """Return True if entity is available."""
