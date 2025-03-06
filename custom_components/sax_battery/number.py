@@ -34,7 +34,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
         self._attr_native_max_value = max_value
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        
+        self._attr_native_value = max_value
         self._last_written_value = None  # Track the last written value
         
         self._attr_device_info = {
@@ -78,17 +78,33 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
             client = self._data_manager.master_battery._data_manager.modbus_clients[
                 self._data_manager.master_battery.battery_id
             ]
-            await self._data_manager.hass.async_add_executor_job(
-                client.write_register,
-                44,  # Register for max charge
-                int(value),
-                64   # slave
+            
+            import asyncio
+            # Add a small delay before writing
+            await asyncio.sleep(0.1)
+            
+            _LOGGER.debug(f"Setting maximum charge power to {int(value)}W")
+            
+            # Use write_registers with the slave parameter as a keyword argument
+            result = await self._data_manager.hass.async_add_executor_job(
+                lambda: client.write_registers(
+                    44,  # Register for max charge
+                    [int(value)],  # Pass value as a list
+                    slave=64
+                )
             )
+            
+            _LOGGER.debug(f"Waiting for device to process the command...")
+            # Add a longer delay for the device to process the command
+            await asyncio.sleep(10)
+            _LOGGER.debug("Resuming after wait period")
+            
             self._attr_native_value = value
             self._last_written_value = value  # Update last written value
+            
         except Exception as err:
             _LOGGER.error(f"Failed to write max charge value: {err}")
-
+        
 class SAXBatteryMaxDischargeNumber(NumberEntity):
     """SAX Battery Maximum Discharge Power number."""
     
@@ -99,7 +115,8 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
         self._attr_native_min_value = 0
         self._attr_native_max_value = max_value
         self._attr_native_step = 100
-        self._attr_native_unit_of_measurement = UnitOfPower.WATT        
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT     
+        self._attr_native_value = max_value   
         self._last_written_value = None  # Track the last written value
         
         self._attr_device_info = {
@@ -143,13 +160,29 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
             client = self._data_manager.master_battery._data_manager.modbus_clients[
                 self._data_manager.master_battery.battery_id
             ]
-            await self._data_manager.hass.async_add_executor_job(
-                client.write_register,
-                43,  # Register for max discharge
-                int(value),
-                64   # slave
+            
+            import asyncio
+            # Add a small delay before writing
+            await asyncio.sleep(0.1)
+            
+            _LOGGER.debug(f"Setting maximum charge power to {int(value)}W")
+            
+            # Use write_registers with the slave parameter as a keyword argument
+            result = await self._data_manager.hass.async_add_executor_job(
+                lambda: client.write_registers(
+                    43,  # Register for max discharge
+                    [int(value)],  # Pass value as a list
+                    slave=64
+                )
             )
+            
+            _LOGGER.debug(f"Waiting for device to process the command...")
+            # Add a longer delay for the device to process the command
+            await asyncio.sleep(10)
+            _LOGGER.debug("Resuming after wait period")
+            
             self._attr_native_value = value
             self._last_written_value = value  # Update last written value
+            
         except Exception as err:
-            _LOGGER.error(f"Failed to write max discharge value: {err}")
+            _LOGGER.error(f"Failed to write max charge value: {err}")
