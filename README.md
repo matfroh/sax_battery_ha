@@ -9,8 +9,8 @@ Add the files to your /custom_components/ folder or use the "+" in the integrati
 1. Use [HACS](https://hacs.xyz/docs/setup/download), in `HACS > Integrations > Explore & Add Repositories` search for "sax battery". After adding this `https://github.com/matfroh/sax_battery_ha` as a custom repository, go to 7.
 2. If you do not have HACS, use the tool of choice to open the directory (folder) for your HA configuration (where you find `configuration.yaml`).
 3. If you do not have a `custom_components` directory (folder) there, you need to create it.
-4. In the `custom_components` directory (folder) create a new folder called `sax_battery_ha`.
-5. Download the files from the `custom_components/sax_battery_ha/` directory (folder) in this repository.
+4. In the `custom_components` directory (folder) create a new folder called `sax_battery`.
+5. Download the files from the `custom_components/sax_battery/` directory (folder) in this repository.
 6. Place the files you downloaded in the new directory (folder) you created.
 7. Restart Home Assistant.
 8. Add the integration: [![Add Integration][add-integration-badge]][add-integration] or in the HA UI go to "Settings" -> "Devices & Services" then click "+" and search for "SAX battery".
