@@ -49,7 +49,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
     async def async_added_to_hass(self):
         """Set up periodic updates."""
         self._remove_interval = async_track_time_interval(
-            self.hass, self._periodic_write, timedelta(minutes=5)
+            self.hass, self._periodic_write, timedelta(minutes=2)
         )
 
     async def async_will_remove_from_hass(self):
@@ -136,7 +136,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
     async def async_added_to_hass(self):
         """Set up periodic updates."""
         self._remove_interval = async_track_time_interval(
-            self.hass, self._periodic_write, timedelta(minutes=5)
+            self.hass, self._periodic_write, timedelta(minutes=2)
         )
 
     async def async_will_remove_from_hass(self):
