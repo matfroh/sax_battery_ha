@@ -106,11 +106,11 @@ class SAXBatteryData:
                         "count": 1,
                         "data_type": "int",
                         "slave": 64,
-                        "scan_interval": 60,
+                        "scan_interval": 1,
                         "state_on": 3,
                         "state_off": 1,
                         "command_on": 2,
-                        "command_off": 1
+                        "command_off": 10
                     },
                     SAX_SOC: {
                         "address": 46,
@@ -125,7 +125,7 @@ class SAXBatteryData:
                         "data_type": "int",
                         "offset": -16384,
                         "slave": 64,
-                        "scan_interval": 1
+                        "scan_interval": 15
                     },
                     SAX_SMARTMETER: {
                         "address": 48,
@@ -133,7 +133,7 @@ class SAXBatteryData:
                         "data_type": "int",
                         "offset": -16384,
                         "slave": 64,
-                        "scan_interval": 1
+                        "scan_interval": 15
                     },
                     SAX_CAPACITY: {
                         "address": 40115,
@@ -141,7 +141,7 @@ class SAXBatteryData:
                         "data_type": "int16",
                         "scale": 10,
                         "slave": 40,
-                        "scan_interval": 3600
+                        "scan_interval": 120
                     },
                     SAX_CYCLES: {
                         "address": 40116,
