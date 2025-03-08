@@ -106,7 +106,7 @@ class SAXBatteryData:
                         "count": 1,
                         "data_type": "int",
                         "slave": 64,
-                        "scan_interval": 1,
+                        "scan_interval": 60,
                         "state_on": 3,
                         "state_off": 1,
                         "command_on": 2,
@@ -117,7 +117,7 @@ class SAXBatteryData:
                         "count": 1,
                         "data_type": "int",
                         "slave": 64,
-                        "scan_interval": 1
+                        "scan_interval": 60
                     },
                     SAX_POWER: {
                         "address": 47,
@@ -141,7 +141,7 @@ class SAXBatteryData:
                         "data_type": "int16",
                         "scale": 10,
                         "slave": 40,
-                        "scan_interval": 120
+                        "scan_interval": 3600
                     },
                     SAX_CYCLES: {
                         "address": 40116,
