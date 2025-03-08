@@ -110,7 +110,7 @@ class SAXBatteryData:
                         "state_on": 3,
                         "state_off": 1,
                         "command_on": 2,
-                        "command_off": 10
+                        "command_off": 1
                     },
                     SAX_SOC: {
                         "address": 46,
