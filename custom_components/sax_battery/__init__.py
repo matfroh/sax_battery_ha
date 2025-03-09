@@ -18,6 +18,8 @@ from .const import (
     SAX_TEMP,
     SAX_ENERGY_PRODUCED,
     SAX_ENERGY_CONSUMED,
+    CONF_PILOT_FROM_HA,
+    CONF_MANUAL_CONTROL
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +44,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     # Set up platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    
+    # Set up pilot service if enabled
+    if entry.data.get(CONF_PILOT_FROM_HA, False):
+        from .pilot import async_setup_pilot
+        await async_setup_pilot(hass, entry.entry_id)
+    
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
@@ -49,8 +58,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     
     if unload_ok:
-        # Close all Modbus connections
+        # Stop pilot service if running
         sax_battery_data = hass.data[DOMAIN][entry.entry_id]
+        if hasattr(sax_battery_data, 'pilot'):
+            await sax_battery_data.pilot.async_stop()
+        
+        # Close all Modbus connections
         for client in sax_battery_data.modbus_clients.values():
             client.close()
         hass.data[DOMAIN].pop(entry.entry_id)
@@ -106,7 +119,7 @@ class SAXBatteryData:
                         "count": 1,
                         "data_type": "int",
                         "slave": 64,
-                        "scan_interval": 1,
+                        "scan_interval": 60,
                         "state_on": 3,
                         "state_off": 1,
                         "command_on": 2,
@@ -133,7 +146,7 @@ class SAXBatteryData:
                         "data_type": "int",
                         "offset": -16384,
                         "slave": 64,
-                        "scan_interval": 15
+                        "scan_interval": 60
                     },
                     SAX_CAPACITY: {
                         "address": 40115,
@@ -141,7 +154,7 @@ class SAXBatteryData:
                         "data_type": "int16",
                         "scale": 10,
                         "slave": 40,
-                        "scan_interval": 120
+                        "scan_interval": 3600
                     },
                     SAX_CYCLES: {
                         "address": 40116,

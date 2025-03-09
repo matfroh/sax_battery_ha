@@ -24,5 +24,14 @@ CONF_LIMIT_POWER = "limit_power"
 CONF_MAX_CHARGE = "max_charge"
 CONF_MAX_DISCHARGE = "max_discharge"
 
+CONF_MIN_SOC = "min_soc"
+CONF_PRIORITY_DEVICES = "priority_devices"
+CONF_ENABLE_SOLAR_CHARGING = "enable_solar_charging"
+CONF_AUTO_PILOT_INTERVAL = "auto_pilot_interval"
+
+CONF_MANUAL_CONTROL = "manual_control"
 
 DEFAULT_PORT = 502  # Default Modbus port
+
+DEFAULT_MIN_SOC = 15
+DEFAULT_AUTO_PILOT_INTERVAL = 60  # seconds

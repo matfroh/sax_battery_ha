@@ -17,7 +17,17 @@ from .const import (
     CONF_DEVICE_ID,
     DEFAULT_PORT,
     CONF_PILOT_FROM_HA,
-    CONF_LIMIT_POWER,
+    CONF_LIMIT_POWER,  
+  	CONF_MAX_CHARGE,
+	CONF_MAX_DISCHARGE,
+	CONF_MIN_SOC,
+	DEFAULT_MIN_SOC, 
+	CONF_PRIORITY_DEVICES,
+	CONF_ENABLE_SOLAR_CHARGING,
+	CONF_AUTO_PILOT_INTERVAL,
+    DEFAULT_AUTO_PILOT_INTERVAL,
+    CONF_MANUAL_CONTROL
+    
 )
 
 class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -66,7 +76,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             
             if self._pilot_from_ha:
-                return await self.async_step_sensors()
+                return await self.async_step_pilot_options()
             else:
                 return await self.async_step_battery_config()
 
@@ -79,13 +89,42 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_pilot_options(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Configure pilot options."""
+        errors = {}
+    
+        if user_input is not None:
+            self._data.update(user_input)
+            return await self.async_step_sensors()
+    
+        return self.async_show_form(
+            step_id="pilot_options",
+            data_schema=vol.Schema({
+                vol.Required(CONF_MIN_SOC, default=DEFAULT_MIN_SOC): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=0, max=100)
+                ),
+                vol.Required(CONF_AUTO_PILOT_INTERVAL, default=DEFAULT_AUTO_PILOT_INTERVAL): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=5, max=300)
+                ),
+                vol.Required(CONF_ENABLE_SOLAR_CHARGING, default=True): bool,
+            }),
+            errors=errors,
+            description_placeholders={
+                "min_soc_description": "Minimum State of Charge to maintain (battery won't discharge below this value)",
+                "interval_description": "How often to update the battery control values (in seconds)",
+                "solar_charging_description": "Enable charging from solar panels"
+            }
+        )
+
     async def async_step_sensors(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Configure power and PF sensors."""
         errors = {}
 
         if user_input is not None:
             self._data.update(user_input)
-            return await self.async_step_battery_config()
+            return await self.async_step_priority_devices()
 
         # Only make fields required if piloting from HA
         schema = {}
@@ -109,6 +148,26 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
         
+    async def async_step_priority_devices(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Configure priority devices."""
+        errors = {}
+    
+        if user_input is not None:
+            self._data.update(user_input)
+            return await self.async_step_battery_config()
+    
+        return self.async_show_form(
+            step_id="priority_devices",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_PRIORITY_DEVICES): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", multiple=True),
+                ),
+            }),
+            errors=errors,
+            description_placeholders={
+                "priority_devices_description": "Select devices that should have priority over battery usage (e.g., EV charger, heat pump)"
+            }
+        )
 
     async def async_step_battery_config(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Configure individual batteries."""
