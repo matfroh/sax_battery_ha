@@ -12,8 +12,8 @@
         "title": "Control Options",
         "description": "Configure how you want Home Assistant to interact with your SAX Battery system. You can continue without selecting any of this option, this will just add the sensors. The added option here require you to contact SAX's customer service.",
         "data": {
-          "pilot_from_ha": "Control battery from Home Assistant replacing the SAX smarmeter (you need register 41 and 42 set to write).",
-          "limit_power": "Enable power limitations (you need registers 43 and 44 to be writable). Once setup, you can create automations that sends the proper values to this number entity with your own rules."
+          "pilot_from_ha": "Control battery from Home Assistant replacing the SAX smartmeter (you need register 41 and 42 set to write).",
+          "limit_power": "Enable power limitations (you need registers 43 and 44 to be writable). Once setup, you can create automations that send the proper values to this number entity with your own rules."
         }
       },
       "pilot_options": {
