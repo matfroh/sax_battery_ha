@@ -19,7 +19,31 @@ from .const import (
     SAX_ENERGY_PRODUCED,
     SAX_ENERGY_CONSUMED,
     CONF_PILOT_FROM_HA,
-    CONF_MANUAL_CONTROL
+    CONF_MANUAL_CONTROL,
+    SAX_PHASE_CURRENTS_SUM,
+    SAX_PHASE_CURRENTS_SUM,
+    SAX_CURRENT_L1,
+    SAX_CURRENT_L2,
+    SAX_CURRENT_L3,
+    SAX_VOLTAGE_L1,
+    SAX_VOLTAGE_L2,
+    SAX_VOLTAGE_L3,
+    SAX_AC_POWER_TOTAL,
+    SAX_GRID_FREQUENCY,
+    SAX_APPARENT_POWER,
+    SAX_REACTIVE_POWER,
+    SAX_POWER_FACTOR,
+    SAX_SMARTMETER_CURRENT_L1,
+    SAX_SMARTMETER_CURRENT_L2,
+    SAX_SMARTMETER_CURRENT_L3,
+    SAX_ACTIVE_POWER_L1,
+    SAX_ACTIVE_POWER_L2,
+    SAX_ACTIVE_POWER_L3,
+    SAX_SMARTMETER_VOLTAGE_L1,
+    SAX_SMARTMETER_VOLTAGE_L2,
+    SAX_SMARTMETER_VOLTAGE_L3,
+    SAX_SMARTMETER_TOTAL_POWER,
+    SAX_STORAGE_STATUS
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -146,7 +170,8 @@ class SAXBatteryData:
                         "data_type": "int",
                         "offset": -16384,
                         "slave": 64,
-                        "scan_interval": 60
+                        "scan_interval": 60,
+                        "enabled": False
                     },
                     SAX_CAPACITY: {
                         "address": 40115,
@@ -183,7 +208,219 @@ class SAXBatteryData:
                         "data_type": "uint16",
                         "slave": 40,
                         "scan_interval": 3600
+                    },
+
+                    SAX_PHASE_CURRENTS_SUM: {
+                        "address": 40073,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "scale": 0.01,  # Based on scaling factor -2
+                        "slave": 40,
+                        "scan_interval": 60,
+#                        "enabled": False  # Disabled by default
+                    },
+                    SAX_CURRENT_L1: {
+                        "address": 40074,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "scale": 0.01,  # Based on scaling factor -2
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_CURRENT_L2: {
+                        "address": 40075,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "scale": 0.01,
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_CURRENT_L3: {
+                        "address": 40076,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "scale": 0.01,
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_VOLTAGE_L1: {
+                        "address": 40081,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "scale": 0.1,  # Based on scaling factor -1
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_VOLTAGE_L2: {
+                        "address": 40082,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "scale": 0.1,
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_VOLTAGE_L3: {
+                        "address": 40083,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "scale": 0.1,
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_AC_POWER_TOTAL: {
+                        "address": 40085,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 10,  # Based on scaling factor 1
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_GRID_FREQUENCY: {
+                        "address": 40087,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "scale": 0.1,  # Based on scaling factor -1
+                        "slave": 40,
+                        "scan_interval": 60,
+#                        "enabled": False
+                    },
+                    SAX_APPARENT_POWER: {
+                        "address": 40089,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 10,  # Based on scaling factor 1
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_REACTIVE_POWER: {
+                        "address": 40091,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 10,  # Based on scaling factor 1
+                        "slave": 40,
+                        "scan_interval": 60,
+#                        "enabled": False
+                    },
+                    SAX_POWER_FACTOR: {
+                        "address": 40093,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 0.1,  # Based on scaling factor -1
+                        "slave": 40,
+                        "scan_interval": 60,
+  #                      "enabled": False
+                    },
+                    
+                    # Slave-ID 40: Smartmeter values
+                    SAX_STORAGE_STATUS: {
+                        "address": 40099,
+                        "count": 1,
+                        "data_type": "uint16",
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False,
+                        "states": {
+                            1: "OFF",
+                            2: "ON",
+                            3: "Connected",
+                            4: "Standby"
+                        }
+                    },
+                    SAX_SMARTMETER_CURRENT_L1: {
+                        "address": 40100,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 0.01,  # Factor -2
+                        "slave": 40,
+                        "scan_interval": 60,
+#                        "enabled": False
+                    },
+                    SAX_SMARTMETER_CURRENT_L2: {
+                        "address": 40101,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 0.01,
+                        "slave": 40,
+                        "scan_interval": 60,
+#                        "enabled": False
+                    },
+                    SAX_SMARTMETER_CURRENT_L3: {
+                        "address": 40102,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 0.01,
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_ACTIVE_POWER_L1: {
+                        "address": 40103,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 10,  # Based on scaling factor 1
+                        "slave": 40,
+                        "scan_interval": 60,
+#                        "enabled": False
+                    },
+                    SAX_ACTIVE_POWER_L2: {
+                        "address": 40104,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 10,
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_ACTIVE_POWER_L3: {
+                        "address": 40105,
+                        "count": 1,
+                        "data_type": "int16",
+                        "scale": 10,
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_SMARTMETER_VOLTAGE_L1: {
+                        "address": 40107,
+                        "count": 1,
+                        "data_type": "int16",
+                        "slave": 40,
+                        "scan_interval": 60,
+#                        "enabled": False
+                    },
+                    SAX_SMARTMETER_VOLTAGE_L2: {
+                        "address": 40108,
+                        "count": 1,
+                        "data_type": "int16",
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
+                    },
+                    SAX_SMARTMETER_VOLTAGE_L3: {
+                        "address": 40109,
+                        "count": 1,
+                        "data_type": "int16",
+                        "slave": 40,
+                        "scan_interval": 60,
+  #                      "enabled": False
+                    },
+                    SAX_SMARTMETER_TOTAL_POWER: {
+                        "address": 40110,
+                        "count": 1,
+                        "data_type": "int16",
+                        "slave": 40,
+                        "scan_interval": 60,
+ #                       "enabled": False
                     }
+
                 }
                 
                 # Initialize last update times for this battery's registers
