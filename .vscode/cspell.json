@@ -1,0 +1,24 @@
+{
+    "version": "0.2",
+    "language": "en",
+    "dictionaries": ["Custom Words (English)"],
+    "dictionaryDefinitions": [
+        {
+            "name": "Custom Words (English)",
+            "path": "./custom-words.en.txt",
+            "addWords": true
+        },
+        {
+            "name": "Custom Words (German)",
+            "path": "./custom-words.de.txt",
+            "addWords": true
+        }
+    ],
+    "overrides": [
+      {
+          "filename": "de.json",
+          "language": "de-de",
+          "dictionaries": ["Custom Words (German)"]
+      }
+  ]
+  }

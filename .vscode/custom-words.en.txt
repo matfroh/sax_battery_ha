@@ -1,0 +1,8 @@
+configentry
+hass
+homeassistant
+Modbus
+modbusobject
+operationmode
+resultlist
+smartmeter
