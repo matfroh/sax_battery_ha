@@ -5,7 +5,7 @@ DOMAIN = "sax_battery"
 CONF_BATTERY_COUNT = "battery_count"
 CONF_POWER_SENSOR = "power_sensor_entity_id"
 CONF_PF_SENSOR = "pf_sensor_entity_id"
-CONF_MASTER_BATTERY = "master_battery" 
+CONF_MASTER_BATTERY = "master_battery"
 CONF_DEVICE_ID = "device_id"
 
 SAX_STATUS = "sax_status"
