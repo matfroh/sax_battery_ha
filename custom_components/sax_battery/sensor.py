@@ -138,7 +138,7 @@ class SAXBatteryStatusSensor(SAXBatterySensor):
     def __init__(self, battery, battery_id) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id} Status"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Status"
 
     @property
     def native_value(self):
@@ -155,7 +155,7 @@ class SAXBatterySOCSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.BATTERY
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_name = f"Sax {battery_id} SOC"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} SOC"
 
     @property
     def native_value(self):
@@ -172,7 +172,7 @@ class SAXBatteryPowerSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_name = f"Sax {battery_id} Power"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Power"
 
     @property
     def native_value(self):
@@ -189,7 +189,7 @@ class SAXBatterySmartmeterSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_name = f"Sax {battery_id} Smartmeter"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -207,7 +207,7 @@ class SAXBatteryCapacitySensor(SAXBatterySensor):
         super().__init__(battery, battery_id)
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = f"Sax {battery_id} Capacity"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Capacity"
 
     @property
     def native_value(self):
@@ -222,7 +222,7 @@ class SAXBatteryCyclesSensor(SAXBatterySensor):
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_name = f"Sax {battery_id} Cycles"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Cycles"
 
     @property
     def native_value(self):
@@ -239,7 +239,7 @@ class SAXBatteryTempSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-        self._attr_name = f"Sax {battery_id} Temperature"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Temperature"
 
     @property
     def native_value(self):
@@ -256,7 +256,7 @@ class SAXBatteryEnergyProducedSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = f"Sax {battery_id} Energy Produced"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Energy Produced"
 
     @property
     def native_value(self):
@@ -273,7 +273,7 @@ class SAXBatteryEnergyConsumedSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = f"Sax {battery_id} Energy Consumed"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Energy Consumed"
 
     @property
     def native_value(self):
@@ -332,7 +332,7 @@ class SAXBatteryPhaseCurrentsSumSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id} Phase Currents Sum"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Phase Currents Sum"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -351,7 +351,7 @@ class SAXBatteryCurrentL1Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id} Current L1"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Current L1"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -370,7 +370,7 @@ class SAXBatteryCurrentL2Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id} Current L2"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Current L2"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -389,7 +389,7 @@ class SAXBatteryCurrentL3Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id} Current L3"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Current L3"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -408,7 +408,7 @@ class SAXBatteryVoltageL1Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
-        self._attr_name = f"Sax {battery_id} Voltage L1"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Voltage L1"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -427,7 +427,7 @@ class SAXBatteryVoltageL2Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
-        self._attr_name = f"Sax {battery_id} Voltage L2"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Voltage L2"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -446,7 +446,7 @@ class SAXBatteryVoltageL3Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
-        self._attr_name = f"Sax {battery_id} Voltage L3"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Voltage L3"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -465,7 +465,7 @@ class SAXBatteryACPowerTotalSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_name = f"Sax {battery_id} AC Power Total"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} AC Power Total"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -484,7 +484,7 @@ class SAXBatteryGridFrequencySensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.FREQUENCY
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfFrequency.HERTZ
-        self._attr_name = f"Sax {battery_id} Grid Frequency"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Grid Frequency"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -503,7 +503,7 @@ class SAXBatteryApparentPowerSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.APPARENT_POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "VA"  # Volt-Ampere
-        self._attr_name = f"Sax {battery_id} Apparent Power"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Apparent Power"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -522,7 +522,7 @@ class SAXBatteryReactivePowerSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.REACTIVE_POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "var"  # Volt-Ampere Reactive
-        self._attr_name = f"Sax {battery_id} Reactive Power"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Reactive Power"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -541,7 +541,7 @@ class SAXBatteryPowerFactorSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.POWER_FACTOR
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_name = f"Sax {battery_id} Power Factor"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Power Factor"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -557,7 +557,7 @@ class SAXBatteryStorageStatusSensor(SAXBatterySensor):
     def __init__(self, battery, battery_id) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id} Storage Status"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Storage Status"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -582,7 +582,7 @@ class SAXBatterySmartmeterCurrentL1Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id} Smartmeter Current L1"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Current L1"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -601,7 +601,7 @@ class SAXBatterySmartmeterCurrentL2Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id} Smartmeter Current L2"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Current L2"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -620,7 +620,7 @@ class SAXBatterySmartmeterCurrentL3Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id} Smartmeter Current L3"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Current L3"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -639,7 +639,7 @@ class SAXBatteryActivePowerL1Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_name = f"Sax {battery_id} Active Power L1"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Active Power L1"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -658,7 +658,7 @@ class SAXBatteryActivePowerL2Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_name = f"Sax {battery_id} Active Power L2"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Active Power L2"
 
     #       self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -677,7 +677,7 @@ class SAXBatteryActivePowerL3Sensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_name = f"Sax {battery_id} Active Power L3"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Active Power L3"
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -693,7 +693,7 @@ class SAXBatterySmartmeterVoltageL1Sensor(SAXBatterySensor):
     def __init__(self, battery, battery_id) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id} Smartmeter Voltage L1"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Voltage L1"
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
@@ -711,7 +711,7 @@ class SAXBatterySmartmeterVoltageL2Sensor(SAXBatterySensor):
     def __init__(self, battery, battery_id) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id} Smartmeter Voltage L2"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Voltage L2"
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
@@ -729,7 +729,7 @@ class SAXBatterySmartmeterVoltageL3Sensor(SAXBatterySensor):
     def __init__(self, battery, battery_id) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id} Smartmeter Voltage L3"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Voltage L3"
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
@@ -747,7 +747,7 @@ class SAXBatterySmartmeterTotalPowerSensor(SAXBatterySensor):
     def __init__(self, battery, battery_id) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id} Smartmeter Total Power"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Total Power"
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
