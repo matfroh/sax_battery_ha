@@ -138,7 +138,7 @@ class SAXBatteryStatusSensor(SAXBatterySensor):
     def __init__(self, battery, battery_id) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Battery {battery_id.upper()} Status"
+        self._attr_name = f"Sax {battery_id} Status"
 
     @property
     def native_value(self):
