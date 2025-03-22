@@ -277,6 +277,21 @@ class SAXBatteryPilot:
                         battery_power_state.state,
                         err,
                     )
+            # Get current battery SOC
+            battery_soc_state = self.hass.states.get("sensor.battery_combined_soc")
+            master_soc = 0
+            if battery_soc_state is not None:
+                try:
+                    if battery_soc_state.state not in (None, "unknown", "unavailable"):
+                        master_soc = float(battery_soc_state.state)
+                    else:
+                        _LOGGER.debug("Battery SOC state is %s", battery_soc_state.state)
+                except (ValueError, TypeError) as err:
+                    _LOGGER.warning(
+                        "Could not convert battery SOC '%s' to number: %s",
+                        battery_soc_state.state,
+                        err,
+                    )
 
             # Calculate target power
             #            net_power = total_power - battery_power
@@ -332,9 +347,6 @@ class SAXBatteryPilot:
                 -self.max_discharge_power, min(self.max_charge_power, target_power)
             )
 
-            # Check battery SOC constraints
-            master_soc = self.master_battery.data.get(SAX_COMBINED_SOC, 0)
-
             # Apply SOC constraints before the "Update calculated power" line (line ~221)
             _LOGGER.debug("Pre-constraint target power: %sW", target_power)
             target_power = await self._apply_soc_constraints(target_power)
@@ -361,7 +373,14 @@ class SAXBatteryPilot:
     async def _apply_soc_constraints(self, power_value):
         """Apply SOC constraints to a power value."""
         # Get current battery SOC
-        master_soc = self.master_battery.data.get(SAX_COMBINED_SOC, 0)
+        battery_soc_state = self.hass.states.get("sensor.battery_combined_soc")
+        if battery_soc_state is not None and battery_soc_state.state not in (None, "unknown", "unavailable"):
+            try:
+                master_soc = float(battery_soc_state.state)
+            except (ValueError, TypeError):
+                master_soc = 0  # Default if conversion fails
+        else:
+            master_soc = 0  # Default if state doesn't exist or is invalid
         self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
 
         # Log the input values
@@ -432,7 +451,14 @@ class SAXBatteryPilot:
         power_value = self._requested_manual_power
 
         # Apply SOC constraints
-        master_soc = self.master_battery.data.get(SAX_COMBINED_SOC, 0)
+        battery_soc_state = self.hass.states.get("sensor.battery_combined_soc")
+        if battery_soc_state is not None and battery_soc_state.state not in (None, "unknown", "unavailable"):
+            try:
+                master_soc = float(battery_soc_state.state)
+            except (ValueError, TypeError):
+                master_soc = 0  # Default if conversion fails
+        else:
+            master_soc = 0  # Default if state doesn't exist or is invalid
 
         # Don't discharge below min SOC
         if master_soc <= self.min_soc and power_value < 0:
