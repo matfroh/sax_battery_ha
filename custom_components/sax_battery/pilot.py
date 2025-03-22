@@ -25,7 +25,7 @@ from .const import (
     DEFAULT_MIN_SOC,
     DOMAIN,
     SAX_COMBINED_POWER,
-    SAX_SOC,
+    SAX_COMBINED_SOC
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -333,7 +333,7 @@ class SAXBatteryPilot:
             )
 
             # Check battery SOC constraints
-            master_soc = self.master_battery.data.get(SAX_SOC, 0)
+            master_soc = self.master_battery.data.get(SAX_COMBINED_SOC, 0)
 
             # Apply SOC constraints before the "Update calculated power" line (line ~221)
             _LOGGER.debug("Pre-constraint target power: %sW", target_power)
@@ -361,7 +361,7 @@ class SAXBatteryPilot:
     async def _apply_soc_constraints(self, power_value):
         """Apply SOC constraints to a power value."""
         # Get current battery SOC
-        master_soc = self.master_battery.data.get(SAX_SOC, 0)
+        master_soc = self.master_battery.data.get(SAX_COMBINED_SOC, 0)
         self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
 
         # Log the input values
@@ -432,7 +432,7 @@ class SAXBatteryPilot:
         power_value = self._requested_manual_power
 
         # Apply SOC constraints
-        master_soc = self.master_battery.data.get(SAX_SOC, 0)
+        master_soc = self.master_battery.data.get(SAX_COMBINED_SOC, 0)
 
         # Don't discharge below min SOC
         if master_soc <= self.min_soc and power_value < 0:
