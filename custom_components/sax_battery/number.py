@@ -70,6 +70,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_native_value = max_value
         self._last_written_value = None  # Track the last written value
+        self._remove_interval = None  # Initialize the attribute
 
         self._attr_device_info = {
             "identifiers": {(DOMAIN, self._data_manager.device_id)},
@@ -79,7 +80,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
             "sw_version": "1.0",
         }
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Set up periodic updates."""
         self._remove_interval = async_track_time_interval(
             self.hass, self._periodic_write, timedelta(minutes=2)
@@ -112,7 +113,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
     async def _write_value(self, value: float):
         """Write the value to the hardware."""
         try:
-            client = self._data_manager.master_battery._data_manager.modbus_clients[
+            client = self._data_manager.master_battery._data_manager.modbus_clients[  # noqa: SLF001
                 self._data_manager.master_battery.battery_id
             ]
 
@@ -145,7 +146,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
             self._attr_native_value = value
             self._last_written_value = value  # Update last written value
 
-        except Exception as err:
+        except (ConnectionError, TimeoutError) as err:
             _LOGGER.error("Failed to write max charge value: %s", err)
 
 
@@ -205,7 +206,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
     async def _write_value(self, value: float):
         """Write the value to the hardware."""
         try:
-            client = self._data_manager.master_battery._data_manager.modbus_clients[
+            client = self._data_manager.master_battery._data_manager.modbus_clients[  # noqa: SLF001
                 self._data_manager.master_battery.battery_id
             ]
 
@@ -238,7 +239,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
             self._attr_native_value = value
             self._last_written_value = value  # Update last written value
 
-        except Exception as err:
+        except (ConnectionError, TimeoutError) as err:
             _LOGGER.error("Failed to write max charge value: %s", err)
 
 

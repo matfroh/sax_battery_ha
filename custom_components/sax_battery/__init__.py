@@ -65,7 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         # Create SAX Battery data instance
         sax_battery_data = SAXBatteryData(hass, entry)
         await sax_battery_data.async_init()
-    except Exception as err:
+    except (ConnectionError, TimeoutError, ValueError) as err:
         _LOGGER.error("Failed to initialize SAX Battery: %s", err)
         raise ConfigEntryNotReady from err
 
@@ -483,7 +483,7 @@ class SAXBattery:
                 result,
             )
             return None  # noqa: TRY300
-        except Exception as err:
+        except (ConnectionError, TimeoutError, ValueError) as err:
             _LOGGER.error(
                 "Failed to read register %s: %s", register_info["address"], err
             )
@@ -507,10 +507,10 @@ class SAXBattery:
                     if result is not None:
                         self.data[register_name] = result
                         self._last_updates[register_name] = current_time
-                except Exception as err:
+                except (ConnectionError, TimeoutError) as err:
                     _LOGGER.error("Error updating register %s: %s", register_name, err)
 
-        except Exception as err:
+        except TimeoutError as err:
             _LOGGER.error("Error updating battery %s: %s", self.battery_id, err)
             return False
 

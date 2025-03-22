@@ -115,7 +115,7 @@ class SAXBatterySensor(SensorEntity):
 
         # Add device info
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self.battery._data_manager.device_id)},
+            "identifiers": {(DOMAIN, self.battery._data_manager.device_id)},  # noqa: SLF001
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",

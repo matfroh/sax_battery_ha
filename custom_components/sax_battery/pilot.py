@@ -355,7 +355,7 @@ class SAXBatteryPilot:
                 power_factor,
             )
 
-        except Exception as err:
+        except (ConnectionError, ValueError) as err:
             _LOGGER.error("Error in battery pilot update: %s", err)
 
     async def _apply_soc_constraints(self, power_value):
@@ -459,7 +459,7 @@ class SAXBatteryPilot:
         """Send power command to battery via Modbus."""
         try:
             # Get Modbus client for master battery
-            client = self.master_battery._data_manager.modbus_clients.get(
+            client = self.master_battery._data_manager.modbus_clients.get(  # noqa: SLF001
                 self.master_battery.battery_id
             )
 
@@ -476,7 +476,7 @@ class SAXBatteryPilot:
                 try:
                     client.connect()
                     _LOGGER.info("Reconnected to Modbus device")
-                except Exception as connect_err:
+                except ConnectionError as connect_err:
                     _LOGGER.error("Failed to reconnect: %s", connect_err)
                     return
 
@@ -514,8 +514,8 @@ class SAXBatteryPilot:
             else:
                 _LOGGER.debug("Successfully sent combined power and PF command")
 
-        except Exception as err:
-            _LOGGER.exception("Failed to send power command: %s", err)
+        except (ConnectionError, ValueError, TypeError) as err:
+            _LOGGER.error("Failed to send power command: %s", err)
 
 
 class SAXBatteryPilotPowerEntity(NumberEntity):

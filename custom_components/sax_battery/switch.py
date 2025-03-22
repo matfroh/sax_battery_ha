@@ -57,13 +57,13 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
         self._attr_unique_id = f"{DOMAIN}_{battery.battery_id}_switch"
         self._attr_name = f"Battery {battery.battery_id.upper()} On/Off"
         self._attr_has_entity_name = True
-        self._registers = self.battery._data_manager.modbus_registers[
+        self._registers = self.battery._data_manager.modbus_registers[  # noqa: SLF001
             battery.battery_id
         ][SAX_STATUS]
 
         # Add device info
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self.battery._data_manager.device_id)},
+            "identifiers": {(DOMAIN, self.battery._data_manager.device_id)},  # noqa: SLF001
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -79,7 +79,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
     async def async_turn_on(self, **kwargs):
         """Turn the switch on."""
         try:
-            client = self.battery._data_manager.modbus_clients[self.battery.battery_id]
+            client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
             slave_id = self._registers.get("slave", 64)
 
             import asyncio
@@ -105,7 +105,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             await asyncio.sleep(120)
             await self.async_update()
 
-        except Exception as err:
+        except (ConnectionError, ValueError) as err:
             _LOGGER.error(
                 "Failed to turn on battery %s: %s", self.battery.battery_id, err
             )
@@ -113,7 +113,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
     async def async_turn_off(self, **kwargs):
         """Turn the switch off."""
         try:
-            client = self.battery._data_manager.modbus_clients[self.battery.battery_id]
+            client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
             slave_id = self._registers.get("slave", 64)
 
             import asyncio
@@ -139,7 +139,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             await asyncio.sleep(120)
             await self.async_update()
 
-        except Exception as err:
+        except (ConnectionError, ValueError) as err:
             _LOGGER.error(
                 "Failed to turn off battery %s: %s", self.battery.battery_id, err
             )
@@ -201,7 +201,7 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
             data[CONF_ENABLE_SOLAR_CHARGING] = True
             self.hass.config_entries.async_update_entry(self._entry, data=data)
 
-        except Exception as err:
+        except (ConnectionError, ValueError) as err:
             _LOGGER.error("Failed to enable solar charging: %s", err)
 
     async def async_turn_off(self, **kwargs):
@@ -218,7 +218,7 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
             data[CONF_ENABLE_SOLAR_CHARGING] = False
             self.hass.config_entries.async_update_entry(self._entry, data=data)
 
-        except Exception as err:
+        except (ConnectionError, ValueError) as err:
             _LOGGER.error("Failed to disable solar charging: %s", err)
 
 
@@ -264,7 +264,7 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
             data[CONF_MANUAL_CONTROL] = True
             self.hass.config_entries.async_update_entry(self._entry, data=data)
 
-        except Exception as err:
+        except (ConnectionError, ValueError) as err:
             _LOGGER.error("Failed to enable manual control: %s", err)
 
     async def async_turn_off(self, **kwargs):
@@ -282,5 +282,5 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
             data[CONF_MANUAL_CONTROL] = False
             self.hass.config_entries.async_update_entry(self._entry, data=data)
 
-        except Exception as err:
+        except (ConnectionError, ValueError) as err:
             _LOGGER.error("Failed to disable manual control: %s", err)
