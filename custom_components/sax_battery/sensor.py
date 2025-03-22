@@ -111,7 +111,7 @@ class SAXBatterySensor(SensorEntity):
         """Initialize the SAX Battery sensor."""
         self.battery = battery
         self._battery_id = battery_id
-        self._attr_unique_id = f"{DOMAIN}_{battery_id}_{self.__class__.__name__}"
+        self._attr_unique_id = f"{DOMAIN}_{self._battery_id}_{self.__class__.__name__.lower()}"
 
         # Add device info
         self._attr_device_info = {
