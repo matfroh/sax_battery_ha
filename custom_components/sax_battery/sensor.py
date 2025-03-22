@@ -368,9 +368,17 @@ class SAXBatteryCombinedSOCSensor(SensorEntity):
         
         # Only update if we have valid SOC data
         if valid_batteries > 0:
-            self._attr_native_value = round(total_soc / valid_batteries, 1)
+            combined_soc = round(total_soc / valid_batteries, 1)
+            self._attr_native_value = combined_soc
+            
+            # Store the combined SOC in the data manager
+            if not hasattr(self._data_manager, 'combined_data'):
+                self._data_manager.combined_data = {}
+            self._data_manager.combined_data[SAX_COMBINED_SOC] = combined_soc
         else:
             self._attr_native_value = None
+            if hasattr(self._data_manager, 'combined_data'):
+                self._data_manager.combined_data[SAX_COMBINED_SOC] = None
 
 class SAXBatteryPhaseCurrentsSumSensor(SAXBatterySensor):
     """SAX Battery Sum of Phase Currents sensor."""
