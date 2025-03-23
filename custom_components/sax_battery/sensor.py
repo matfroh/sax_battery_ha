@@ -24,6 +24,7 @@ from .const import (
     SAX_APPARENT_POWER,
     SAX_CAPACITY,
     SAX_COMBINED_POWER,
+    SAX_COMBINED_SOC,
     SAX_CURRENT_L1,
     SAX_CURRENT_L2,
     SAX_CURRENT_L3,
@@ -61,6 +62,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     # Add combined power sensor first
     entities.append(SAXBatteryCombinedPowerSensor(sax_battery_data))
+    entities.append(SAXBatteryCombinedSOCSensor(sax_battery_data))
 
     # Add individual battery sensors
     for battery_id, battery in sax_battery_data.batteries.items():
@@ -288,7 +290,7 @@ class SAXBatteryCombinedPowerSensor(SensorEntity):
         """Initialize the sensor."""
         self._data_manager = sax_battery_data
         self._attr_unique_id = f"{DOMAIN}_combined_power"
-        self._attr_name = "Battery Combined Power"
+        self._attr_name = "Sax Battery Combined Power"
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -322,6 +324,61 @@ class SAXBatteryCombinedPowerSensor(SensorEntity):
 
         self._attr_native_value = total_power
 
+class SAXBatteryCombinedSOCSensor(SensorEntity):
+    """Combined State of Charge (SOC) sensor for all SAX Batteries."""
+
+    def __init__(self, sax_battery_data) -> None:
+        """Initialize the sensor."""
+        self._data_manager = sax_battery_data
+        self._attr_unique_id = f"{DOMAIN}_combined_soc"
+        self._attr_name = "Sax Battery Combined SOC"
+        self._attr_device_class = SensorDeviceClass.BATTERY
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = PERCENTAGE
+
+        # Add device info to group with other sensors
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, self._data_manager.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def should_poll(self):
+        """Return True if entity has to be polled for state."""
+        return True
+
+    async def async_update(self):
+        """Update the sensor."""
+        # Update all batteries first
+        for battery in self._data_manager.batteries.values():
+            await battery.async_update()
+
+        # Calculate average SOC
+        total_soc = 0
+        valid_batteries = 0
+        
+        for battery in self._data_manager.batteries.values():
+            soc = battery.data.get(SAX_SOC)
+            if soc is not None:
+                total_soc += soc
+                valid_batteries += 1
+        
+        # Only update if we have valid SOC data
+        if valid_batteries > 0:
+            combined_soc = round(total_soc / valid_batteries, 1)
+            self._attr_native_value = combined_soc
+            
+            # Store the combined SOC in the data manager
+            if not hasattr(self._data_manager, 'combined_data'):
+                self._data_manager.combined_data = {}
+            self._data_manager.combined_data[SAX_COMBINED_SOC] = combined_soc
+        else:
+            self._attr_native_value = None
+            if hasattr(self._data_manager, 'combined_data'):
+                self._data_manager.combined_data[SAX_COMBINED_SOC] = None
 
 class SAXBatteryPhaseCurrentsSumSensor(SAXBatterySensor):
     """SAX Battery Sum of Phase Currents sensor."""

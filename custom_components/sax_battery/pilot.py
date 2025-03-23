@@ -25,7 +25,7 @@ from .const import (
     DEFAULT_MIN_SOC,
     DOMAIN,
     SAX_COMBINED_POWER,
-    SAX_SOC,
+    SAX_COMBINED_SOC
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -277,6 +277,12 @@ class SAXBatteryPilot:
                         battery_power_state.state,
                         err,
                     )
+            # Check if the combined_data attribute exists
+            if hasattr(self.master_battery._data_manager, 'combined_data'):
+                # Get the SOC from the combined_data dictionary
+                master_soc = self.master_battery._data_manager.combined_data.get(SAX_COMBINED_SOC, 0)
+            else:
+                master_soc = 0
 
             # Calculate target power
             #            net_power = total_power - battery_power
@@ -332,9 +338,6 @@ class SAXBatteryPilot:
                 -self.max_discharge_power, min(self.max_charge_power, target_power)
             )
 
-            # Check battery SOC constraints
-            master_soc = self.master_battery.data.get(SAX_SOC, 0)
-
             # Apply SOC constraints before the "Update calculated power" line (line ~221)
             _LOGGER.debug("Pre-constraint target power: %sW", target_power)
             target_power = await self._apply_soc_constraints(target_power)
@@ -361,8 +364,12 @@ class SAXBatteryPilot:
     async def _apply_soc_constraints(self, power_value):
         """Apply SOC constraints to a power value."""
         # Get current battery SOC
-        master_soc = self.master_battery.data.get(SAX_SOC, 0)
-        self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
+        # Check if the combined_data attribute exists
+        if hasattr(self.master_battery._data_manager, 'combined_data'):
+            # Get the SOC from the combined_data dictionary
+            master_soc = self.master_battery._data_manager.combined_data.get(SAX_COMBINED_SOC, 0)
+        else:
+            master_soc = 0
 
         # Log the input values
         _LOGGER.debug(
@@ -432,7 +439,12 @@ class SAXBatteryPilot:
         power_value = self._requested_manual_power
 
         # Apply SOC constraints
-        master_soc = self.master_battery.data.get(SAX_SOC, 0)
+        # Check if the combined_data attribute exists
+        if hasattr(self.master_battery._data_manager, 'combined_data'):
+            # Get the SOC from the combined_data dictionary
+            master_soc = self.master_battery._data_manager.combined_data.get(SAX_COMBINED_SOC, 0)
+        else:
+            master_soc = 0
 
         # Don't discharge below min SOC
         if master_soc <= self.min_soc and power_value < 0:
