@@ -257,7 +257,7 @@ class SAXBatteryPilot:
                         )
 
             # Get current battery power
-            battery_power_state = self.hass.states.get("sensor.battery_combined_power")
+            battery_power_state = self.hass.states.get("sensor.sax_battery_combined_power")
             battery_power = 0
             if battery_power_state is not None:
                 try:
