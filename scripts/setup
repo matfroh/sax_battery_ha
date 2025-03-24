@@ -8,5 +8,5 @@ sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
     libpcap-dev \
     libturbojpeg0
-python3 -m pip install --requirement requirements.txt
+python3 -m pip install -r requirements_test.txt --upgrade
 pre-commit install
