@@ -1,7 +1,7 @@
 # Home Assistant AddOn to manage 1 or more SAX batteries
 
 This is a custom component for Home Assistant to manage one or multiple SAX batteries.
-Work in progress for battery management, limiting discharge and charging levels as well as calculating the power to charge or discharge the battery, letting Home Assistant stear the battery. Multiple options are available depending on what registers you are allowed to write. Check the documentation to understand how to enable writing regsiters.
+Work in progress for battery management, limiting discharge and charging levels as well as calculating the power to charge or discharge the battery, letting Home Assistant steer the battery. Multiple options are available depending on what registers you are allowed to write. Check the documentation to understand how to enable writing regsiters.
 
 ## Installation:
 Add the files to your /custom_components/ folder or use the "+" in the integrations tabs
