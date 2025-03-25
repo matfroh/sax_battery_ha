@@ -496,22 +496,96 @@ class SAXBattery:
             registers = self._data_manager.modbus_registers[self.battery_id]
             current_time = self.hass.loop.time()  # Get current time
 
+            # Handle standard requests for non-slave 40
             for register_name, register_info in registers.items():
-                # Check if enough time has passed since last update
-                time_since_update = current_time - self._last_updates[register_name]
-                if time_since_update < register_info["scan_interval"]:
-                    continue
+                if register_info["slave"] != 40:
+                    # Check if enough time has passed since last update
+                    time_since_update = current_time - self._last_updates[register_name]
+                    if time_since_update < register_info["scan_interval"]:
+                        continue
 
-                try:
-                    result = await self.read_modbus_register(client, register_info)
-                    if result is not None:
-                        self.data[register_name] = result
-                        self._last_updates[register_name] = current_time
-                except (ConnectionError, TimeoutError) as err:
-                    _LOGGER.error("Error updating register %s: %s", register_name, err)
+                    try:
+                        result = await self.read_modbus_register(client, register_info)
+                        if result is not None:
+                            self.data[register_name] = result
+                            self._last_updates[register_name] = current_time
+                    except (ConnectionError, TimeoutError) as err:
+                        _LOGGER.error("Error updating register %s: %s", register_name, err)
 
+            # Filter registers for slave ID 40 and find the range
+            slave_id = 40
+            slave_registers = {
+                reg_name: reg_info 
+                for reg_name, reg_info in registers.items() 
+                if reg_info["slave"] == slave_id
+            }
+            
+            if not slave_registers:
+                return True  # Nothing to update for this slave
+                
+            # Check if any slave 40 registers need updating based on scan_interval
+            needs_update = False
+            for reg_name, reg_info in slave_registers.items():
+                time_since_update = current_time - self._last_updates[reg_name]
+                if time_since_update >= reg_info["scan_interval"]:
+                    needs_update = True
+                    break
+                    
+            if not needs_update:
+                return True  # No slave 40 registers need updating yet
+                
+            # Calculate the range of addresses to read
+            start_address = min(reg_info["address"] for reg_info in slave_registers.values())
+            end_address = max(
+                reg_info["address"] + reg_info.get("count", 1) - 1 
+                for reg_info in slave_registers.values()
+            )
+            register_count = end_address - start_address + 1
+            
+            _LOGGER.debug(
+                "Batch reading registers %s to %s (slave %s, count: %s)",
+                start_address, end_address, slave_id, register_count
+            )
+            
+            # Perform a bulk read
+            try:
+                result = await self.hass.async_add_executor_job(
+                    lambda: client.read_holding_registers(
+                        address=start_address,
+                        count=register_count,
+                        slave=slave_id,
+                    )
+                )
+                
+                if not hasattr(result, "registers"):
+                    _LOGGER.error(
+                        "Modbus error reading range %s-%s: %s", 
+                        start_address, end_address, result
+                    )
+                    return False
+                    
+                # Parse the bulk response
+                for reg_name, reg_info in slave_registers.items():
+                    reg_offset = reg_info["address"] - start_address
+                    if 0 <= reg_offset < len(result.registers):  # Ensure index is valid
+                        raw_value = result.registers[reg_offset]
+                        value = (raw_value + reg_info.get("offset", 0)) * reg_info.get("scale", 1)
+                        self.data[reg_name] = value
+                        # Update the timestamp for this register
+                        self._last_updates[reg_name] = current_time
+                    else:
+                        _LOGGER.warning(
+                            "Register %s (address %s) offset %s is out of range for result length %s",
+                            reg_name, reg_info["address"], reg_offset, len(result.registers)
+                        )
+                        
+            except (ConnectionError, TimeoutError, ValueError) as err:
+                _LOGGER.error("Failed to read bulk registers for slave %s: %s", slave_id, err)
+                return False
+                
         except TimeoutError as err:
             _LOGGER.error("Error updating battery %s: %s", self.battery_id, err)
             return False
-
+            
         return True
+
