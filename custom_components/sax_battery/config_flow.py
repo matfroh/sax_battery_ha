@@ -1,11 +1,13 @@
 """Config flow for SAX Battery integration."""
 
-from typing import Any
+from typing import Any, Optional
 import uuid
 
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
@@ -15,7 +17,10 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_ENABLE_SOLAR_CHARGING,
     CONF_LIMIT_POWER,
+    CONF_MANUAL_CONTROL,
     CONF_MASTER_BATTERY,
+    CONF_MAX_CHARGE,
+    CONF_MAX_DISCHARGE,
     CONF_MIN_SOC,
     CONF_PF_SENSOR,
     CONF_PILOT_FROM_HA,

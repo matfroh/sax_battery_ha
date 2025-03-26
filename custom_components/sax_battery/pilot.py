@@ -1,11 +1,13 @@
 """Battery pilot service for SAX Battery integration."""
 
+import asyncio
 from datetime import timedelta
 import logging
 
 from homeassistant.components.number import NumberEntity
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import UnitOfPower
+from homeassistant.const import PERCENTAGE, STATE_OFF, STATE_ON, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.event import async_track_time_interval
