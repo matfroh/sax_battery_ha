@@ -362,7 +362,6 @@ class SAXBatteryManualPowerEntity(NumberEntity):
     async def async_added_to_hass(self):
         """Register callbacks."""
         # You might need to add a callback/update mechanism here
-        pass
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the manual power value."""
