@@ -5,6 +5,10 @@ import logging
 
 from pymodbus.client import ModbusTcpClient
 
+import voluptuous as vol
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_platform
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -47,6 +51,11 @@ from .const import (
     SAX_VOLTAGE_L1,
     SAX_VOLTAGE_L2,
     SAX_VOLTAGE_L3,
+    SERVICE_SET_CHOKING,
+    CONF_ENABLE_CHOKING,
+    DEFAULT_ENABLE_CHOKING,
+    CONF_CHOKING_INTERVAL,
+    DEFAULT_CHOKING_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,6 +91,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     return True
 
+    if pilot and hasattr(hass.data[DOMAIN][entry.entry_id], "pilot"):
+        # Register the choking service
+        platform = entity_platform.async_get_current_platform()
+        platform.async_register_entity_service(
+            SERVICE_SET_CHOKING,
+            {
+                vol.Required("enabled"): cv.boolean,
+                vol.Optional("value"): vol.All(
+                    vol.Coerce(float), vol.Range(min=-100, max=100)
+                ),
+            },
+            "async_set_choking"
+        )
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""

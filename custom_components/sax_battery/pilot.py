@@ -4,6 +4,11 @@ import asyncio
 from datetime import timedelta
 import logging
 
+import voluptuous as vol
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_platform
+
+
 from homeassistant.components.number import NumberEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.switch import SwitchEntity
@@ -25,7 +30,15 @@ from .const import (
     DEFAULT_MIN_SOC,
     DOMAIN,
     SAX_COMBINED_POWER,
-    SAX_COMBINED_SOC
+    SAX_COMBINED_SOC,
+    CONF_ENABLE_CHOKING,
+    DEFAULT_ENABLE_CHOKING,
+    CONF_CHOKING_INTERVAL,
+    DEFAULT_CHOKING_INTERVAL,
+    CHOKING_STATUS_REGISTER,
+    CHOKING_VALUE_REGISTER,
+    CHOKING_SLAVE_ID,
+    SERVICE_SET_CHOKING,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,14 +61,149 @@ async def async_setup_pilot(hass: HomeAssistant, entry_id: str):
 
     # Create entities
     component = EntityComponent(_LOGGER, f"{DOMAIN}_pilot", hass)
-    entities = [SAXBatteryPilotPowerEntity(pilot), SAXBatterySolarChargingSwitch(pilot)]
+    entities = [SAXBatteryPilotPowerEntity(pilot), SAXBatterySolarChargingSwitch(pilot), SAXBatteryChokingSwitch(pilot), SAXBatteryChokingValueEntity(pilot), SAXBatteryChokingStatusSensor(pilot)]
 
     await component.async_add_entities(entities)
+
+    # Register services
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_CHOKING,
+        lambda service: pilot.set_choking(
+            service.data.get("enabled", True),
+            service.data.get("value")
+        ),
+        schema=vol.Schema(
+            {
+                vol.Required("enabled"): cv.boolean,
+                vol.Optional("value"): vol.All(
+                    vol.Coerce(float), vol.Range(min=-100, max=100)
+                ),
+            }
+        ),
+    )
 
     # Start automatic pilot service
     await pilot.async_start()
     return True
 
+class SAXBatteryChokingSwitch(SwitchEntity):
+    """Switch to enable/disable battery choking functionality."""
+
+    def __init__(self, pilot) -> None:
+        """Initialize the switch."""
+        self._pilot = pilot
+        self._attr_unique_id = (
+            f"{DOMAIN}_choking_switch_{self._pilot.sax_data.device_id}"
+        )
+        self._attr_name = "Battery Choking"
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def is_on(self):
+        """Return true if choking is enabled."""
+        return self._pilot.choking_enabled
+
+    @property
+    def icon(self):
+        """Return the icon to use for the switch."""
+        return "mdi:battery-charging-outline" if self.is_on else "mdi:battery-outline"
+
+    async def async_turn_on(self, **kwargs):
+        """Turn on choking."""
+        await self._pilot.set_choking(True)
+
+    async def async_turn_off(self, **kwargs):
+        """Turn off choking."""
+        await self._pilot.set_choking(False)
+
+
+class SAXBatteryChokingValueEntity(NumberEntity):
+    """Entity for setting the choking percentage value."""
+
+    def __init__(self, pilot) -> None:
+        """Initialize the entity."""
+        self._pilot = pilot
+        self._attr_unique_id = f"{DOMAIN}_choking_value_{self._pilot.sax_data.device_id}"
+        self._attr_name = "Battery Choking Value"
+        self._attr_native_min_value = -100
+        self._attr_native_max_value = 100
+        self._attr_native_step = 1
+        self._attr_native_unit_of_measurement = PERCENTAGE
+        self._attr_should_poll = True
+        self._attr_mode = "slider"
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def native_value(self):
+        """Return the current choking value."""
+        return self._pilot.choking_value
+
+    @property
+    def icon(self):
+        """Return the icon to use for the entity."""
+        if self._pilot.choking_value > 0:
+            return "mdi:battery-charging"
+        if self._pilot.choking_value < 0:
+            return "mdi:battery-negative"
+        return "mdi:battery"
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Handle manual override of choking value."""
+        await self._pilot.set_choking_value(value)
+
+
+class SAXBatteryChokingStatusSensor(SensorEntity):
+    """Sensor to show the current choking status from the battery."""
+
+    def __init__(self, pilot) -> None:
+        """Initialize the sensor."""
+        self._pilot = pilot
+        self._attr_unique_id = f"{DOMAIN}_choking_status_{self._pilot.sax_data.device_id}"
+        self._attr_name = "Battery Choking Status"
+        self._attr_native_value = None
+        self._attr_should_poll = True
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def icon(self):
+        """Return the icon to use for the sensor."""
+        if self._attr_native_value == 1:
+            return "mdi:battery-charging"
+        return "mdi:battery-outline"
+
+    async def async_update(self):
+        """Update the sensor state by reading from Modbus."""
+        status = await self._pilot.read_choking_status()
+        if status is not None:
+            self._attr_native_value = status
+            self._attr_available = True
+        else:
+            self._attr_available = False
 
 class SAXBatteryPilot:
     """Manages automatic battery pilot calculations and control."""
@@ -93,6 +241,12 @@ class SAXBatteryPilot:
         self._remove_config_update = None
         self._running = False
 
+        # choking
+        self.choking_enabled = self.entry.data.get(CONF_ENABLE_CHOKING, DEFAULT_ENABLE_CHOKING)
+        self.choking_value = 0  # Default value (0%)
+        self.choking_interval = self.entry.data.get(CONF_CHOKING_INTERVAL, DEFAULT_CHOKING_INTERVAL)
+        self._last_choking_update = None
+
     def _update_config_values(self):
         """Update configuration values from entry data."""
         self.power_sensor_entity_id = self.entry.data.get(CONF_POWER_SENSOR)
@@ -109,6 +263,13 @@ class SAXBatteryPilot:
             "Updated config values - min_soc: %s%%, update_interval: %ss",
             self.min_soc,
             self.update_interval,
+        )
+        self.choking_enabled = self.entry.data.get(CONF_ENABLE_CHOKING, DEFAULT_ENABLE_CHOKING)
+        self.choking_interval = self.entry.data.get(CONF_CHOKING_INTERVAL, DEFAULT_CHOKING_INTERVAL)
+        _LOGGER.debug(
+            "Updated choking config - enabled: %s, interval: %ss",
+            self.choking_enabled,
+            self.choking_interval,
         )
 
     async def async_start(self):
@@ -132,6 +293,16 @@ class SAXBatteryPilot:
         _LOGGER.info(
             "SAX Battery pilot started with %ss interval", self.update_interval
         )
+        # After starting the main service, start the choking update interval if enabled
+        if self.choking_enabled:
+            self._remove_choking_interval_update = async_track_time_interval(
+                self.hass, self._async_update_choking, timedelta(seconds=self.choking_interval)
+            )
+            # Do initial update
+            await self._async_update_choking(None)
+            _LOGGER.info("SAX Battery choking service started with %ss interval", self.choking_interval)
+
+
 
     async def _async_config_updated(self, hass, entry):
         """Handle config entry updates."""
@@ -156,6 +327,175 @@ class SAXBatteryPilot:
 
         self._running = False
         _LOGGER.info("SAX Battery pilot stopped")
+
+        # Add this to clean up choking interval
+        if hasattr(self, "_remove_choking_interval_update") and self._remove_choking_interval_update is not None:
+            self._remove_choking_interval_update()
+            self._remove_choking_interval_update = None
+
+    async def set_choking(self, enabled, value=None):
+        """Enable or disable choking functionality."""
+        self.choking_enabled = enabled
+        
+        if value is not None:
+            self.choking_value = value
+        
+        if enabled:
+            # Setup the interval if it doesn't exist
+            if not hasattr(self, "_remove_choking_interval_update") or self._remove_choking_interval_update is None:
+                self._remove_choking_interval_update = async_track_time_interval(
+                    self.hass, self._async_update_choking, timedelta(seconds=self.choking_interval)
+                )
+            # Send the current value immediately
+            await self._async_update_choking()
+        else:
+            # Clear the interval if it exists
+            if hasattr(self, "_remove_choking_interval_update") and self._remove_choking_interval_update is not None:
+                self._remove_choking_interval_update()
+                self._remove_choking_interval_update = None
+            # Send 0 to disable choking
+            await self.send_choking_command(0)
+        
+        _LOGGER.info("Choking %s with value %s%%", "enabled" if enabled else "disabled", self.choking_value)
+        return True
+
+    async def set_choking_value(self, value):
+        """Set the choking percentage value."""
+        self.choking_value = value
+        
+        # If enabled, send the command immediately
+        if self.choking_enabled:
+            await self._async_update_choking()
+        
+        _LOGGER.info("Choking value set to %s%%", value)
+        return True
+
+    async def _async_update_choking(self, now=None):
+        """Send choking value to battery via Modbus."""
+        if not self.choking_enabled:
+            return
+        
+        # Send the choking command
+        await self.send_choking_command(self.choking_value)
+        self._last_choking_update = self.hass.loop.time()
+        _LOGGER.debug("Updated choking value: %s%%", self.choking_value)
+
+    async def send_choking_command(self, value_percent):
+        """Send choking command to battery via Modbus."""
+        try:
+            # Get Modbus client for master battery
+            client = self.master_battery._data_manager.modbus_clients.get(
+                self.master_battery.battery_id
+            )
+
+            if client is None:
+                _LOGGER.error(
+                    "No Modbus client found for battery %s",
+                    self.master_battery.battery_id,
+                )
+                return False
+
+            # Check if client is connected
+            if not hasattr(client, "is_socket_open") or not client.is_socket_open():
+                _LOGGER.error("Modbus client socket not open, attempting to reconnect")
+                try:
+                    client.connect()
+                    _LOGGER.info("Reconnected to Modbus device")
+                except ConnectionError as connect_err:
+                    _LOGGER.error("Failed to reconnect: %s", connect_err)
+                    return False
+
+            # Convert percentage to int16 with factor 100
+            # Value range is -100% to +100%, converted to -10000 to +10000
+            value_int = int(value_percent * 100)
+            
+            # Ensure the value is within int16 range (-32768 to 32767)
+            # Although we should only use -10000 to +10000
+            value_int = max(-10000, min(10000, value_int))
+            
+            # Convert to 16-bit signed integer
+            value_int = value_int & 0xFFFF
+
+            _LOGGER.debug(
+                "Sending choking command: Value=%s%% (%s) to register %s with slave=%s",
+                value_percent,
+                value_int,
+                CHOKING_VALUE_REGISTER,
+                CHOKING_SLAVE_ID,
+            )
+
+            # Write to the choking value register
+            result = await self.hass.async_add_executor_job(
+                lambda: client.write_register(
+                    CHOKING_VALUE_REGISTER - 40001,  # Adjust for Modbus addressing (40001 = address 0)
+                    value_int,
+                    slave=CHOKING_SLAVE_ID,
+                )
+            )
+
+            if hasattr(result, "isError") and result.isError():
+                _LOGGER.error("Error sending choking command: %s", result)
+                return False
+            else:
+                _LOGGER.debug("Successfully sent choking command")
+                return True
+
+        except (ConnectionError, ValueError, TypeError) as err:
+            _LOGGER.error("Failed to send choking command: %s", err)
+            return False
+
+    async def read_choking_status(self):
+        """Read the current choking status from Modbus."""
+        try:
+            # Get Modbus client for master battery
+            client = self.master_battery._data_manager.modbus_clients.get(
+                self.master_battery.battery_id
+            )
+
+            if client is None:
+                _LOGGER.error(
+                    "No Modbus client found for battery %s",
+                    self.master_battery.battery_id,
+                )
+                return None
+
+            # Check if client is connected
+            if not hasattr(client, "is_socket_open") or not client.is_socket_open():
+                _LOGGER.error("Modbus client socket not open, attempting to reconnect")
+                try:
+                    client.connect()
+                    _LOGGER.info("Reconnected to Modbus device")
+                except ConnectionError as connect_err:
+                    _LOGGER.error("Failed to reconnect: %s", connect_err)
+                    return None
+
+            _LOGGER.debug(
+                "Reading choking status from register %s with slave=%s",
+                CHOKING_STATUS_REGISTER,
+                CHOKING_SLAVE_ID,
+            )
+
+            # Read the choking status register
+            result = await self.hass.async_add_executor_job(
+                lambda: client.read_holding_registers(
+                    CHOKING_STATUS_REGISTER - 40001,  # Adjust for Modbus addressing
+                    1,
+                    slave=CHOKING_SLAVE_ID,
+                )
+            )
+
+            if hasattr(result, "isError") and result.isError():
+                _LOGGER.error("Error reading choking status: %s", result)
+                return None
+            else:
+                status = result.registers[0]
+                _LOGGER.debug("Successfully read choking status: %s", status)
+                return status
+
+        except (ConnectionError, ValueError, TypeError, IndexError) as err:
+            _LOGGER.error("Failed to read choking status: %s", err)
+            return None
+
 
     async def _async_update_pilot(self, now=None):
         """Update the pilot calculations and send to battery."""

@@ -30,6 +30,11 @@ from .const import (
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
     DOMAIN,
+    CONF_ENABLE_CHOKING,
+    DEFAULT_ENABLE_CHOKING,
+    CONF_CHOKING_INTERVAL,
+    DEFAULT_CHOKING_INTERVAL
+
 )
 
 
@@ -67,6 +72,14 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_BATTERY_COUNT, default=1): vol.All(
                         vol.Coerce(int), vol.Range(min=1, max=3)
                     ),
+                    vol.Optional(
+                        CONF_ENABLE_CHOKING,
+                        default=DEFAULT_ENABLE_CHOKING,
+                    ): cv.boolean,
+                    vol.Optional(
+                        CONF_CHOKING_INTERVAL,
+                        default=DEFAULT_CHOKING_INTERVAL,
+                    ): cv.positive_int,
                 }
             ),
             errors=errors,

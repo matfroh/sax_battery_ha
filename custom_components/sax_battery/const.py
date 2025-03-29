@@ -60,3 +60,16 @@ SAX_SMARTMETER_VOLTAGE_L2 = "smartmeter_voltage_l2"
 SAX_SMARTMETER_VOLTAGE_L3 = "smartmeter_voltage_l3"
 SAX_SMARTMETER_TOTAL_POWER = "smartmeter_total_power"
 SAX_STORAGE_STATUS = "storage_status"
+
+CONF_ENABLE_CHOKING = "enable_choking"
+DEFAULT_ENABLE_CHOKING = False
+CONF_CHOKING_INTERVAL = "choking_interval"
+DEFAULT_CHOKING_INTERVAL = 240  # 4 minutes in seconds
+
+# Modbus registers for choking
+CHOKING_STATUS_REGISTER = 40353
+CHOKING_VALUE_REGISTER = 40349
+CHOKING_SLAVE_ID = 123
+
+# Service names
+SERVICE_SET_CHOKING = "set_choking"
