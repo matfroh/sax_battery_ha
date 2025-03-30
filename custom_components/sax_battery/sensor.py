@@ -114,10 +114,20 @@ class SAXBatterySensor(SensorEntity):
         self.battery = battery
         self._battery_id = battery_id
         self._attr_unique_id = f"{DOMAIN}_{self._battery_id}_{self.__class__.__name__.lower()}"
+class SAXBatterySensor(SensorEntity):
+    """Base class for SAX Battery sensors."""
+
+    def __init__(self, battery, battery_id) -> None:
+        """Initialize the SAX Battery sensor."""
+        self.battery = battery
+        self._battery_id = battery_id
+        self._attr_unique_id = f"{DOMAIN}_{self._battery_id}_{self.__class__.__name__.lower()}"
+        self.cumulative_value = 0  # Initialize the cumulative value
+        self.last_hourly_value = None  # Track the last processed hourly value
 
         # Add device info
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self.battery._data_manager.device_id)},  # noqa: SLF001
+            "identifiers": {(DOMAIN, self.battery._data_manager.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -128,6 +138,19 @@ class SAXBatterySensor(SensorEntity):
     def should_poll(self):
         """Return True if entity has to be polled for state."""
         return True
+
+    def update_cumulative_value(self):
+        """Update the cumulative value with the latest hourly data."""
+        hourly_value = self.battery.data.get(self.hourly_key)  # Defined in child class
+        if hourly_value is not None and hourly_value != self.last_hourly_value:
+            self.cumulative_value += hourly_value
+            self.last_hourly_value = hourly_value
+
+    @property
+    def native_value(self):
+        """Return the cumulative value."""
+        self.update_cumulative_value()  # Ensure cumulative value is updated
+        return self.cumulative_value
 
     async def async_update(self):
         """Update the sensor."""
@@ -253,35 +276,23 @@ class SAXBatteryEnergyProducedSensor(SAXBatterySensor):
     """SAX Battery Energy Produced sensor."""
 
     def __init__(self, battery, battery_id) -> None:
-        """Initialize the sensor."""
         super().__init__(battery, battery_id)
+        self.hourly_key = SAX_ENERGY_PRODUCED
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Energy Produced"
 
-    @property
-    def native_value(self):
-        """Return the native value of the sensor."""
-        return self.battery.data.get(SAX_ENERGY_PRODUCED)
-
-
 class SAXBatteryEnergyConsumedSensor(SAXBatterySensor):
     """SAX Battery Energy Consumed sensor."""
 
     def __init__(self, battery, battery_id) -> None:
-        """Initialize the sensor."""
         super().__init__(battery, battery_id)
+        self.hourly_key = SAX_ENERGY_CONSUMED
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Energy Consumed"
-
-    @property
-    def native_value(self):
-        """Return the native value of the sensor."""
-        return self.battery.data.get(SAX_ENERGY_CONSUMED)
-
 
 class SAXBatteryCombinedPowerSensor(SensorEntity):
     """Combined power sensor for all SAX Batteries."""
