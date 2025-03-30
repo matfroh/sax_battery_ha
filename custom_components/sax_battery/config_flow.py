@@ -100,8 +100,29 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            self._data.update(user_input)
-            return await self.async_step_sensors()
+            try:
+                # Validate MIN_SOC
+                try:
+                    min_soc = int(user_input[CONF_MIN_SOC])
+                    if not 0 <= min_soc <= 100:
+                        errors[CONF_MIN_SOC] = "invalid_min_soc"
+                except (ValueError, TypeError):
+                    errors[CONF_MIN_SOC] = "invalid_min_soc"
+
+                # Validate AUTO_PILOT_INTERVAL
+                try:
+                    auto_pilot_interval = int(user_input[CONF_AUTO_PILOT_INTERVAL])
+                    if not 5 <= auto_pilot_interval <= 300:
+                        errors[CONF_AUTO_PILOT_INTERVAL] = "invalid_interval"
+                except (ValueError, TypeError):
+                    errors[CONF_AUTO_PILOT_INTERVAL] = "invalid_interval"
+
+                if not errors:
+                    self._data.update(user_input)
+                    return await self.async_step_sensors()
+
+            except vol.Invalid:
+                errors["base"] = "invalid_pilot_options"
 
         return self.async_show_form(
             step_id="pilot_options",
@@ -117,11 +138,6 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
-            description_placeholders={
-                "min_soc_description": "Minimum State of Charge to maintain (battery won't discharge below this value)",
-                "interval_description": "How often to update the battery control values (in seconds)",
-                "solar_charging_description": "Enable charging from solar panels",
-            },
         )
 
     async def async_step_sensors(
@@ -202,7 +218,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = {}
         battery_choices = []
 
-        for i in range(1, self._battery_count + 1):
+        battery_count = self._battery_count or 0  # Default to 0 if None
+
+        for i in range(1, battery_count + 1):
             battery_id = f"battery_{chr(96 + i)}"
             battery_choices.append(battery_id)
 
