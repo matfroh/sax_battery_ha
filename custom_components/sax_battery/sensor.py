@@ -824,17 +824,17 @@ class SAXBatterySmartmeterTotalPowerSensor(SAXBatterySensor):
 class SAXBatteryChokingStatusSensor(SensorEntity):
     """Sensor to show the current choking status from the battery."""
 
-    def __init__(self, pilot) -> None:
+    def __init__(self, sax_battery_data) -> None:
         """Initialize the sensor."""
-        self._pilot = pilot
-        self._attr_unique_id = f"{DOMAIN}_choking_status_{self._pilot.sax_data.device_id}"
+        self._data_manager = sax_battery_data
+        self._attr_unique_id = f"{DOMAIN}_choking_status_{self._data_manager.device_id}"
         self._attr_name = "Battery Choking Status"
         self._attr_native_value = None
         self._attr_should_poll = True
 
         # Add device info
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
+            "identifiers": {(DOMAIN, self._data_manager.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -850,7 +850,7 @@ class SAXBatteryChokingStatusSensor(SensorEntity):
 
     async def async_update(self):
         """Update the sensor state by reading from Modbus."""
-        status = await self._pilot.read_choking_status()
+        status = await self._data_manager.read_choking_status()
         if status is not None:
             self._attr_native_value = status
             self._attr_available = True

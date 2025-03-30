@@ -45,7 +45,7 @@ async def async_setup_entry(
         manual_control_switch.set_other_switch(solar_charging_switch)
 
         entities.extend([solar_charging_switch, manual_control_switch])
-        entities.append(SAXBatteryChokingSwitch(sax_battery_data, entry))
+        entities.append(SAXBatteryChokingSwitch(sax_battery_data))
 
 
     for battery in sax_battery_data.batteries.values():
@@ -294,17 +294,15 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
 class SAXBatteryChokingSwitch(SwitchEntity):
     """Switch to enable/disable battery choking functionality."""
 
-    def __init__(self, pilot) -> None:
+    def __init__(self, sax_battery_data) -> None:
         """Initialize the switch."""
-        self._pilot = pilot
-        self._attr_unique_id = (
-            f"{DOMAIN}_choking_switch_{self._pilot.sax_data.device_id}"
-        )
+        self._data_manager = sax_battery_data
+        self._attr_unique_id = f"{DOMAIN}_choking_switch_{self._data_manager.device_id}"
         self._attr_name = "Battery Choking"
 
         # Add device info
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
+            "identifiers": {(DOMAIN, self._data_manager.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -314,7 +312,7 @@ class SAXBatteryChokingSwitch(SwitchEntity):
     @property
     def is_on(self):
         """Return true if choking is enabled."""
-        return self._pilot.choking_enabled
+        return hasattr(self._data_manager, "pilot") and self._data_manager.pilot.choking_enabled
 
     @property
     def icon(self):
@@ -323,8 +321,10 @@ class SAXBatteryChokingSwitch(SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn on choking."""
-        await self._pilot.set_choking(True)
+        if hasattr(self._data_manager, "pilot"):
+            await self._data_manager.pilot.set_choking(True)
 
     async def async_turn_off(self, **kwargs):
         """Turn off choking."""
-        await self._pilot.set_choking(False)
+        if hasattr(self._data_manager, "pilot"):
+            await self._data_manager.pilot.set_choking(False)

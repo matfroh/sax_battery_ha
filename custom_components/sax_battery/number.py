@@ -380,10 +380,10 @@ class SAXBatteryManualPowerEntity(NumberEntity):
 class SAXBatteryChokingValueEntity(NumberEntity):
     """Entity for setting the choking percentage value."""
 
-    def __init__(self, pilot) -> None:
+    def __init__(self, sax_battery_data) -> None:
         """Initialize the entity."""
-        self._pilot = pilot
-        self._attr_unique_id = f"{DOMAIN}_choking_value_{self._pilot.sax_data.device_id}"
+        self._data_manager = sax_battery_data
+        self._attr_unique_id = f"{DOMAIN}_choking_value_{self._data_manager.device_id}"
         self._attr_name = "Battery Choking Value"
         self._attr_native_min_value = -100
         self._attr_native_max_value = 100
@@ -394,7 +394,7 @@ class SAXBatteryChokingValueEntity(NumberEntity):
 
         # Add device info
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
+            "identifiers": {(DOMAIN, self._data_manager.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -404,17 +404,19 @@ class SAXBatteryChokingValueEntity(NumberEntity):
     @property
     def native_value(self):
         """Return the current choking value."""
-        return self._pilot.choking_value
+        return self._data_manager.pilot.choking_value if hasattr(self._data_manager, "pilot") else 0
 
     @property
     def icon(self):
         """Return the icon to use for the entity."""
-        if self._pilot.choking_value > 0:
+        choking_value = self.native_value
+        if choking_value > 0:
             return "mdi:battery-charging"
-        if self._pilot.choking_value < 0:
+        if choking_value < 0:
             return "mdi:battery-negative"
         return "mdi:battery"
 
     async def async_set_native_value(self, value: float) -> None:
         """Handle manual override of choking value."""
-        await self._pilot.set_choking_value(value)
+        if hasattr(self._data_manager, "pilot"):
+            await self._data_manager.pilot.set_choking_value(value)
