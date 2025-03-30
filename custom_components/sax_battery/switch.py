@@ -7,11 +7,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+
 
 from .const import (
     CONF_ENABLE_SOLAR_CHARGING,
     CONF_MANUAL_CONTROL,
     CONF_PILOT_FROM_HA,
+    CONF_ENABLE_CHOKING,
+    DEFAULT_ENABLE_CHOKING,
     DOMAIN,
     SAX_STATUS,
 )
@@ -41,6 +45,8 @@ async def async_setup_entry(
         manual_control_switch.set_other_switch(solar_charging_switch)
 
         entities.extend([solar_charging_switch, manual_control_switch])
+        entities.append(SAXBatteryChokingSwitch(sax_battery_data, entry))
+
 
     for battery in sax_battery_data.batteries.values():
         entities.append(SAXBatteryOnOffSwitch(battery))
@@ -284,3 +290,41 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
 
         except (ConnectionError, ValueError) as err:
             _LOGGER.error("Failed to disable manual control: %s", err)
+
+class SAXBatteryChokingSwitch(SwitchEntity):
+    """Switch to enable/disable battery choking functionality."""
+
+    def __init__(self, pilot) -> None:
+        """Initialize the switch."""
+        self._pilot = pilot
+        self._attr_unique_id = (
+            f"{DOMAIN}_choking_switch_{self._pilot.sax_data.device_id}"
+        )
+        self._attr_name = "Battery Choking"
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def is_on(self):
+        """Return true if choking is enabled."""
+        return self._pilot.choking_enabled
+
+    @property
+    def icon(self):
+        """Return the icon to use for the switch."""
+        return "mdi:battery-charging-outline" if self.is_on else "mdi:battery-outline"
+
+    async def async_turn_on(self, **kwargs):
+        """Turn on choking."""
+        await self._pilot.set_choking(True)
+
+    async def async_turn_off(self, **kwargs):
+        """Turn off choking."""
+        await self._pilot.set_choking(False)

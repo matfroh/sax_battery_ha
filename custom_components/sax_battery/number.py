@@ -6,6 +6,9 @@ import logging
 from homeassistant.components.number import NumberEntity
 from homeassistant.const import PERCENTAGE, UnitOfPower
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+
 
 from .const import (
     CONF_AUTO_PILOT_INTERVAL,
@@ -27,6 +30,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
     battery_count = len(sax_battery_data.batteries)
 
     entities = []
+
+    entities.append(SAXBatteryChokingValueEntity(sax_battery_data))
+
 
     # Add power limiting entities if limit_power is enabled
     if entry.data.get(CONF_LIMIT_POWER, False):
@@ -370,3 +376,45 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         if hasattr(self._data_manager, "pilot"):
             await self._data_manager.pilot.set_manual_power(value)
         self.async_write_ha_state()
+
+class SAXBatteryChokingValueEntity(NumberEntity):
+    """Entity for setting the choking percentage value."""
+
+    def __init__(self, pilot) -> None:
+        """Initialize the entity."""
+        self._pilot = pilot
+        self._attr_unique_id = f"{DOMAIN}_choking_value_{self._pilot.sax_data.device_id}"
+        self._attr_name = "Battery Choking Value"
+        self._attr_native_min_value = -100
+        self._attr_native_max_value = 100
+        self._attr_native_step = 1
+        self._attr_native_unit_of_measurement = PERCENTAGE
+        self._attr_should_poll = True
+        self._attr_mode = "slider"
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def native_value(self):
+        """Return the current choking value."""
+        return self._pilot.choking_value
+
+    @property
+    def icon(self):
+        """Return the icon to use for the entity."""
+        if self._pilot.choking_value > 0:
+            return "mdi:battery-charging"
+        if self._pilot.choking_value < 0:
+            return "mdi:battery-negative"
+        return "mdi:battery"
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Handle manual override of choking value."""
+        await self._pilot.set_choking_value(value)
