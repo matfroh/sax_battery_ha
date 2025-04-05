@@ -304,7 +304,7 @@ class SAXBatteryCumulativeEnergyProducedSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = f"Sax Battery Cumulative Energy Produced"
+        self._attr_name = f"Sax Battery Cumulative Energy going into the battery"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_produced"
         self._last_update_time = None
         self._cumulative_value = 0
@@ -345,7 +345,7 @@ class SAXBatteryCumulativeEnergyConsumedSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = f"Sax Battery Cumulative Energy Consumed"
+        self._attr_name = f"Sax Battery Cumulative Energy coming out of the battery"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_consumed"
         self._last_update_time = None
         self._cumulative_value = 0
