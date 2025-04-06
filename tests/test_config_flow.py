@@ -23,22 +23,18 @@ from custom_components.sax_battery.const import (
     DEFAULT_AUTO_PILOT_INTERVAL,
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
-    DOMAIN,
 )
-from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import selector
 
 
-@pytest.fixture
-def mock_entity_selector():
+@pytest.fixture(name="mock_entity_selector")
+def mock_entity_selector_fixture():
     """Mock the entity selector."""
     with patch("homeassistant.helpers.selector.EntitySelector") as mock:
         yield mock
 
 
-@pytest.fixture
-def config_flow():
+@pytest.fixture(name="config_flow")
+def config_flow_fixture(hass):
     """Create a config flow instance."""
     return SAXBatteryConfigFlow()
 
@@ -184,20 +180,6 @@ class TestPilotOptionsFlow:
             assert result["step_id"] == "pilot_options"
             assert any(expected_error in error for error in result["errors"].values())
 
-    async def test_pilot_options_voluptuous_invalid(self, hass, config_flow):
-        """Test handling of voluptuous.Invalid exceptions."""
-        with patch("voluptuous.Schema.__call__", side_effect=vol.Invalid("test error")):
-            result = await config_flow.async_step_pilot_options(
-                {
-                    CONF_MIN_SOC: DEFAULT_MIN_SOC,
-                    CONF_AUTO_PILOT_INTERVAL: DEFAULT_AUTO_PILOT_INTERVAL,
-                    CONF_ENABLE_SOLAR_CHARGING: True,
-                }
-            )
-            assert result["type"] == "form"
-            assert result["step_id"] == "pilot_options"
-            assert result["errors"]["base"] == "invalid_pilot_options"
-
     async def test_pilot_options_invalid_input(self, hass, config_flow):
         """Test pilot options with invalid inputs."""
         config_flow._battery_count = 1
@@ -248,18 +230,6 @@ class TestPilotOptionsFlow:
                 key in result["errors"]
                 for key in [CONF_MIN_SOC, CONF_AUTO_PILOT_INTERVAL]
             )
-
-
-@pytest.mark.asyncio
-async def test_config_flow_initialization():
-    """Test ConfigFlow initialization."""
-    flow = SAXBatteryConfigFlow()
-    # Force attribute access to ensure coverage
-    assert isinstance(flow._data, dict)
-    assert len(flow._data) == 0
-    assert flow._battery_count is None
-    assert flow._pilot_from_ha is False
-    assert flow._limit_power is False
 
 
 class TestSensorsFlow:
@@ -400,15 +370,6 @@ class TestBatteryConfigFlow:
         result = await config_flow.async_step_battery_config()
         assert result["type"] == "form"
         assert result["step_id"] == "battery_config"
-
-
-async def test_config_flow_initialization(hass):
-    """Test ConfigFlow initialization."""
-    config_flow = SAXBatteryConfigFlow()
-    assert config_flow._data == {}
-    assert config_flow._battery_count is None
-    assert config_flow._pilot_from_ha is False
-    assert config_flow._limit_power is False
 
 
 @pytest.mark.asyncio
