@@ -101,7 +101,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
                 )
             )
 
-            await asyncio.sleep(120)
+            await asyncio.sleep(180)
             await self.async_update()
 
         except (ConnectionError, ValueError) as err:
