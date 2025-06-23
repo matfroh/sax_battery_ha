@@ -1,5 +1,5 @@
 -r requirements.txt
-colorlog==6.9.0
 homeassistant
+colorlog==6.9.0
 pip>=25.1.1
 ruff==0.11.2
