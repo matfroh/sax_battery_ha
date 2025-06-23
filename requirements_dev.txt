@@ -1,0 +1,5 @@
+-r requirements.txt
+colorlog==6.9.0
+homeassistant
+pip>=25.1.1
+ruff==0.11.2
