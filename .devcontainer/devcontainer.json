@@ -17,6 +17,7 @@
         "github.vscode-github-actions",
         "GitHub.vscode-pull-request-github",
         "GitHub.copilot",
+        "mhutchie.git-graph",
         "donjayamanne.python-extension-pack",
         "njpwerner.autodocstring",
         "batisteo.vscode-django",
