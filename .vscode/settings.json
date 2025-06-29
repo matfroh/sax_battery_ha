@@ -8,4 +8,11 @@
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
+    "cSpell.words": [
+        "codeowners",
+        "pymodbus"
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
+          "reportIncompatibleMethodOverride": false
+    },
 }
