@@ -9,8 +9,6 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfElectricCurrent,
@@ -20,17 +18,18 @@ from homeassistant.const import (
     UnitOfPower,
     UnitOfTemperature,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    DOMAIN,
     CONF_MASTER_BATTERY,
+    DOMAIN,
     SAX_AC_POWER_TOTAL,
     SAX_ACTIVE_POWER_L1,
     SAX_ACTIVE_POWER_L2,
     SAX_ACTIVE_POWER_L3,
     SAX_APPARENT_POWER,
     SAX_CAPACITY,
-    SAX_COMBINED_POWER,
     SAX_COMBINED_SOC,
     SAX_CURRENT_L1,
     SAX_CURRENT_L2,
@@ -315,7 +314,7 @@ class SAXBatteryCumulativeEnergyProducedSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = f"Sax Battery Cumulative Energy going into the battery"
+        self._attr_name = "Sax Battery Cumulative Energy going into the battery"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_produced"
         self._last_update_time: datetime | None = None
         self._cumulative_value = 0
@@ -357,7 +356,7 @@ class SAXBatteryCumulativeEnergyConsumedSensor(SAXBatterySensor):
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = f"Sax Battery Cumulative Energy coming out of the battery"
+        self._attr_name = "Sax Battery Cumulative Energy coming out of the battery"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_consumed"
         self._last_update_time: datetime | None = None
         self._cumulative_value = 0

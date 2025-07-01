@@ -189,7 +189,7 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
         """Turn on solar charging."""
         try:
             # Turn off manual control if it's on
-            if self._other_switch and self._other_switch.is_on:
+            if self._other_switch is not None and self._other_switch.is_on is True:
                 await self._other_switch.async_turn_off()
 
             # Call the pilot's set_solar_charging method
@@ -252,7 +252,7 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
         """Turn on manual control."""
         try:
             # Turn off solar charging switch if it's on
-            if self._other_switch and self._other_switch.is_on:
+            if self._other_switch is not None and self._other_switch.is_on is True:
                 await self._other_switch.async_turn_off()
             elif hasattr(self._data_manager, "pilot"):
                 # Directly turn off solar charging if the switch isn't available

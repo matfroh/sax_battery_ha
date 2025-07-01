@@ -210,7 +210,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Generate schema for all batteries
-        schema: dict[vol.Marker, type] = {}
+        schema: dict[vol.Marker, Any] = {}
         battery_choices = []
         battery_count = self._battery_count or 0  # Default to 0 if None
 

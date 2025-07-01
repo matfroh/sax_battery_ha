@@ -142,7 +142,7 @@ class SAXBatteryData:
                 port = int(self.entry.data.get(f"{battery_id}_port", 502))
 
                 client = ModbusTcpClient(host=host, port=port, timeout=10)
-                if not client.connect():
+                if not client.connect():  # type: ignore[no-untyped-call]
                     msg = f"Could not connect to {host}:{port}"
                     raise ConnectionError(msg)
 
@@ -484,9 +484,10 @@ class SAXBattery:
                     slave=register_info["slave"],  # Use register-specific slave ID
                 )
                 if hasattr(result, "registers"):
-                    return (
-                        result.registers[0] + register_info.get("offset", 0)
-                    ) * register_info.get("scale", 1)
+                    return float(
+                        (result.registers[0] + register_info.get("offset", 0))
+                        * register_info.get("scale", 1)
+                    )
                 _LOGGER.error(
                     "Modbus error reading address %s: %s",
                     register_info["address"],
@@ -495,7 +496,6 @@ class SAXBattery:
                 return None
 
             return await self.hass.async_add_executor_job(_read_register)
-            return None  # noqa: TRY300
         except (ConnectionError, TimeoutError, ValueError) as err:
             _LOGGER.error(
                 "Failed to read register %s: %s", register_info["address"], err
@@ -570,7 +570,7 @@ class SAXBattery:
             # Perform a bulk read
             try:
 
-                def _bulk_read():
+                def _bulk_read() -> Any:
                     return client.read_holding_registers(
                         address=start_address,
                         count=register_count,
@@ -588,11 +588,12 @@ class SAXBattery:
                     )
                     return False
 
+                # At this point, result has registers attribute
                 # Parse the bulk response
                 for reg_name, reg_info in slave_registers.items():
                     reg_offset = reg_info["address"] - start_address
-                    if 0 <= reg_offset < len(result.registers):  # Ensure index is valid
-                        raw_value = result.registers[reg_offset]
+                    if 0 <= reg_offset < len(result.registers):  # type: ignore[union-attr]
+                        raw_value = result.registers[reg_offset]  # type: ignore[union-attr]
                         value = (raw_value + reg_info.get("offset", 0)) * reg_info.get(
                             "scale", 1
                         )
@@ -605,7 +606,7 @@ class SAXBattery:
                             reg_name,
                             reg_info["address"],
                             reg_offset,
-                            len(result.registers),
+                            len(result.registers),  # type: ignore[union-attr]
                         )
 
             except (ConnectionError, TimeoutError, ValueError) as err:
