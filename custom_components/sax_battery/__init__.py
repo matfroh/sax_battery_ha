@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from typing import Any
 
 from pymodbus.client import ModbusTcpClient
 
@@ -54,12 +55,12 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
 
 
-async def async_setup(hass: HomeAssistant, config):
+async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the SAX Battery integration."""
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up SAX Battery from a config entry."""
     try:
         # Create SAX Battery data instance
@@ -83,7 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
@@ -109,24 +110,24 @@ class SAXBatteryData:
         self.hass = hass
         self.entry = entry
         self.device_id = entry.data.get(CONF_DEVICE_ID)
-        self.master_battery = None
-        self.batteries = {}
-        self.modbus_clients = {}
+        self.master_battery: SAXBattery | None = None
+        self.batteries: dict[str, SAXBattery] = {}
+        self.modbus_clients: dict[str, ModbusTcpClient] = {}
         self.power_sensor_entity_id = entry.data.get("power_sensor_entity_id")
         self.pf_sensor_entity_id = entry.data.get("pf_sensor_entity_id")
-        self.modbus_registers = {}
-        self.last_updates = {}  # Initialize empty dictionary for last updates
+        self.modbus_registers: dict[str, dict[str, Any]] = {}
+        self.last_updates: dict[str, dict[str, float]] = {}  # Initialize empty dictionary for last updates
 
-    async def async_init(self):
+    async def async_init(self) -> None:
         """Initialize Modbus connections and battery data."""
-        battery_count = self.entry.data.get("battery_count")
+        battery_count = self.entry.data.get("battery_count", 1)
         master_battery_id = self.entry.data.get("master_battery")
 
         _LOGGER.debug(
             "Initializing %s batteries. Master: %s", battery_count, master_battery_id
         )
 
-        for i in range(1, battery_count + 1):
+        for i in range(1, int(battery_count) + 1):
             battery_id = f"battery_{chr(96 + i)}"
             host = self.entry.data.get(f"{battery_id}_host")
             port = self.entry.data.get(f"{battery_id}_port")
@@ -135,9 +136,13 @@ class SAXBatteryData:
 
             try:
                 # Initialize Modbus TCP client
+                host = str(self.entry.data.get(f"{battery_id}_host", ""))
+                port = int(self.entry.data.get(f"{battery_id}_port", 502))
+                
                 client = ModbusTcpClient(host=host, port=port, timeout=10)
                 if not client.connect():
-                    raise ConnectionError(f"Could not connect to {host}:{port}")
+                    msg = f"Could not connect to {host}:{port}"
+                    raise ConnectionError(msg)
 
                 self.modbus_clients[battery_id] = client
                 _LOGGER.info("Successfully connected to battery at %s:%s", host, port)
@@ -450,19 +455,19 @@ class SAXBatteryData:
 class SAXBattery:
     """Represents a single SAX Battery."""
 
-    def __init__(self, hass, data, battery_id) -> None:
+    def __init__(self, hass: HomeAssistant, data: SAXBatteryData, battery_id: str) -> None:
         """Initialize the battery."""
         self.hass = hass
-        self.data = {}  # Will store the latest readings
+        self.data: dict[str, Any] = {}  # Will store the latest readings
         self._data_manager = data
         self.battery_id = battery_id
         self._last_updates = data.last_updates[battery_id]
 
-    async def async_init(self):
+    async def async_init(self) -> None:
         """Initialize battery readings."""
         await self.async_update()
 
-    async def read_modbus_register(self, client, register_info):
+    async def read_modbus_register(self, client: ModbusTcpClient, register_info: dict[str, Any]) -> float | None:
         """Read a Modbus register with proper error handling."""
         try:
             result = await self.hass.async_add_executor_job(
@@ -489,7 +494,7 @@ class SAXBattery:
             )
         return None
 
-    async def async_update(self):
+    async def async_update(self) -> bool:
         """Update the battery data."""
         try:
             client = self._data_manager.modbus_clients[self.battery_id]
@@ -515,14 +520,14 @@ class SAXBattery:
             # Filter registers for slave ID 40 and find the range
             slave_id = 40
             slave_registers = {
-                reg_name: reg_info 
-                for reg_name, reg_info in registers.items() 
+                reg_name: reg_info
+                for reg_name, reg_info in registers.items()
                 if reg_info["slave"] == slave_id
             }
-            
+
             if not slave_registers:
                 return True  # Nothing to update for this slave
-                
+
             # Check if any slave 40 registers need updating based on scan_interval
             needs_update = False
             for reg_name, reg_info in slave_registers.items():
@@ -530,14 +535,14 @@ class SAXBattery:
                 if time_since_update >= reg_info["scan_interval"]:
                     needs_update = True
                     break
-                    
+
             if not needs_update:
                 return True  # No slave 40 registers need updating yet
-                
+
             # Calculate the range of addresses to read
             start_address = min(reg_info["address"] for reg_info in slave_registers.values())
             end_address = max(
-                reg_info["address"] + reg_info.get("count", 1) - 1 
+                reg_info["address"] + reg_info.get("count", 1) - 1
                 for reg_info in slave_registers.values()
             )
             register_count = end_address - start_address + 1
@@ -559,7 +564,7 @@ class SAXBattery:
                 
                 if not hasattr(result, "registers"):
                     _LOGGER.error(
-                        "Modbus error reading range %s-%s: %s", 
+                        "Modbus error reading range %s-%s: %s",
                         start_address, end_address, result
                     )
                     return False

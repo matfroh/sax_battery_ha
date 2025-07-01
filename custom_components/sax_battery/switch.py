@@ -1,6 +1,7 @@
 """Switch platform for SAX Battery integration."""
 
 import logging
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -50,7 +51,7 @@ async def async_setup_entry(
 class SAXBatteryOnOffSwitch(SwitchEntity):
     """SAX Battery On/Off switch."""
 
-    def __init__(self, battery) -> None:
+    def __init__(self, battery: Any) -> None:
         """Initialize the switch."""
         self.battery = battery
         self._attr_unique_id = f"{DOMAIN}_{battery.battery_id}_switch"
@@ -70,12 +71,12 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
         }
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool | None:
         """Return true if switch is on."""
         status = self.battery.data.get(SAX_STATUS)
         return status == self._registers["state_on"]
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
         try:
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
@@ -109,7 +110,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
                 "Failed to turn on battery %s: %s", self.battery.battery_id, err
             )
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
         try:
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
@@ -144,16 +145,16 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             )
 
     @property
-    def available(self):
+    def available(self) -> bool:
         """Return True if entity is available."""
         return SAX_STATUS in self.battery.data
 
     @property
-    def should_poll(self):
+    def should_poll(self) -> bool:
         """Return True if entity has to be polled for state."""
         return True
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the switch state."""
         await self.battery.async_update()
 
@@ -182,7 +183,7 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
         """Set reference to the other switch (manual control)."""
         self._other_switch = other_switch
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on solar charging."""
         try:
             # Turn off manual control if it's on
@@ -203,7 +204,7 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
         except (ConnectionError, ValueError) as err:
             _LOGGER.error("Failed to enable solar charging: %s", err)
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off solar charging."""
         try:
             # Call the pilot's set_solar_charging method
@@ -245,7 +246,7 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
         """Set reference to the other switch (solar charging)."""
         self._other_switch = other_switch
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on manual control."""
         try:
             # Turn off solar charging switch if it's on
@@ -266,7 +267,7 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
         except (ConnectionError, ValueError) as err:
             _LOGGER.error("Failed to enable manual control: %s", err)
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off manual control."""
         try:
             # Turn on solar charging when manual control is disabled

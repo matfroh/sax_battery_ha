@@ -173,7 +173,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
             "sw_version": "1.0",
         }
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Set up periodic updates."""
         self._remove_interval = async_track_time_interval(
             self.hass, self._periodic_write, timedelta(minutes=2)
@@ -359,7 +359,7 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         """Return true if the entity is available."""
         return self._data_manager.entry.data.get(CONF_MANUAL_CONTROL, False)
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Register callbacks."""
         # You might need to add a callback/update mechanism here
 

@@ -1,3 +1,4 @@
+from typing import Any
 """Battery pilot service for SAX Battery integration."""
 
 from datetime import timedelta
