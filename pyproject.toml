@@ -7,7 +7,7 @@ description = "SAX battery pilot for HomeAssistant"
 readme = "README.md"
 authors = [
   { name = "matfroh" },
-                                                    
+
 ]
 keywords = ["home", "automation"]
 classifiers = [
@@ -22,7 +22,7 @@ requires-python = ">=3.13.2"
 dependencies = [
   "pymodbus==3.8.3",
   "voluptuous==0.15.2",
-                          
+
 ]
 
 [project.urls]
@@ -573,7 +573,7 @@ combine-as-imports = true
 split-on-trailing-comma = false
 
 [tool.ruff.lint.per-file-ignores]
-
+"tests/*" = ["SLF001"]  # Allow private member access in tests
 # Temporary
 "tests/**" = ["PTH"]
 
@@ -582,3 +582,6 @@ max-complexity = 25
 
 [tool.ruff.lint.pydocstyle]
 property-decorators = ["propcache.api.cached_property"]
+
+[tool.mypy]
+python_version = "3.13"
