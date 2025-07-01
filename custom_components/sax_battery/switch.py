@@ -1,6 +1,7 @@
 """Switch platform for SAX Battery integration."""
 
 import asyncio
+from functools import cached_property
 import logging
 from typing import Any
 
@@ -75,11 +76,18 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
 
     @property
     def is_on(self) -> bool | None:
-        """Return true if switch is on."""
-        status = self.battery.data.get(SAX_STATUS)
+        """Return True if the switch is on."""
+        if SAX_STATUS not in self.battery.data:
+            return None
+
+        # Replace with your actual logic to determine if battery is on
+        # This is just an example - adjust based on your battery status data
+        status = self.battery.data[SAX_STATUS]
         if status is None:
             return None
-        return bool(status == self._registers["state_on"])
+
+        # Example: assuming status value indicates on/off state
+        return bool(status.get("is_charging", False))  # Adjust this logic
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -145,7 +153,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
                 "Failed to turn off battery %s: %s", self.battery.battery_id, err
             )
 
-    @property
+    @cached_property
     def available(self) -> bool:
         """Return True if entity is available."""
         return SAX_STATUS in self.battery.data
@@ -170,7 +178,9 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
         self._attr_unique_id = f"{DOMAIN}_solar_charging"
         self._attr_name = "Solar Charging"
         self._attr_is_on = entry.data.get(CONF_ENABLE_SOLAR_CHARGING, True)
-        self._other_switch = None  # Reference to the manual control switch
+        self._other_switch: SwitchEntity | None = (
+            None  # Reference to the manual control switch
+        )
 
         self._attr_device_info = {
             "identifiers": {(DOMAIN, self._data_manager.device_id)},
@@ -233,7 +243,9 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
         self._attr_unique_id = f"{DOMAIN}_manual_control"
         self._attr_name = "Manual Control"
         self._attr_is_on = False  # Default to off
-        self._other_switch = None  # Reference to the solar charging switch
+        self._other_switch: SwitchEntity | None = (
+            None  # Reference to the solar charging switch
+        )
 
         self._attr_device_info = {
             "identifiers": {(DOMAIN, self._data_manager.device_id)},

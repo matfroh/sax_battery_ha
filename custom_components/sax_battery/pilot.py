@@ -443,6 +443,7 @@ class SAXBatteryPilot:
         """Apply the stored manual power value with current SOC constraints."""
         # Use the current calculated power as the manual power value
         power_value = self.calculated_power
+        adjusted_power: float = 0.0
 
         # Apply SOC constraints
         # Check if the combined_data attribute exists
@@ -456,14 +457,14 @@ class SAXBatteryPilot:
 
         # Don't discharge below min SOC
         if master_soc <= self.min_soc and power_value < 0:
-            adjusted_power = 0
+            adjusted_power = 0.0
             _LOGGER.debug(
                 "Battery SOC at minimum (%s%%), preventing manual discharge", master_soc
             )
 
-        # Don't charge above 100%
+        # Don't charge above 100% ???
         elif master_soc >= 100 and power_value > 0:
-            adjusted_power = 0
+            adjusted_power = 0.0
             _LOGGER.debug("Battery SOC at maximum (100%), preventing manual charge")
         else:
             adjusted_power = power_value
