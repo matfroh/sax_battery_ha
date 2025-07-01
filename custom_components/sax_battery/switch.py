@@ -56,7 +56,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
         self.battery = battery
         self._attr_unique_id = f"{DOMAIN}_{battery.battery_id}_switch"
         self._attr_name = f"Sax {battery.battery_id.replace('_', ' ').title()} On/Off"
-#        self._attr_has_entity_name = True
+        #        self._attr_has_entity_name = True
         self._registers = self.battery._data_manager.modbus_registers[  # noqa: SLF001
             battery.battery_id
         ][SAX_STATUS]
@@ -74,7 +74,9 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
     def is_on(self) -> bool | None:
         """Return true if switch is on."""
         status = self.battery.data.get(SAX_STATUS)
-        return status == self._registers["state_on"]
+        if status is None:
+            return None
+        return bool(status == self._registers["state_on"])
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -162,7 +164,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
 class SAXBatterySolarChargingSwitch(SwitchEntity):
     """Switch to control solar charging for SAX Battery."""
 
-    def __init__(self, sax_battery_data, entry) -> None:
+    def __init__(self, sax_battery_data: Any, entry: Any) -> None:
         """Initialize the switch."""
         self._data_manager = sax_battery_data
         self._entry = entry
@@ -225,7 +227,7 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
 class SAXBatteryManualControlSwitch(SwitchEntity):
     """Switch to enable/disable manual control for SAX Battery."""
 
-    def __init__(self, sax_battery_data, entry) -> None:
+    def __init__(self, sax_battery_data: Any, entry: Any) -> None:
         """Initialize the switch."""
         self._data_manager = sax_battery_data
         self._entry = entry

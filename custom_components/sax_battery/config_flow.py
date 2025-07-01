@@ -40,9 +40,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pilot_from_ha: bool = False
         self._limit_power: bool = False
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> Any:
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -139,9 +137,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_sensors(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
+    async def async_step_sensors(self, user_input: dict[str, Any] | None = None) -> Any:
         """Configure power and PF sensors."""
         errors: dict[str, str] = {}
 
@@ -214,9 +210,8 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Generate schema for all batteries
-        schema = {}
+        schema: dict[vol.Marker, type] = {}
         battery_choices = []
-
         battery_count = self._battery_count or 0  # Default to 0 if None
 
         for i in range(1, battery_count + 1):

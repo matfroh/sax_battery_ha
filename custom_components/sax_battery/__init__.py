@@ -116,7 +116,9 @@ class SAXBatteryData:
         self.power_sensor_entity_id = entry.data.get("power_sensor_entity_id")
         self.pf_sensor_entity_id = entry.data.get("pf_sensor_entity_id")
         self.modbus_registers: dict[str, dict[str, Any]] = {}
-        self.last_updates: dict[str, dict[str, float]] = {}  # Initialize empty dictionary for last updates
+        self.last_updates: dict[
+            str, dict[str, float]
+        ] = {}  # Initialize empty dictionary for last updates
 
     async def async_init(self) -> None:
         """Initialize Modbus connections and battery data."""
@@ -138,7 +140,7 @@ class SAXBatteryData:
                 # Initialize Modbus TCP client
                 host = str(self.entry.data.get(f"{battery_id}_host", ""))
                 port = int(self.entry.data.get(f"{battery_id}_port", 502))
-                
+
                 client = ModbusTcpClient(host=host, port=port, timeout=10)
                 if not client.connect():
                     msg = f"Could not connect to {host}:{port}"
@@ -455,7 +457,9 @@ class SAXBatteryData:
 class SAXBattery:
     """Represents a single SAX Battery."""
 
-    def __init__(self, hass: HomeAssistant, data: SAXBatteryData, battery_id: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, data: SAXBatteryData, battery_id: str
+    ) -> None:
         """Initialize the battery."""
         self.hass = hass
         self.data: dict[str, Any] = {}  # Will store the latest readings
@@ -467,26 +471,30 @@ class SAXBattery:
         """Initialize battery readings."""
         await self.async_update()
 
-    async def read_modbus_register(self, client: ModbusTcpClient, register_info: dict[str, Any]) -> float | None:
+    async def read_modbus_register(
+        self, client: ModbusTcpClient, register_info: dict[str, Any]
+    ) -> float | None:
         """Read a Modbus register with proper error handling."""
         try:
-            result = await self.hass.async_add_executor_job(
-                lambda: client.read_holding_registers(
+
+            def _read_register() -> float | None:
+                result = client.read_holding_registers(
                     address=register_info["address"],
                     count=register_info["count"],
                     slave=register_info["slave"],  # Use register-specific slave ID
                 )
-            )
+                if hasattr(result, "registers"):
+                    return (
+                        result.registers[0] + register_info.get("offset", 0)
+                    ) * register_info.get("scale", 1)
+                _LOGGER.error(
+                    "Modbus error reading address %s: %s",
+                    register_info["address"],
+                    result,
+                )
+                return None
 
-            if hasattr(result, "registers"):
-                return (
-                    result.registers[0] + register_info.get("offset", 0)
-                ) * register_info.get("scale", 1)
-            _LOGGER.error(
-                "Modbus error reading address %s: %s",
-                register_info["address"],
-                result,
-            )
+            return await self.hass.async_add_executor_job(_read_register)
             return None  # noqa: TRY300
         except (ConnectionError, TimeoutError, ValueError) as err:
             _LOGGER.error(
@@ -515,7 +523,9 @@ class SAXBattery:
                             self.data[register_name] = result
                             self._last_updates[register_name] = current_time
                     except (ConnectionError, TimeoutError) as err:
-                        _LOGGER.error("Error updating register %s: %s", register_name, err)
+                        _LOGGER.error(
+                            "Error updating register %s: %s", register_name, err
+                        )
 
             # Filter registers for slave ID 40 and find the range
             slave_id = 40
@@ -540,57 +550,72 @@ class SAXBattery:
                 return True  # No slave 40 registers need updating yet
 
             # Calculate the range of addresses to read
-            start_address = min(reg_info["address"] for reg_info in slave_registers.values())
+            start_address = min(
+                reg_info["address"] for reg_info in slave_registers.values()
+            )
             end_address = max(
                 reg_info["address"] + reg_info.get("count", 1) - 1
                 for reg_info in slave_registers.values()
             )
             register_count = end_address - start_address + 1
-            
+
             _LOGGER.debug(
                 "Batch reading registers %s to %s (slave %s, count: %s)",
-                start_address, end_address, slave_id, register_count
+                start_address,
+                end_address,
+                slave_id,
+                register_count,
             )
-            
+
             # Perform a bulk read
             try:
-                result = await self.hass.async_add_executor_job(
-                    lambda: client.read_holding_registers(
+
+                def _bulk_read():
+                    return client.read_holding_registers(
                         address=start_address,
                         count=register_count,
                         slave=slave_id,
                     )
-                )
-                
+
+                result = await self.hass.async_add_executor_job(_bulk_read)
+
                 if not hasattr(result, "registers"):
                     _LOGGER.error(
                         "Modbus error reading range %s-%s: %s",
-                        start_address, end_address, result
+                        start_address,
+                        end_address,
+                        result,
                     )
                     return False
-                    
+
                 # Parse the bulk response
                 for reg_name, reg_info in slave_registers.items():
                     reg_offset = reg_info["address"] - start_address
                     if 0 <= reg_offset < len(result.registers):  # Ensure index is valid
                         raw_value = result.registers[reg_offset]
-                        value = (raw_value + reg_info.get("offset", 0)) * reg_info.get("scale", 1)
+                        value = (raw_value + reg_info.get("offset", 0)) * reg_info.get(
+                            "scale", 1
+                        )
                         self.data[reg_name] = value
                         # Update the timestamp for this register
                         self._last_updates[reg_name] = current_time
                     else:
                         _LOGGER.warning(
                             "Register %s (address %s) offset %s is out of range for result length %s",
-                            reg_name, reg_info["address"], reg_offset, len(result.registers)
+                            reg_name,
+                            reg_info["address"],
+                            reg_offset,
+                            len(result.registers),
                         )
-                        
+
             except (ConnectionError, TimeoutError, ValueError) as err:
-                _LOGGER.error("Failed to read bulk registers for slave %s: %s", slave_id, err)
+                _LOGGER.error(
+                    "Failed to read bulk registers for slave %s: %s", slave_id, err
+                )
                 return False
-                
+
         except TimeoutError as err:
             _LOGGER.error("Error updating battery %s: %s", self.battery_id, err)
             return False
-            
-        return True
 
+        return True

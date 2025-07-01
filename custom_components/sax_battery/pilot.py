@@ -1,8 +1,8 @@
-from typing import Any
 """Battery pilot service for SAX Battery integration."""
 
 from datetime import timedelta
 import logging
+from typing import Any
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.components.switch import SwitchEntity
@@ -24,13 +24,13 @@ from .const import (
     DEFAULT_MIN_SOC,
     DOMAIN,
     SAX_COMBINED_POWER,
-    SAX_COMBINED_SOC
+    SAX_COMBINED_SOC,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_pilot(hass: HomeAssistant, entry_id: str):
+async def async_setup_pilot(hass: HomeAssistant, entry_id: str) -> bool:
     """Set up the SAX Battery pilot service."""
     sax_data = hass.data[DOMAIN][entry_id]
 
@@ -59,7 +59,7 @@ async def async_setup_pilot(hass: HomeAssistant, entry_id: str):
 class SAXBatteryPilot:
     """Manages automatic battery pilot calculations and control."""
 
-    def __init__(self, hass, sax_data) -> None:
+    def __init__(self, hass: HomeAssistant, sax_data: Any) -> None:
         """Initialize the battery pilot."""
         self.hass = hass
         self.sax_data = sax_data
@@ -92,7 +92,7 @@ class SAXBatteryPilot:
         self._remove_config_update = None
         self._running = False
 
-    def _update_config_values(self):
+    def _update_config_values(self) -> None:
         """Update configuration values from entry data."""
         self.power_sensor_entity_id = self.entry.data.get(CONF_POWER_SENSOR)
         self.pf_sensor_entity_id = self.entry.data.get(CONF_PF_SENSOR)
@@ -110,7 +110,7 @@ class SAXBatteryPilot:
             self.update_interval,
         )
 
-    async def async_start(self):
+    async def async_start(self) -> None:
         """Start the pilot service."""
         if self._running:
             return
@@ -140,7 +140,7 @@ class SAXBatteryPilot:
         await self._async_update_pilot(None)
         _LOGGER.info("SAX Battery pilot configuration updated")
 
-    async def async_stop(self):
+    async def async_stop(self) -> None:
         """Stop the pilot service."""
         if not self._running:
             return
@@ -256,7 +256,9 @@ class SAXBatteryPilot:
                         )
 
             # Get current battery power
-            battery_power_state = self.hass.states.get("sensor.sax_battery_combined_power")
+            battery_power_state = self.hass.states.get(
+                "sensor.sax_battery_combined_power"
+            )
             battery_power = 0
             if battery_power_state is not None:
                 try:
@@ -277,9 +279,11 @@ class SAXBatteryPilot:
                         err,
                     )
             # Check if the combined_data attribute exists
-            if hasattr(self.master_battery._data_manager, 'combined_data'):
+            if hasattr(self.master_battery._data_manager, "combined_data"):
                 # Get the SOC from the combined_data dictionary
-                master_soc = self.master_battery._data_manager.combined_data.get(SAX_COMBINED_SOC, 0)
+                master_soc = self.master_battery._data_manager.combined_data.get(
+                    SAX_COMBINED_SOC, 0
+                )
             else:
                 master_soc = 0
 
@@ -364,9 +368,11 @@ class SAXBatteryPilot:
         """Apply SOC constraints to a power value."""
         # Get current battery SOC
         # Check if the combined_data attribute exists
-        if hasattr(self.master_battery._data_manager, 'combined_data'):
+        if hasattr(self.master_battery._data_manager, "combined_data"):
             # Get the SOC from the combined_data dictionary
-            master_soc = self.master_battery._data_manager.combined_data.get(SAX_COMBINED_SOC, 0)
+            master_soc = self.master_battery._data_manager.combined_data.get(
+                SAX_COMBINED_SOC, 0
+            )
         else:
             master_soc = 0
 
@@ -439,9 +445,11 @@ class SAXBatteryPilot:
 
         # Apply SOC constraints
         # Check if the combined_data attribute exists
-        if hasattr(self.master_battery._data_manager, 'combined_data'):
+        if hasattr(self.master_battery._data_manager, "combined_data"):
             # Get the SOC from the combined_data dictionary
-            master_soc = self.master_battery._data_manager.combined_data.get(SAX_COMBINED_SOC, 0)
+            master_soc = self.master_battery._data_manager.combined_data.get(
+                SAX_COMBINED_SOC, 0
+            )
         else:
             master_soc = 0
 

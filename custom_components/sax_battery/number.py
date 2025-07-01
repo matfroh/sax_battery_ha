@@ -60,7 +60,7 @@ async def async_setup_entry(
 class SAXBatteryMaxChargeNumber(NumberEntity):
     """SAX Battery Maximum Charge Power number."""
 
-    def __init__(self, sax_battery_data, max_value) -> None:
+    def __init__(self, sax_battery_data: Any, max_value: float) -> None:
         """Initialize the SAX Battery Maximum Charge Power number.
 
         Args:
@@ -170,7 +170,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
         self._attr_native_step = 50
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_native_value = max_value
-        self._last_written_value = None  # Track the last written value
+        self._last_written_value: float | None = None  # Track the last written value
 
         self._attr_device_info = {
             "identifiers": {(DOMAIN, self._data_manager.device_id)},
