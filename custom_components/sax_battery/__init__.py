@@ -1,6 +1,5 @@
 """Integration for SAX Battery."""
 
-import asyncio
 import logging
 from typing import Any
 
@@ -13,7 +12,6 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_DEVICE_ID,
-    CONF_MANUAL_CONTROL,
     CONF_PILOT_FROM_HA,
     DOMAIN,
     SAX_AC_POWER_TOTAL,
@@ -77,7 +75,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Set up pilot service if enabled
     if entry.data.get(CONF_PILOT_FROM_HA, False):
-        from .pilot import async_setup_pilot
+        # Import here to avoid circular import issues
+        from .pilot import async_setup_pilot  # noqa: PLC0415
 
         await async_setup_pilot(hass, entry.entry_id)
 
@@ -144,7 +143,7 @@ class SAXBatteryData:
                 client = ModbusTcpClient(host=host, port=port, timeout=10)
                 if not client.connect():  # type: ignore[no-untyped-call]
                     msg = f"Could not connect to {host}:{port}"
-                    raise ConnectionError(msg)
+                    raise ConfigEntryNotReady(msg)  # noqa: TRY301
 
                 self.modbus_clients[battery_id] = client
                 _LOGGER.info("Successfully connected to battery at %s:%s", host, port)

@@ -1,5 +1,6 @@
 """Switch platform for SAX Battery integration."""
 
+import asyncio
 import logging
 from typing import Any
 
@@ -42,8 +43,10 @@ async def async_setup_entry(
 
         entities.extend([solar_charging_switch, manual_control_switch])
 
-    for battery in sax_battery_data.batteries.values():
-        entities.append(SAXBatteryOnOffSwitch(battery))
+    entities.extend(
+        SAXBatteryOnOffSwitch(battery)
+        for battery in sax_battery_data.batteries.values()
+    )
 
     async_add_entities(entities)
 
@@ -84,8 +87,6 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
             slave_id = self._registers.get("slave", 64)
 
-            import asyncio
-
             await asyncio.sleep(0.1)
 
             _LOGGER.debug(
@@ -96,7 +97,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             )
 
             # Use write_registers (plural) instead of write_register
-            result = await self.battery.hass.async_add_executor_job(
+            await self.battery.hass.async_add_executor_job(
                 lambda: client.write_registers(
                     self._registers["address"],
                     [self._registers["command_on"]],  # Note the list format
@@ -118,8 +119,6 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
             slave_id = self._registers.get("slave", 64)
 
-            import asyncio
-
             await asyncio.sleep(0.1)
 
             _LOGGER.debug(
@@ -130,7 +129,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             )
 
             # Use write_registers (plural) instead of write_register
-            result = await self.battery.hass.async_add_executor_job(
+            await self.battery.hass.async_add_executor_job(
                 lambda: client.write_registers(
                     self._registers["address"],
                     [self._registers["command_off"]],  # Note the list format
