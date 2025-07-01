@@ -387,7 +387,7 @@ class SAXBatteryCumulativeEnergyConsumedSensor(SAXBatterySensor):
 class SAXBatteryCombinedPowerSensor(SensorEntity):
     """Combined power sensor for all SAX Batteries."""
 
-    def __init__(self, sax_battery_data) -> None:
+    def __init__(self, sax_battery_data: Any) -> None:
         """Initialize the sensor."""
         self._data_manager = sax_battery_data
         self._attr_unique_id = f"{DOMAIN}_combined_power"
@@ -428,7 +428,7 @@ class SAXBatteryCombinedPowerSensor(SensorEntity):
 class SAXBatteryCombinedSOCSensor(SensorEntity):
     """Combined State of Charge (SOC) sensor for all SAX Batteries."""
 
-    def __init__(self, sax_battery_data) -> None:
+    def __init__(self, sax_battery_data: Any) -> None:
         """Initialize the sensor."""
         self._data_manager = sax_battery_data
         self._attr_unique_id = f"{DOMAIN}_combined_soc"

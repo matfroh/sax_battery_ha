@@ -1,10 +1,15 @@
 """Number platform for SAX Battery integration."""
 
+import asyncio
 from datetime import timedelta
 import logging
+from typing import Any
 
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfPower
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
@@ -21,7 +26,9 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up the SAX Battery number entities."""
     sax_battery_data = hass.data[DOMAIN][entry.entry_id]
     battery_count = len(sax_battery_data.batteries)
@@ -69,8 +76,8 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
         self._attr_native_step = 50
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_native_value = max_value
-        self._last_written_value = None  # Track the last written value
-        self._remove_interval = None  # Initialize the attribute
+        self._last_written_value: float | None = None  # Track the last written value
+        self._remove_interval: Any = None  # Initialize the attribute
 
         self._attr_device_info = {
             "identifiers": {(DOMAIN, self._data_manager.device_id)},

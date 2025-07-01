@@ -179,7 +179,7 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
             "sw_version": "1.0",
         }
 
-    def set_other_switch(self, other_switch):
+    def set_other_switch(self, other_switch: Any) -> None:
         """Set reference to the other switch (manual control)."""
         self._other_switch = other_switch
 
@@ -242,7 +242,7 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
             "sw_version": "1.0",
         }
 
-    def set_other_switch(self, other_switch):
+    def set_other_switch(self, other_switch: Any) -> None:
         """Set reference to the other switch (solar charging)."""
         self._other_switch = other_switch
 
