@@ -59,8 +59,8 @@ WORKDIR /tmp
 COPY requirements.txt ./
 COPY requirements_dev.txt ./
 COPY requirements_test.txt ./
-# RUN uv pip install -r requirements_dev.txt
-RUN uv pip install -r requirements_test.txt
+RUN uv pip install -r requirements_dev.txt
+# RUN uv pip install -r requirements_test.txt
 # COPY requirements_test.txt requirements_test_pre_commit.txt ./
 # RUN uv pip install -r requirements_test.txt
 
