@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
-source .venv/bin/activate
+source "$VIRTUAL_ENV/bin/activate""
+
 pytest tests
