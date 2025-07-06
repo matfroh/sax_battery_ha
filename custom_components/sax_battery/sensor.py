@@ -1,12 +1,14 @@
 """Sensor platform for SAX Battery integration."""
 
 from datetime import datetime
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfElectricCurrent,
@@ -16,17 +18,18 @@ from homeassistant.const import (
     UnitOfPower,
     UnitOfTemperature,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    DOMAIN,
     CONF_MASTER_BATTERY,
+    DOMAIN,
     SAX_AC_POWER_TOTAL,
     SAX_ACTIVE_POWER_L1,
     SAX_ACTIVE_POWER_L2,
     SAX_ACTIVE_POWER_L3,
     SAX_APPARENT_POWER,
     SAX_CAPACITY,
-    SAX_COMBINED_POWER,
     SAX_COMBINED_SOC,
     SAX_CURRENT_L1,
     SAX_CURRENT_L2,
@@ -57,12 +60,16 @@ from .const import (
 )
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     """Set up the SAX Battery sensors."""
     sax_battery_data = hass.data[DOMAIN][entry.entry_id]
     master_battery_id = entry.data.get(CONF_MASTER_BATTERY)
 
-    entities = []
+    entities: list[SensorEntity] = []
 
     # Add combined power sensor first
     entities.append(SAXBatteryCombinedPowerSensor(sax_battery_data))
@@ -106,7 +113,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
                 SAXBatterySmartmeterTotalPowerSensor(battery, battery_id),
             ]
         )
-       
+
         # Add cumulative energy sensors only for the master battery
         if battery_id == master_battery_id:
             entities.extend(
@@ -122,11 +129,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class SAXBatterySensor(SensorEntity):
     """Base class for SAX Battery sensors."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the SAX Battery sensor."""
         self.battery = battery
         self._battery_id = battery_id
-        self._attr_unique_id = f"{DOMAIN}_{self._battery_id}_{self.__class__.__name__.lower()}"
+        self._attr_unique_id = (
+            f"{DOMAIN}_{self._battery_id}_{self.__class__.__name__.lower()}"
+        )
 
         # Add device info
         self._attr_device_info = {
@@ -138,11 +147,11 @@ class SAXBatterySensor(SensorEntity):
         }
 
     @property
-    def should_poll(self):
+    def should_poll(self) -> bool:
         """Return True if entity has to be polled for state."""
         return True
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the sensor."""
         await self.battery.async_update()
 
@@ -150,13 +159,13 @@ class SAXBatterySensor(SensorEntity):
 class SAXBatteryStatusSensor(SAXBatterySensor):
     """SAX Battery Status sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Status"
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_STATUS)
 
@@ -164,7 +173,7 @@ class SAXBatteryStatusSensor(SAXBatterySensor):
 class SAXBatterySOCSensor(SAXBatterySensor):
     """SAX Battery State of Charge (SOC) sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.BATTERY
@@ -173,7 +182,7 @@ class SAXBatterySOCSensor(SAXBatterySensor):
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} SOC"
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_SOC)
 
@@ -181,7 +190,7 @@ class SAXBatterySOCSensor(SAXBatterySensor):
 class SAXBatteryPowerSensor(SAXBatterySensor):
     """SAX Battery Power sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.POWER
@@ -190,7 +199,7 @@ class SAXBatteryPowerSensor(SAXBatterySensor):
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Power"
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_POWER)
 
@@ -198,7 +207,7 @@ class SAXBatteryPowerSensor(SAXBatterySensor):
 class SAXBatterySmartmeterSensor(SAXBatterySensor):
     """SAX Battery Smartmeter sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.POWER
@@ -209,7 +218,7 @@ class SAXBatterySmartmeterSensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_SMARTMETER)
 
@@ -217,7 +226,7 @@ class SAXBatterySmartmeterSensor(SAXBatterySensor):
 class SAXBatteryCapacitySensor(SAXBatterySensor):
     """SAX Battery Capacity sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -225,7 +234,7 @@ class SAXBatteryCapacitySensor(SAXBatterySensor):
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Capacity"
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_CAPACITY)
 
@@ -233,14 +242,14 @@ class SAXBatteryCapacitySensor(SAXBatterySensor):
 class SAXBatteryCyclesSensor(SAXBatterySensor):
     """SAX Battery Cycles sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Cycles"
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_CYCLES)
 
@@ -248,7 +257,7 @@ class SAXBatteryCyclesSensor(SAXBatterySensor):
 class SAXBatteryTempSensor(SAXBatterySensor):
     """SAX Battery Temperature sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -257,7 +266,7 @@ class SAXBatteryTempSensor(SAXBatterySensor):
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Temperature"
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_TEMP)
 
@@ -265,7 +274,7 @@ class SAXBatteryTempSensor(SAXBatterySensor):
 class SAXBatteryEnergyProducedSensor(SAXBatterySensor):
     """SAX Battery Energy Produced sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.ENERGY
@@ -274,7 +283,7 @@ class SAXBatteryEnergyProducedSensor(SAXBatterySensor):
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Energy Produced"
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_ENERGY_PRODUCED)
 
@@ -282,7 +291,7 @@ class SAXBatteryEnergyProducedSensor(SAXBatterySensor):
 class SAXBatteryEnergyConsumedSensor(SAXBatterySensor):
     """SAX Battery Energy Consumed sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.ENERGY
@@ -291,47 +300,49 @@ class SAXBatteryEnergyConsumedSensor(SAXBatterySensor):
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Energy Consumed"
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_ENERGY_CONSUMED)
+
 
 class SAXBatteryCumulativeEnergyProducedSensor(SAXBatterySensor):
     """SAX Battery Cumulative Energy Produced sensor from master battery."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = f"Sax Battery Cumulative Energy going into the battery"
+        self._attr_name = "Sax Battery Cumulative Energy going into the battery"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_produced"
-        self._last_update_time = None
+        self._last_update_time: datetime | None = None
         self._cumulative_value = 0
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self._cumulative_value
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the sensor."""
         await super().async_update()
-        
+
         # Get current time
         current_time = datetime.now()
-        
+
         # Only update the cumulative value once per hour
-        if self._last_update_time is None or (
-            current_time - self._last_update_time
-        ).total_seconds() >= 3600:  # 3600 seconds = 1 hour
+        if (
+            self._last_update_time is None
+            or (current_time - self._last_update_time).total_seconds() >= 3600
+        ):  # 3600 seconds = 1 hour
             # Get the current energy produced value
             current_value = self.battery.data.get(SAX_ENERGY_PRODUCED, 0)
-            
+
             if current_value is not None:
                 # Update the cumulative value
                 self._cumulative_value += current_value
-                
+
                 # Update the last update time
                 self._last_update_time = current_time
 
@@ -339,47 +350,49 @@ class SAXBatteryCumulativeEnergyProducedSensor(SAXBatterySensor):
 class SAXBatteryCumulativeEnergyConsumedSensor(SAXBatterySensor):
     """SAX Battery Cumulative Energy Consumed sensor from master battery."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = f"Sax Battery Cumulative Energy coming out of the battery"
+        self._attr_name = "Sax Battery Cumulative Energy coming out of the battery"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_consumed"
-        self._last_update_time = None
+        self._last_update_time: datetime | None = None
         self._cumulative_value = 0
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self._cumulative_value
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the sensor."""
         await super().async_update()
-        
+
         # Get current time
         current_time = datetime.now()
-        
+
         # Only update the cumulative value once per hour
-        if self._last_update_time is None or (
-            current_time - self._last_update_time
-        ).total_seconds() >= 3600:  # 3600 seconds = 1 hour
+        if (
+            self._last_update_time is None
+            or (current_time - self._last_update_time).total_seconds() >= 3600
+        ):  # 3600 seconds = 1 hour
             # Get the current energy consumed value
             current_value = self.battery.data.get(SAX_ENERGY_CONSUMED, 0)
-            
+
             if current_value is not None:
                 # Update the cumulative value
                 self._cumulative_value += current_value
-                
+
                 # Update the last update time
                 self._last_update_time = current_time
+
 
 class SAXBatteryCombinedPowerSensor(SensorEntity):
     """Combined power sensor for all SAX Batteries."""
 
-    def __init__(self, sax_battery_data) -> None:
+    def __init__(self, sax_battery_data: Any) -> None:
         """Initialize the sensor."""
         self._data_manager = sax_battery_data
         self._attr_unique_id = f"{DOMAIN}_combined_power"
@@ -398,11 +411,11 @@ class SAXBatteryCombinedPowerSensor(SensorEntity):
         }
 
     @property
-    def should_poll(self):
+    def should_poll(self) -> bool:
         """Return True if entity has to be polled for state."""
         return True
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the sensor."""
         # Update all batteries first
         for battery in self._data_manager.batteries.values():
@@ -417,10 +430,11 @@ class SAXBatteryCombinedPowerSensor(SensorEntity):
 
         self._attr_native_value = total_power
 
+
 class SAXBatteryCombinedSOCSensor(SensorEntity):
     """Combined State of Charge (SOC) sensor for all SAX Batteries."""
 
-    def __init__(self, sax_battery_data) -> None:
+    def __init__(self, sax_battery_data: Any) -> None:
         """Initialize the sensor."""
         self._data_manager = sax_battery_data
         self._attr_unique_id = f"{DOMAIN}_combined_soc"
@@ -439,11 +453,11 @@ class SAXBatteryCombinedSOCSensor(SensorEntity):
         }
 
     @property
-    def should_poll(self):
+    def should_poll(self) -> bool:
         """Return True if entity has to be polled for state."""
         return True
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the sensor."""
         # Update all batteries first
         for battery in self._data_manager.batteries.values():
@@ -452,42 +466,45 @@ class SAXBatteryCombinedSOCSensor(SensorEntity):
         # Calculate average SOC
         total_soc = 0
         valid_batteries = 0
-        
+
         for battery in self._data_manager.batteries.values():
             soc = battery.data.get(SAX_SOC)
             if soc is not None:
                 total_soc += soc
                 valid_batteries += 1
-        
+
         # Only update if we have valid SOC data
         if valid_batteries > 0:
             combined_soc = round(total_soc / valid_batteries, 1)
             self._attr_native_value = combined_soc
-            
+
             # Store the combined SOC in the data manager
-            if not hasattr(self._data_manager, 'combined_data'):
+            if not hasattr(self._data_manager, "combined_data"):
                 self._data_manager.combined_data = {}
             self._data_manager.combined_data[SAX_COMBINED_SOC] = combined_soc
         else:
             self._attr_native_value = None
-            if hasattr(self._data_manager, 'combined_data'):
+            if hasattr(self._data_manager, "combined_data"):
                 self._data_manager.combined_data[SAX_COMBINED_SOC] = None
+
 
 class SAXBatteryPhaseCurrentsSumSensor(SAXBatterySensor):
     """SAX Battery Sum of Phase Currents sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Phase Currents Sum"
+        self._attr_name = (
+            f"Sax {battery_id.replace('_', ' ').title()} Phase Currents Sum"
+        )
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_PHASE_CURRENTS_SUM)
 
@@ -495,7 +512,7 @@ class SAXBatteryPhaseCurrentsSumSensor(SAXBatterySensor):
 class SAXBatteryCurrentL1Sensor(SAXBatterySensor):
     """SAX Battery Current L1 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.CURRENT
@@ -506,7 +523,7 @@ class SAXBatteryCurrentL1Sensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_CURRENT_L1)
 
@@ -514,7 +531,7 @@ class SAXBatteryCurrentL1Sensor(SAXBatterySensor):
 class SAXBatteryCurrentL2Sensor(SAXBatterySensor):
     """SAX Battery Current L2 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.CURRENT
@@ -525,7 +542,7 @@ class SAXBatteryCurrentL2Sensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_CURRENT_L2)
 
@@ -533,7 +550,7 @@ class SAXBatteryCurrentL2Sensor(SAXBatterySensor):
 class SAXBatteryCurrentL3Sensor(SAXBatterySensor):
     """SAX Battery Current L3 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.CURRENT
@@ -544,7 +561,7 @@ class SAXBatteryCurrentL3Sensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_CURRENT_L3)
 
@@ -552,7 +569,7 @@ class SAXBatteryCurrentL3Sensor(SAXBatterySensor):
 class SAXBatteryVoltageL1Sensor(SAXBatterySensor):
     """SAX Battery Voltage L1 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.VOLTAGE
@@ -563,7 +580,7 @@ class SAXBatteryVoltageL1Sensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_VOLTAGE_L1)
 
@@ -571,7 +588,7 @@ class SAXBatteryVoltageL1Sensor(SAXBatterySensor):
 class SAXBatteryVoltageL2Sensor(SAXBatterySensor):
     """SAX Battery Voltage L2 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.VOLTAGE
@@ -582,7 +599,7 @@ class SAXBatteryVoltageL2Sensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_VOLTAGE_L2)
 
@@ -590,7 +607,7 @@ class SAXBatteryVoltageL2Sensor(SAXBatterySensor):
 class SAXBatteryVoltageL3Sensor(SAXBatterySensor):
     """SAX Battery Voltage L3 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.VOLTAGE
@@ -601,7 +618,7 @@ class SAXBatteryVoltageL3Sensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_VOLTAGE_L3)
 
@@ -609,7 +626,7 @@ class SAXBatteryVoltageL3Sensor(SAXBatterySensor):
 class SAXBatteryACPowerTotalSensor(SAXBatterySensor):
     """SAX Battery AC Power Total sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.POWER
@@ -620,7 +637,7 @@ class SAXBatteryACPowerTotalSensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_AC_POWER_TOTAL)
 
@@ -628,7 +645,7 @@ class SAXBatteryACPowerTotalSensor(SAXBatterySensor):
 class SAXBatteryGridFrequencySensor(SAXBatterySensor):
     """SAX Battery Grid Frequency sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.FREQUENCY
@@ -639,7 +656,7 @@ class SAXBatteryGridFrequencySensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_GRID_FREQUENCY)
 
@@ -647,7 +664,7 @@ class SAXBatteryGridFrequencySensor(SAXBatterySensor):
 class SAXBatteryApparentPowerSensor(SAXBatterySensor):
     """SAX Battery Apparent Power sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.APPARENT_POWER
@@ -658,7 +675,7 @@ class SAXBatteryApparentPowerSensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_APPARENT_POWER)
 
@@ -666,7 +683,7 @@ class SAXBatteryApparentPowerSensor(SAXBatterySensor):
 class SAXBatteryReactivePowerSensor(SAXBatterySensor):
     """SAX Battery Reactive Power sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.REACTIVE_POWER
@@ -677,7 +694,7 @@ class SAXBatteryReactivePowerSensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_REACTIVE_POWER)
 
@@ -685,7 +702,7 @@ class SAXBatteryReactivePowerSensor(SAXBatterySensor):
 class SAXBatteryPowerFactorSensor(SAXBatterySensor):
     """SAX Battery Power Factor sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.POWER_FACTOR
@@ -696,7 +713,7 @@ class SAXBatteryPowerFactorSensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_POWER_FACTOR)
 
@@ -704,7 +721,7 @@ class SAXBatteryPowerFactorSensor(SAXBatterySensor):
 class SAXBatteryStorageStatusSensor(SAXBatterySensor):
     """SAX Battery Storage Status sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Storage Status"
@@ -712,7 +729,7 @@ class SAXBatteryStorageStatusSensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         status_value = self.battery.data.get(SAX_STORAGE_STATUS)
         if status_value is None:
@@ -726,18 +743,20 @@ class SAXBatteryStorageStatusSensor(SAXBatterySensor):
 class SAXBatterySmartmeterCurrentL1Sensor(SAXBatterySensor):
     """SAX Battery Current L1 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Current L1"
+        self._attr_name = (
+            f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Current L1"
+        )
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_SMARTMETER_CURRENT_L1)
 
@@ -745,18 +764,20 @@ class SAXBatterySmartmeterCurrentL1Sensor(SAXBatterySensor):
 class SAXBatterySmartmeterCurrentL2Sensor(SAXBatterySensor):
     """SAX Battery Current L2 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Current L2"
+        self._attr_name = (
+            f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Current L2"
+        )
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_SMARTMETER_CURRENT_L2)
 
@@ -764,18 +785,20 @@ class SAXBatterySmartmeterCurrentL2Sensor(SAXBatterySensor):
 class SAXBatterySmartmeterCurrentL3Sensor(SAXBatterySensor):
     """SAX Battery Current L3 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
-        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Current L3"
+        self._attr_name = (
+            f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Current L3"
+        )
 
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_SMARTMETER_CURRENT_L3)
 
@@ -783,7 +806,7 @@ class SAXBatterySmartmeterCurrentL3Sensor(SAXBatterySensor):
 class SAXBatteryActivePowerL1Sensor(SAXBatterySensor):
     """SAX Battery Active Power L1 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.POWER
@@ -794,7 +817,7 @@ class SAXBatteryActivePowerL1Sensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_ACTIVE_POWER_L1)
 
@@ -802,7 +825,7 @@ class SAXBatteryActivePowerL1Sensor(SAXBatterySensor):
 class SAXBatteryActivePowerL2Sensor(SAXBatterySensor):
     """SAX Battery Active Power L2 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.POWER
@@ -813,7 +836,7 @@ class SAXBatteryActivePowerL2Sensor(SAXBatterySensor):
     #       self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_ACTIVE_POWER_L2)
 
@@ -821,7 +844,7 @@ class SAXBatteryActivePowerL2Sensor(SAXBatterySensor):
 class SAXBatteryActivePowerL3Sensor(SAXBatterySensor):
     """SAX Battery Active Power L3 sensor."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
         self._attr_device_class = SensorDeviceClass.POWER
@@ -832,7 +855,7 @@ class SAXBatteryActivePowerL3Sensor(SAXBatterySensor):
     #        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_ACTIVE_POWER_L3)
 
@@ -840,17 +863,19 @@ class SAXBatteryActivePowerL3Sensor(SAXBatterySensor):
 class SAXBatterySmartmeterVoltageL1Sensor(SAXBatterySensor):
     """Smartmeter Voltage L1 sensor for the SAX Battery system."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Voltage L1"
+        self._attr_name = (
+            f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Voltage L1"
+        )
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
         self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_SMARTMETER_VOLTAGE_L1)
 
@@ -858,17 +883,19 @@ class SAXBatterySmartmeterVoltageL1Sensor(SAXBatterySensor):
 class SAXBatterySmartmeterVoltageL2Sensor(SAXBatterySensor):
     """Smartmeter Voltage L2 sensor for the SAX Battery system."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Voltage L2"
+        self._attr_name = (
+            f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Voltage L2"
+        )
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
         self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_SMARTMETER_VOLTAGE_L2)
 
@@ -876,17 +903,19 @@ class SAXBatterySmartmeterVoltageL2Sensor(SAXBatterySensor):
 class SAXBatterySmartmeterVoltageL3Sensor(SAXBatterySensor):
     """Smartmeter Voltage L3 sensor for the SAX Battery system."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Voltage L3"
+        self._attr_name = (
+            f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Voltage L3"
+        )
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
         self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_SMARTMETER_VOLTAGE_L3)
 
@@ -894,16 +923,18 @@ class SAXBatterySmartmeterVoltageL3Sensor(SAXBatterySensor):
 class SAXBatterySmartmeterTotalPowerSensor(SAXBatterySensor):
     """Smartmeter Total Power for the SAX Battery system."""
 
-    def __init__(self, battery, battery_id) -> None:
+    def __init__(self, battery: Any, battery_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(battery, battery_id)
-        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Total Power"
+        self._attr_name = (
+            f"Sax {battery_id.replace('_', ' ').title()} Smartmeter Total Power"
+        )
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_SMARTMETER_TOTAL_POWER)

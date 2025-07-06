@@ -1,9 +1,11 @@
 """Battery pilot service for SAX Battery integration."""
 
+from collections.abc import Callable
 from datetime import timedelta
 import logging
+from typing import Any
 
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import UnitOfPower
 from homeassistant.core import HomeAssistant
@@ -22,14 +24,13 @@ from .const import (
     DEFAULT_AUTO_PILOT_INTERVAL,
     DEFAULT_MIN_SOC,
     DOMAIN,
-    SAX_COMBINED_POWER,
-    SAX_COMBINED_SOC
+    SAX_COMBINED_SOC,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_pilot(hass: HomeAssistant, entry_id: str):
+async def async_setup_pilot(hass: HomeAssistant, entry_id: str) -> bool:
     """Set up the SAX Battery pilot service."""
     sax_data = hass.data[DOMAIN][entry_id]
 
@@ -58,7 +59,7 @@ async def async_setup_pilot(hass: HomeAssistant, entry_id: str):
 class SAXBatteryPilot:
     """Manages automatic battery pilot calculations and control."""
 
-    def __init__(self, hass, sax_data) -> None:
+    def __init__(self, hass: HomeAssistant, sax_data: Any) -> None:
         """Initialize the battery pilot."""
         self.hass = hass
         self.sax_data = sax_data
@@ -79,7 +80,7 @@ class SAXBatteryPilot:
         )
 
         # Calculated values
-        self.calculated_power = 0
+        self.calculated_power = 0.0
         self.max_discharge_power = self.battery_count * 3600
         self.max_charge_power = self.battery_count * 4500
 
@@ -87,11 +88,11 @@ class SAXBatteryPilot:
         self.master_battery = sax_data.master_battery
 
         # Track state
-        self._remove_interval_update = None
-        self._remove_config_update = None
+        self._remove_interval_update: Callable[[], None] | None = None
+        self._remove_config_update: Callable[[], None] | None = None
         self._running = False
 
-    def _update_config_values(self):
+    def _update_config_values(self) -> None:
         """Update configuration values from entry data."""
         self.power_sensor_entity_id = self.entry.data.get(CONF_POWER_SENSOR)
         self.pf_sensor_entity_id = self.entry.data.get(CONF_PF_SENSOR)
@@ -109,7 +110,7 @@ class SAXBatteryPilot:
             self.update_interval,
         )
 
-    async def async_start(self):
+    async def async_start(self) -> None:
         """Start the pilot service."""
         if self._running:
             return
@@ -131,7 +132,7 @@ class SAXBatteryPilot:
             "SAX Battery pilot started with %ss interval", self.update_interval
         )
 
-    async def _async_config_updated(self, hass, entry):
+    async def _async_config_updated(self, hass: Any, entry: Any) -> None:
         """Handle config entry updates."""
         self.entry = entry
         self._update_config_values()
@@ -139,7 +140,7 @@ class SAXBatteryPilot:
         await self._async_update_pilot(None)
         _LOGGER.info("SAX Battery pilot configuration updated")
 
-    async def async_stop(self):
+    async def async_stop(self) -> None:
         """Stop the pilot service."""
         if not self._running:
             return
@@ -155,7 +156,7 @@ class SAXBatteryPilot:
         self._running = False
         _LOGGER.info("SAX Battery pilot stopped")
 
-    async def _async_update_pilot(self, now=None):
+    async def _async_update_pilot(self, now: Any = None) -> None:
         """Update the pilot calculations and send to battery."""
         try:
             # Check if in manual mode
@@ -243,7 +244,7 @@ class SAXBatteryPilot:
                 return
 
             # Get priority device power consumption
-            priority_power = 0
+            priority_power = 0.0
             for device_id in self.priority_devices:
                 device_state = self.hass.states.get(device_id)
                 if device_state is not None:
@@ -255,8 +256,10 @@ class SAXBatteryPilot:
                         )
 
             # Get current battery power
-            battery_power_state = self.hass.states.get("sensor.sax_battery_combined_power")
-            battery_power = 0
+            battery_power_state = self.hass.states.get(
+                "sensor.sax_battery_combined_power"
+            )
+            battery_power = 0.0
             if battery_power_state is not None:
                 try:
                     if battery_power_state.state not in (
@@ -276,11 +279,16 @@ class SAXBatteryPilot:
                         err,
                     )
             # Check if the combined_data attribute exists
-            if hasattr(self.master_battery._data_manager, 'combined_data'):
+            if hasattr(self.master_battery._data_manager, "combined_data"):  # noqa: SLF001
                 # Get the SOC from the combined_data dictionary
-                master_soc = self.master_battery._data_manager.combined_data.get(SAX_COMBINED_SOC, 0)
+                master_soc = self.master_battery._data_manager.combined_data.get(  # noqa: SLF001
+                    SAX_COMBINED_SOC, 0
+                )
             else:
                 master_soc = 0
+
+            # Note: master_soc is used for logging context but not in calculations here
+            _LOGGER.debug("Current master SOC: %s%%", master_soc)
 
             # Calculate target power
             #            net_power = total_power - battery_power
@@ -312,7 +320,7 @@ class SAXBatteryPilot:
                 _LOGGER.debug(
                     "Condition met: priority_power > 50 (%s > 50)", priority_power
                 )
-                net_power = 0
+                net_power = 0.0
                 _LOGGER.debug("Set net_power = 0")
             else:
                 _LOGGER.debug(
@@ -359,13 +367,15 @@ class SAXBatteryPilot:
         except (ConnectionError, ValueError) as err:
             _LOGGER.error("Error in battery pilot update: %s", err)
 
-    async def _apply_soc_constraints(self, power_value):
+    async def _apply_soc_constraints(self, power_value: float) -> float:
         """Apply SOC constraints to a power value."""
         # Get current battery SOC
         # Check if the combined_data attribute exists
-        if hasattr(self.master_battery._data_manager, 'combined_data'):
+        if hasattr(self.master_battery._data_manager, "combined_data"):  # noqa: SLF001
             # Get the SOC from the combined_data dictionary
-            master_soc = self.master_battery._data_manager.combined_data.get(SAX_COMBINED_SOC, 0)
+            master_soc = self.master_battery._data_manager.combined_data.get(  # noqa: SLF001
+                SAX_COMBINED_SOC, 0
+            )
         else:
             master_soc = 0
 
@@ -406,7 +416,7 @@ class SAXBatteryPilot:
 
         return power_value
 
-    async def set_solar_charging(self, enabled):
+    async def set_solar_charging(self, enabled: bool) -> None:
         """Enable or disable solar charging."""
         self.solar_charging_enabled = enabled
 
@@ -419,7 +429,7 @@ class SAXBatteryPilot:
 
         _LOGGER.info("Solar charging %s", "enabled" if enabled else "disabled")
 
-    async def set_manual_power(self, power_value):
+    async def set_manual_power(self, power_value: float) -> None:
         """Set a manual power value."""
         # Apply SOC constraints
         power_value = await self._apply_soc_constraints(power_value)
@@ -429,31 +439,32 @@ class SAXBatteryPilot:
         self.calculated_power = power_value
         _LOGGER.info("Manual power set to %sW", power_value)
 
-    async def _apply_manual_power_with_constraints(self):
+    async def _apply_manual_power_with_constraints(self) -> None:
         """Apply the stored manual power value with current SOC constraints."""
-        if not hasattr(self, "_requested_manual_power"):
-            return
-
-        power_value = self._requested_manual_power
+        # Use the current calculated power as the manual power value
+        power_value = self.calculated_power
+        adjusted_power: float = 0.0
 
         # Apply SOC constraints
         # Check if the combined_data attribute exists
-        if hasattr(self.master_battery._data_manager, 'combined_data'):
+        if hasattr(self.master_battery._data_manager, "combined_data"):  # noqa: SLF001
             # Get the SOC from the combined_data dictionary
-            master_soc = self.master_battery._data_manager.combined_data.get(SAX_COMBINED_SOC, 0)
+            master_soc = self.master_battery._data_manager.combined_data.get(  # noqa: SLF001
+                SAX_COMBINED_SOC, 0
+            )
         else:
             master_soc = 0
 
         # Don't discharge below min SOC
         if master_soc <= self.min_soc and power_value < 0:
-            adjusted_power = 0
+            adjusted_power = 0.0
             _LOGGER.debug(
                 "Battery SOC at minimum (%s%%), preventing manual discharge", master_soc
             )
 
-        # Don't charge above 100%
+        # Don't charge above 100% ???
         elif master_soc >= 100 and power_value > 0:
-            adjusted_power = 0
+            adjusted_power = 0.0
             _LOGGER.debug("Battery SOC at maximum (100%), preventing manual charge")
         else:
             adjusted_power = power_value
@@ -465,7 +476,7 @@ class SAXBatteryPilot:
         if adjusted_power != power_value:
             _LOGGER.info("Manual power set to %sW", power_value)
 
-    async def send_power_command(self, power, power_factor):
+    async def send_power_command(self, power: float, power_factor: float) -> None:
         """Send power command to battery via Modbus."""
         try:
             # Get Modbus client for master battery
@@ -531,7 +542,7 @@ class SAXBatteryPilot:
 class SAXBatteryPilotPowerEntity(NumberEntity):
     """Entity showing current calculated pilot power."""
 
-    def __init__(self, pilot) -> None:
+    def __init__(self, pilot: SAXBatteryPilot) -> None:
         """Initialize the entity."""
         self._pilot = pilot
         self._attr_unique_id = f"{DOMAIN}_pilot_power_{self._pilot.sax_data.device_id}"
@@ -541,7 +552,7 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_should_poll = True
-        self._attr_mode = "box"
+        self._attr_mode = NumberMode.BOX
 
         # Add device info
         self._attr_device_info = {
@@ -553,12 +564,16 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
         }
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return the current calculated power."""
-        return self._pilot.calculated_power
+        return (
+            float(self._pilot.calculated_power)
+            if self._pilot.calculated_power is not None
+            else None
+        )
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Return the icon to use for the entity."""
         if self._pilot.calculated_power > 0:
             return "mdi:battery-charging"
@@ -575,7 +590,7 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
 class SAXBatterySolarChargingSwitch(SwitchEntity):
     """Switch to enable/disable solar charging."""
 
-    def __init__(self, pilot) -> None:
+    def __init__(self, pilot: SAXBatteryPilot) -> None:
         """Initialize the switch."""
         self._pilot = pilot
         self._attr_unique_id = (
@@ -593,19 +608,23 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
         }
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool | None:
         """Return true if solar charging is enabled."""
-        return self._pilot.solar_charging_enabled
+        return (
+            bool(self._pilot.solar_charging_enabled)
+            if self._pilot.solar_charging_enabled is not None
+            else None
+        )
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Return the icon to use for the switch."""
         return "mdi:solar-power" if self.is_on else "mdi:solar-power-off"
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on solar charging."""
         await self._pilot.set_solar_charging(True)
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off solar charging."""
         await self._pilot.set_solar_charging(False)

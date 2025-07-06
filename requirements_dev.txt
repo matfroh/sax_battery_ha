@@ -1,0 +1,8 @@
+-r requirements.txt
+homeassistant==2025.6.3
+colorlog==6.9.0
+ruff>=0.8.0
+mypy>=1.13.0
+pylint-per-file-ignores==1.4.0
+pip>=25.1.1
+wheel

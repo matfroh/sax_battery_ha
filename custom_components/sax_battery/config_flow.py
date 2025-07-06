@@ -6,7 +6,6 @@ import uuid
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
@@ -41,11 +40,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pilot_from_ha: bool = False
         self._limit_power: bool = False
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> Any:
         """Handle the initial step."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             # Store battery count and move to battery configuration
@@ -69,9 +66,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_control_options(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> Any:
         """Handle control options step."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             self._pilot_from_ha = user_input[CONF_PILOT_FROM_HA]
@@ -95,9 +92,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_pilot_options(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> Any:
         """Configure pilot options."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             try:
@@ -140,11 +137,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_sensors(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_sensors(self, user_input: dict[str, Any] | None = None) -> Any:
         """Configure power and PF sensors."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             self._data.update(user_input)
@@ -176,9 +171,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_priority_devices(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> Any:
         """Configure priority devices."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             self._data.update(user_input)
@@ -201,9 +196,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_battery_config(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> Any:
         """Configure individual batteries."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             self._data.update(user_input)
@@ -215,9 +210,8 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Generate schema for all batteries
-        schema = {}
+        schema: dict[vol.Marker, Any] = {}
         battery_choices = []
-
         battery_count = self._battery_count or 0  # Default to 0 if None
 
         for i in range(1, battery_count + 1):

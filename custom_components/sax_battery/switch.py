@@ -1,6 +1,9 @@
 """Switch platform for SAX Battery integration."""
 
+import asyncio
+from functools import cached_property
 import logging
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -41,8 +44,10 @@ async def async_setup_entry(
 
         entities.extend([solar_charging_switch, manual_control_switch])
 
-    for battery in sax_battery_data.batteries.values():
-        entities.append(SAXBatteryOnOffSwitch(battery))
+    entities.extend(
+        SAXBatteryOnOffSwitch(battery)
+        for battery in sax_battery_data.batteries.values()
+    )
 
     async_add_entities(entities)
 
@@ -50,12 +55,12 @@ async def async_setup_entry(
 class SAXBatteryOnOffSwitch(SwitchEntity):
     """SAX Battery On/Off switch."""
 
-    def __init__(self, battery) -> None:
+    def __init__(self, battery: Any) -> None:
         """Initialize the switch."""
         self.battery = battery
         self._attr_unique_id = f"{DOMAIN}_{battery.battery_id}_switch"
         self._attr_name = f"Sax {battery.battery_id.replace('_', ' ').title()} On/Off"
-#        self._attr_has_entity_name = True
+        #        self._attr_has_entity_name = True
         self._registers = self.battery._data_manager.modbus_registers[  # noqa: SLF001
             battery.battery_id
         ][SAX_STATUS]
@@ -70,18 +75,25 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
         }
 
     @property
-    def is_on(self):
-        """Return true if switch is on."""
-        status = self.battery.data.get(SAX_STATUS)
-        return status == self._registers["state_on"]
+    def is_on(self) -> bool | None:
+        """Return True if the switch is on."""
+        if SAX_STATUS not in self.battery.data:
+            return None
 
-    async def async_turn_on(self, **kwargs):
+        # Replace with your actual logic to determine if battery is on
+        # This is just an example - adjust based on your battery status data
+        status = self.battery.data[SAX_STATUS]
+        if status is None:
+            return None
+
+        # Example: assuming status value indicates on/off state
+        return bool(status.get("is_charging", False))  # Adjust this logic
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
         try:
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
             slave_id = self._registers.get("slave", 64)
-
-            import asyncio
 
             await asyncio.sleep(0.1)
 
@@ -93,7 +105,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             )
 
             # Use write_registers (plural) instead of write_register
-            result = await self.battery.hass.async_add_executor_job(
+            await self.battery.hass.async_add_executor_job(
                 lambda: client.write_registers(
                     self._registers["address"],
                     [self._registers["command_on"]],  # Note the list format
@@ -109,13 +121,11 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
                 "Failed to turn on battery %s: %s", self.battery.battery_id, err
             )
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
         try:
             client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
             slave_id = self._registers.get("slave", 64)
-
-            import asyncio
 
             await asyncio.sleep(0.1)
 
@@ -127,7 +137,7 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             )
 
             # Use write_registers (plural) instead of write_register
-            result = await self.battery.hass.async_add_executor_job(
+            await self.battery.hass.async_add_executor_job(
                 lambda: client.write_registers(
                     self._registers["address"],
                     [self._registers["command_off"]],  # Note the list format
@@ -143,17 +153,17 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
                 "Failed to turn off battery %s: %s", self.battery.battery_id, err
             )
 
-    @property
-    def available(self):
+    @cached_property
+    def available(self) -> bool:
         """Return True if entity is available."""
         return SAX_STATUS in self.battery.data
 
     @property
-    def should_poll(self):
+    def should_poll(self) -> bool:
         """Return True if entity has to be polled for state."""
         return True
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the switch state."""
         await self.battery.async_update()
 
@@ -161,14 +171,16 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
 class SAXBatterySolarChargingSwitch(SwitchEntity):
     """Switch to control solar charging for SAX Battery."""
 
-    def __init__(self, sax_battery_data, entry) -> None:
+    def __init__(self, sax_battery_data: Any, entry: Any) -> None:
         """Initialize the switch."""
         self._data_manager = sax_battery_data
         self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_solar_charging"
         self._attr_name = "Solar Charging"
         self._attr_is_on = entry.data.get(CONF_ENABLE_SOLAR_CHARGING, True)
-        self._other_switch = None  # Reference to the manual control switch
+        self._other_switch: SwitchEntity | None = (
+            None  # Reference to the manual control switch
+        )
 
         self._attr_device_info = {
             "identifiers": {(DOMAIN, self._data_manager.device_id)},
@@ -178,15 +190,15 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
             "sw_version": "1.0",
         }
 
-    def set_other_switch(self, other_switch):
+    def set_other_switch(self, other_switch: Any) -> None:
         """Set reference to the other switch (manual control)."""
         self._other_switch = other_switch
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on solar charging."""
         try:
             # Turn off manual control if it's on
-            if self._other_switch and self._other_switch.is_on:
+            if self._other_switch is not None and self._other_switch.is_on is True:
                 await self._other_switch.async_turn_off()
 
             # Call the pilot's set_solar_charging method
@@ -203,7 +215,7 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
         except (ConnectionError, ValueError) as err:
             _LOGGER.error("Failed to enable solar charging: %s", err)
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off solar charging."""
         try:
             # Call the pilot's set_solar_charging method
@@ -224,14 +236,16 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
 class SAXBatteryManualControlSwitch(SwitchEntity):
     """Switch to enable/disable manual control for SAX Battery."""
 
-    def __init__(self, sax_battery_data, entry) -> None:
+    def __init__(self, sax_battery_data: Any, entry: Any) -> None:
         """Initialize the switch."""
         self._data_manager = sax_battery_data
         self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_manual_control"
         self._attr_name = "Manual Control"
         self._attr_is_on = False  # Default to off
-        self._other_switch = None  # Reference to the solar charging switch
+        self._other_switch: SwitchEntity | None = (
+            None  # Reference to the solar charging switch
+        )
 
         self._attr_device_info = {
             "identifiers": {(DOMAIN, self._data_manager.device_id)},
@@ -241,15 +255,15 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
             "sw_version": "1.0",
         }
 
-    def set_other_switch(self, other_switch):
+    def set_other_switch(self, other_switch: Any) -> None:
         """Set reference to the other switch (solar charging)."""
         self._other_switch = other_switch
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on manual control."""
         try:
             # Turn off solar charging switch if it's on
-            if self._other_switch and self._other_switch.is_on:
+            if self._other_switch is not None and self._other_switch.is_on is True:
                 await self._other_switch.async_turn_off()
             elif hasattr(self._data_manager, "pilot"):
                 # Directly turn off solar charging if the switch isn't available
@@ -266,7 +280,7 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
         except (ConnectionError, ValueError) as err:
             _LOGGER.error("Failed to enable manual control: %s", err)
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off manual control."""
         try:
             # Turn on solar charging when manual control is disabled
