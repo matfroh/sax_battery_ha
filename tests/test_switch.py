@@ -628,7 +628,9 @@ class TestSAXSwitchErrorHandling:
         ):
             await manual_switch.async_turn_on()
             mock_logger.error.assert_called_once()
-            assert "Failed to disable solar charging" in str(mock_logger.error.call_args)
+            assert "Failed to disable solar charging" in str(
+                mock_logger.error.call_args
+            )
 
     async def test_manual_control_switch_turn_off_error(
         self,

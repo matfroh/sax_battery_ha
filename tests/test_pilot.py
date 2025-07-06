@@ -618,5 +618,7 @@ class TestSAXBatteryPilotErrorHandling:
         await pilot.send_power_command(-2000.0, 0.95)
         # -2000 & 0xFFFF = 63536 (two's complement 16-bit representation)
         mock_battery_data_pilot.modbus_api.write_registers.assert_called_with(
-            "battery_a", 41, [63536, 9]  # pf_int = 0.95 * 10 = 9
+            "battery_a",
+            41,
+            [63536, 9],  # pf_int = 0.95 * 10 = 9
         )
