@@ -2,6 +2,11 @@
   "name": "SAX battery",
   "context": "..",
   "dockerFile": "../Dockerfile.dev",
+  "containerEnv": {
+    "CODECOV_TOKEN": "${localEnv:CODECOV_TOKEN}",
+    "BASH_DEFAULT_TIMEOUT_MS": "300000",
+    "BASH_MAX_TIMEOUT_MS": "300000"
+  },
   "postCreateCommand": "scripts/post-create.sh",
   "customizations": {
     "vscode": {
@@ -75,9 +80,5 @@
       }
     }
   },
-  "remoteUser": "vscode",
-  "containerEnv": {
-    "BASH_DEFAULT_TIMEOUT_MS": "300000",
-    "BASH_MAX_TIMEOUT_MS": "300000"
-  }
+  "remoteUser": "vscode"
 }

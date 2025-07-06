@@ -9,6 +9,7 @@ from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import UnitOfPower
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.event import async_track_time_interval
 
@@ -22,10 +23,12 @@ from .const import (
     CONF_POWER_SENSOR,
     CONF_PRIORITY_DEVICES,
     DEFAULT_AUTO_PILOT_INTERVAL,
+    DEFAULT_DEVICE_INFO,
     DEFAULT_MIN_SOC,
     DOMAIN,
     SAX_COMBINED_SOC,
 )
+from .models import SAXBatteryData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,7 +62,7 @@ async def async_setup_pilot(hass: HomeAssistant, entry_id: str) -> bool:
 class SAXBatteryPilot:
     """Manages automatic battery pilot calculations and control."""
 
-    def __init__(self, hass: HomeAssistant, sax_data: Any) -> None:
+    def __init__(self, hass: HomeAssistant, sax_data: SAXBatteryData) -> None:
         """Initialize the battery pilot."""
         self.hass = hass
         self.sax_data = sax_data
@@ -84,8 +87,8 @@ class SAXBatteryPilot:
         self.max_discharge_power = self.battery_count * 3600
         self.max_charge_power = self.battery_count * 4500
 
-        # Modbus
-        self.master_battery = sax_data.master_battery
+        # Get master battery ID from configuration
+        self.master_battery_id = sax_data.master_battery_id
 
         # Track state
         self._remove_interval_update: Callable[[], None] | None = None
@@ -196,6 +199,10 @@ class SAXBatteryPilot:
                 return
 
             # Get current power sensor state
+            if not self.power_sensor_entity_id:
+                _LOGGER.warning("Power sensor entity ID not configured")
+                return
+
             power_state = self.hass.states.get(self.power_sensor_entity_id)
             if power_state is None:
                 _LOGGER.warning(
@@ -222,6 +229,10 @@ class SAXBatteryPilot:
                 return
 
             # Get current PF value
+            if not self.pf_sensor_entity_id:
+                _LOGGER.warning("PF sensor entity ID not configured")
+                return
+
             pf_state = self.hass.states.get(self.pf_sensor_entity_id)
             if pf_state is None:
                 _LOGGER.warning("PF sensor %s not found", self.pf_sensor_entity_id)
@@ -278,14 +289,14 @@ class SAXBatteryPilot:
                         battery_power_state.state,
                         err,
                     )
-            # Check if the combined_data attribute exists
-            if hasattr(self.master_battery._data_manager, "combined_data"):  # noqa: SLF001
-                # Get the SOC from the combined_data dictionary
-                master_soc = self.master_battery._data_manager.combined_data.get(  # noqa: SLF001
-                    SAX_COMBINED_SOC, 0
-                )
-            else:
-                master_soc = 0
+            # Get the SOC from coordinator data
+            master_soc = 0
+            if (
+                self.sax_data.coordinator
+                and self.sax_data.coordinator.data
+                and SAX_COMBINED_SOC in self.sax_data.coordinator.data
+            ):
+                master_soc = self.sax_data.coordinator.data[SAX_COMBINED_SOC]
 
             # Note: master_soc is used for logging context but not in calculations here
             _LOGGER.debug("Current master SOC: %s%%", master_soc)
@@ -370,14 +381,14 @@ class SAXBatteryPilot:
     async def _apply_soc_constraints(self, power_value: float) -> float:
         """Apply SOC constraints to a power value."""
         # Get current battery SOC
-        # Check if the combined_data attribute exists
-        if hasattr(self.master_battery._data_manager, "combined_data"):  # noqa: SLF001
-            # Get the SOC from the combined_data dictionary
-            master_soc = self.master_battery._data_manager.combined_data.get(  # noqa: SLF001
-                SAX_COMBINED_SOC, 0
-            )
-        else:
-            master_soc = 0
+        # Get the SOC from coordinator data
+        master_soc = 0
+        if (
+            self.sax_data.coordinator
+            and self.sax_data.coordinator.data
+            and SAX_COMBINED_SOC in self.sax_data.coordinator.data
+        ):
+            master_soc = self.sax_data.coordinator.data[SAX_COMBINED_SOC]
 
         # Log the input values
         _LOGGER.debug(
@@ -446,14 +457,14 @@ class SAXBatteryPilot:
         adjusted_power: float = 0.0
 
         # Apply SOC constraints
-        # Check if the combined_data attribute exists
-        if hasattr(self.master_battery._data_manager, "combined_data"):  # noqa: SLF001
-            # Get the SOC from the combined_data dictionary
-            master_soc = self.master_battery._data_manager.combined_data.get(  # noqa: SLF001
-                SAX_COMBINED_SOC, 0
-            )
-        else:
-            master_soc = 0
+        # Get the SOC from coordinator data
+        master_soc = 0
+        if (
+            self.sax_data.coordinator
+            and self.sax_data.coordinator.data
+            and SAX_COMBINED_SOC in self.sax_data.coordinator.data
+        ):
+            master_soc = self.sax_data.coordinator.data[SAX_COMBINED_SOC]
 
         # Don't discharge below min SOC
         if master_soc <= self.min_soc and power_value < 0:
@@ -479,28 +490,6 @@ class SAXBatteryPilot:
     async def send_power_command(self, power: float, power_factor: float) -> None:
         """Send power command to battery via Modbus."""
         try:
-            # Get Modbus client for master battery
-            client = self.master_battery._data_manager.modbus_clients.get(  # noqa: SLF001
-                self.master_battery.battery_id
-            )
-
-            if client is None:
-                _LOGGER.error(
-                    "No Modbus client found for battery %s",
-                    self.master_battery.battery_id,
-                )
-                return
-
-            # Check if client is connected
-            if not hasattr(client, "is_socket_open") or not client.is_socket_open():
-                _LOGGER.error("Modbus client socket not open, attempting to reconnect")
-                try:
-                    client.connect()
-                    _LOGGER.info("Reconnected to Modbus device")
-                except ConnectionError as connect_err:
-                    _LOGGER.error("Failed to reconnect: %s", connect_err)
-                    return
-
             # Convert power to integer for Modbus
             power_int = int(power) & 0xFFFF
 
@@ -511,29 +500,20 @@ class SAXBatteryPilot:
             # Prepare data for writing both registers at once
             values = [power_int, pf_int]
 
-            # Set slave ID
-            slave_id = 64
-
             _LOGGER.debug(
-                "Sending combined command: Power=%s, PF=%s to registers 41-42 with slave=%s",
+                "Sending combined command: Power=%s, PF=%s to registers 41-42",
                 power_int,
                 pf_int,
-                slave_id,
             )
 
-            # Use write_registers with slave parameter, similar to your working switch implementation
-            result = await self.hass.async_add_executor_job(
-                lambda: client.write_registers(
-                    41,  # Starting register (power control)
-                    values,
-                    slave=slave_id,
-                )
+            # Use the modbus API to write to the master battery
+            await self.sax_data.modbus_api.write_registers(
+                self.master_battery_id,
+                41,  # Starting register (power control)
+                values,
             )
 
-            if hasattr(result, "isError") and result.isError():
-                _LOGGER.error("Error sending combined power and PF command: %s", result)
-            else:
-                _LOGGER.debug("Successfully sent combined power and PF command")
+            _LOGGER.debug("Successfully sent combined power and PF command")
 
         except (ConnectionError, ValueError, TypeError) as err:
             _LOGGER.error("Failed to send power command: %s", err)
@@ -554,14 +534,16 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
         self._attr_should_poll = True
         self._attr_mode = NumberMode.BOX
 
-        # Add device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._pilot.sax_data.device_id or "unknown")},
+            name=DEFAULT_DEVICE_INFO.name,
+            manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
+            model=DEFAULT_DEVICE_INFO.model,
+            sw_version=DEFAULT_DEVICE_INFO.sw_version,
+        )
 
     @property
     def native_value(self) -> float | None:
@@ -600,11 +582,11 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
 
         # Add device info
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
+            "identifiers": {(DOMAIN, self._pilot.sax_data.device_id or "unknown")},
+            "name": DEFAULT_DEVICE_INFO.name,
+            "manufacturer": DEFAULT_DEVICE_INFO.manufacturer,
+            "model": DEFAULT_DEVICE_INFO.model,
+            "sw_version": DEFAULT_DEVICE_INFO.sw_version,
         }
 
     @property
