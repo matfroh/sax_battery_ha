@@ -551,3 +551,872 @@ class TestSAXBatteryNumbers:
         # Clean up - simulate removing from hass
         await max_charge_entity.async_will_remove_from_hass()
         mock_remove_timer.assert_called_once()
+
+
+class TestSAXBatteryMaxChargeNumberMethods:
+    """Test specific methods for SAXBatteryMaxChargeNumber."""
+
+    async def test_periodic_write_skips_at_max_value(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _periodic_write skips writing when at max value."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max charge entity
+        max_charge_entity = None
+        for entity in entities:
+            if "max_charge" in str(entity.unique_id).lower():
+                max_charge_entity = entity
+                break
+
+        assert max_charge_entity is not None
+
+        # Set entity at max value
+        max_charge_entity._attr_native_value = max_charge_entity._attr_native_max_value
+        max_charge_entity._last_written_value = max_charge_entity._attr_native_max_value
+
+        # Mock the _write_value method to track calls
+        with patch.object(max_charge_entity, "_write_value") as mock_write:
+            await max_charge_entity._periodic_write(None)
+            # Should not call _write_value when at max value
+            mock_write.assert_not_called()
+
+    async def test_periodic_write_calls_write_value_when_not_at_max(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _periodic_write calls _write_value when not at max value."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max charge entity
+        max_charge_entity = None
+        for entity in entities:
+            if "max_charge" in str(entity.unique_id).lower():
+                max_charge_entity = entity
+                break
+
+        assert max_charge_entity is not None
+
+        # Set entity at non-max value
+        max_charge_entity._attr_native_value = 5000.0  # Not at max
+        max_charge_entity._last_written_value = 4000.0  # Different from current
+
+        # Mock the _write_value method to track calls
+        with patch.object(max_charge_entity, "_write_value") as mock_write:
+            await max_charge_entity._periodic_write(None)
+            # Should call _write_value when not at max value
+            mock_write.assert_called_once_with(5000.0)
+
+    async def test_periodic_write_skips_when_value_is_none(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _periodic_write skips when native_value is None."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max charge entity
+        max_charge_entity = None
+        for entity in entities:
+            if "max_charge" in str(entity.unique_id).lower():
+                max_charge_entity = entity
+                break
+
+        assert max_charge_entity is not None
+
+        # Set entity value to None
+        max_charge_entity._attr_native_value = None
+
+        # Mock the _write_value method to track calls
+        with patch.object(max_charge_entity, "_write_value") as mock_write:
+            await max_charge_entity._periodic_write(None)
+            # Should not call _write_value when value is None
+            mock_write.assert_not_called()
+
+    async def test_write_value_success(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _write_value successful operation."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max charge entity
+        max_charge_entity = None
+        for entity in entities:
+            if "max_charge" in str(entity.unique_id).lower():
+                max_charge_entity = entity
+                break
+
+        assert max_charge_entity is not None
+        max_charge_entity.hass = hass
+
+        # Mock successful modbus write
+        mock_battery_data_number.modbus_api.write_max_charge_power.return_value = True
+
+        with patch.object(
+            max_charge_entity, "async_write_ha_state"
+        ) as mock_write_state:
+            await max_charge_entity._write_value(6000.0)
+
+            # Verify modbus API was called
+            mock_battery_data_number.modbus_api.write_max_charge_power.assert_called_once_with(
+                6000
+            )
+
+            # Verify state was updated
+            assert max_charge_entity._attr_native_value == 6000.0
+            assert max_charge_entity._last_written_value == 6000.0
+            mock_write_state.assert_called_once()
+
+    async def test_write_value_modbus_failure(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _write_value when modbus write fails."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max charge entity
+        max_charge_entity = None
+        for entity in entities:
+            if "max_charge" in str(entity.unique_id).lower():
+                max_charge_entity = entity
+                break
+
+        assert max_charge_entity is not None
+        max_charge_entity.hass = hass
+
+        # Mock failed modbus write
+        mock_battery_data_number.modbus_api.write_max_charge_power.return_value = False
+
+        original_value = max_charge_entity._attr_native_value
+        original_last_written = max_charge_entity._last_written_value
+
+        with patch.object(
+            max_charge_entity, "async_write_ha_state"
+        ) as mock_write_state:
+            await max_charge_entity._write_value(6000.0)
+
+            # Verify modbus API was called
+            mock_battery_data_number.modbus_api.write_max_charge_power.assert_called_once_with(
+                6000
+            )
+
+            # Verify state was NOT updated due to failure
+            assert max_charge_entity._attr_native_value == original_value
+            assert max_charge_entity._last_written_value == original_last_written
+            mock_write_state.assert_not_called()
+
+    async def test_write_value_connection_error(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _write_value handles connection errors."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max charge entity
+        max_charge_entity = None
+        for entity in entities:
+            if "max_charge" in str(entity.unique_id).lower():
+                max_charge_entity = entity
+                break
+
+        assert max_charge_entity is not None
+        max_charge_entity.hass = hass
+
+        # Mock connection error
+        mock_battery_data_number.modbus_api.write_max_charge_power.side_effect = (
+            ConnectionError("Connection failed")
+        )
+
+        original_value = max_charge_entity._attr_native_value
+        original_last_written = max_charge_entity._last_written_value
+
+        with patch.object(
+            max_charge_entity, "async_write_ha_state"
+        ) as mock_write_state:
+            await max_charge_entity._write_value(6000.0)
+
+            # Verify state was NOT updated due to error
+            assert max_charge_entity._attr_native_value == original_value
+            assert max_charge_entity._last_written_value == original_last_written
+            mock_write_state.assert_not_called()
+
+    async def test_write_value_no_modbus_api(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _write_value when modbus_api is None."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max charge entity
+        max_charge_entity = None
+        for entity in entities:
+            if "max_charge" in str(entity.unique_id).lower():
+                max_charge_entity = entity
+                break
+
+        assert max_charge_entity is not None
+        max_charge_entity.hass = hass
+
+        # Set modbus_api to None
+        mock_battery_data_number.modbus_api = None
+
+        original_value = max_charge_entity._attr_native_value
+        original_last_written = max_charge_entity._last_written_value
+
+        with patch.object(
+            max_charge_entity, "async_write_ha_state"
+        ) as mock_write_state:
+            await max_charge_entity._write_value(6000.0)
+
+            # Verify state was NOT updated when no modbus API
+            assert max_charge_entity._attr_native_value == original_value
+            assert max_charge_entity._last_written_value == original_last_written
+            mock_write_state.assert_not_called()
+
+
+class TestSAXBatteryMaxDischargeNumberMethods:
+    """Test specific methods for SAXBatteryMaxDischargeNumber."""
+
+    async def test_periodic_write_skips_at_max_value(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _periodic_write skips writing when at max value."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max discharge entity
+        max_discharge_entity = None
+        for entity in entities:
+            if "max_discharge" in str(entity.unique_id).lower():
+                max_discharge_entity = entity
+                break
+
+        assert max_discharge_entity is not None
+
+        # Set entity at max value
+        max_discharge_entity._attr_native_value = (
+            max_discharge_entity._attr_native_max_value
+        )
+        max_discharge_entity._last_written_value = (
+            max_discharge_entity._attr_native_max_value
+        )
+
+        # Mock the _write_value method to track calls
+        with patch.object(max_discharge_entity, "_write_value") as mock_write:
+            await max_discharge_entity._periodic_write(None)
+            # Should not call _write_value when at max value
+            mock_write.assert_not_called()
+
+    async def test_periodic_write_calls_write_value_when_not_at_max(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _periodic_write calls _write_value when not at max value."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max discharge entity
+        max_discharge_entity = None
+        for entity in entities:
+            if "max_discharge" in str(entity.unique_id).lower():
+                max_discharge_entity = entity
+                break
+
+        assert max_discharge_entity is not None
+
+        # Set entity at non-max value
+        max_discharge_entity._attr_native_value = 7000.0  # Not at max
+        max_discharge_entity._last_written_value = 6000.0  # Different from current
+
+        # Mock the _write_value method to track calls
+        with patch.object(max_discharge_entity, "_write_value") as mock_write:
+            await max_discharge_entity._periodic_write(None)
+            # Should call _write_value when not at max value
+            mock_write.assert_called_once_with(7000.0)
+
+    async def test_write_value_success(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _write_value successful operation."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max discharge entity
+        max_discharge_entity = None
+        for entity in entities:
+            if "max_discharge" in str(entity.unique_id).lower():
+                max_discharge_entity = entity
+                break
+
+        assert max_discharge_entity is not None
+        max_discharge_entity.hass = hass
+
+        # Mock successful modbus write
+        mock_battery_data_number.modbus_api.write_max_discharge_power.return_value = (
+            True
+        )
+
+        with patch.object(
+            max_discharge_entity, "async_write_ha_state"
+        ) as mock_write_state:
+            await max_discharge_entity._write_value(8000.0)
+
+            # Verify modbus API was called
+            mock_battery_data_number.modbus_api.write_max_discharge_power.assert_called_once_with(
+                8000
+            )
+
+            # Verify state was updated
+            assert max_discharge_entity._attr_native_value == 8000.0
+            assert max_discharge_entity._last_written_value == 8000.0
+            mock_write_state.assert_called_once()
+
+    async def test_write_value_modbus_failure(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _write_value when modbus write fails."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max discharge entity
+        max_discharge_entity = None
+        for entity in entities:
+            if "max_discharge" in str(entity.unique_id).lower():
+                max_discharge_entity = entity
+                break
+
+        assert max_discharge_entity is not None
+        max_discharge_entity.hass = hass
+
+        # Mock failed modbus write
+        mock_battery_data_number.modbus_api.write_max_discharge_power.return_value = (
+            False
+        )
+
+        original_value = max_discharge_entity._attr_native_value
+        original_last_written = max_discharge_entity._last_written_value
+
+        with patch.object(
+            max_discharge_entity, "async_write_ha_state"
+        ) as mock_write_state:
+            await max_discharge_entity._write_value(8000.0)
+
+            # Verify modbus API was called
+            mock_battery_data_number.modbus_api.write_max_discharge_power.assert_called_once_with(
+                8000
+            )
+
+            # Verify state was NOT updated due to failure
+            assert max_discharge_entity._attr_native_value == original_value
+            assert max_discharge_entity._last_written_value == original_last_written
+            mock_write_state.assert_not_called()
+
+    async def test_write_value_connection_error(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _write_value handles connection errors."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find max discharge entity
+        max_discharge_entity = None
+        for entity in entities:
+            if "max_discharge" in str(entity.unique_id).lower():
+                max_discharge_entity = entity
+                break
+
+        assert max_discharge_entity is not None
+        max_discharge_entity.hass = hass
+
+        # Mock connection error
+        mock_battery_data_number.modbus_api.write_max_discharge_power.side_effect = (
+            TimeoutError("Timeout")
+        )
+
+        original_value = max_discharge_entity._attr_native_value
+        original_last_written = max_discharge_entity._last_written_value
+
+        with patch.object(
+            max_discharge_entity, "async_write_ha_state"
+        ) as mock_write_state:
+            await max_discharge_entity._write_value(8000.0)
+
+            # Verify state was NOT updated due to error
+            assert max_discharge_entity._attr_native_value == original_value
+            assert max_discharge_entity._last_written_value == original_last_written
+            mock_write_state.assert_not_called()
+
+
+class TestSAXBatteryManualPowerEntityMethods:
+    """Test specific methods for SAXBatteryManualPowerEntity."""
+
+    async def test_update_icon_charging(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _update_icon sets charging icon for positive values."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find manual power entity
+        manual_power_entity = None
+        for entity in entities:
+            if "manual_power" in str(entity.unique_id).lower():
+                manual_power_entity = entity
+                break
+
+        assert manual_power_entity is not None
+
+        # Set positive value (charging)
+        manual_power_entity._attr_native_value = 1500.0
+        manual_power_entity._update_icon()
+
+        assert manual_power_entity._attr_icon == "mdi:battery-charging"
+
+    async def test_update_icon_discharging(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _update_icon sets discharging icon for negative values."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find manual power entity
+        manual_power_entity = None
+        for entity in entities:
+            if "manual_power" in str(entity.unique_id).lower():
+                manual_power_entity = entity
+                break
+
+        assert manual_power_entity is not None
+
+        # Set negative value (discharging)
+        manual_power_entity._attr_native_value = -2000.0
+        manual_power_entity._update_icon()
+
+        assert manual_power_entity._attr_icon == "mdi:battery-minus"
+
+    async def test_update_icon_zero_value(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _update_icon sets default icon for zero value."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find manual power entity
+        manual_power_entity = None
+        for entity in entities:
+            if "manual_power" in str(entity.unique_id).lower():
+                manual_power_entity = entity
+                break
+
+        assert manual_power_entity is not None
+
+        # Set zero value
+        manual_power_entity._attr_native_value = 0.0
+        manual_power_entity._update_icon()
+
+        assert manual_power_entity._attr_icon == "mdi:battery"
+
+    async def test_update_icon_none_value(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test _update_icon sets default icon for None value."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find manual power entity
+        manual_power_entity = None
+        for entity in entities:
+            if "manual_power" in str(entity.unique_id).lower():
+                manual_power_entity = entity
+                break
+
+        assert manual_power_entity is not None
+
+        # Set None value
+        manual_power_entity._attr_native_value = None
+        manual_power_entity._update_icon()
+
+        assert manual_power_entity._attr_icon == "mdi:battery"
+
+    async def test_async_set_native_value_with_pilot(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test async_set_native_value calls pilot and updates state."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find manual power entity
+        manual_power_entity = None
+        for entity in entities:
+            if "manual_power" in str(entity.unique_id).lower():
+                manual_power_entity = entity
+                break
+
+        assert manual_power_entity is not None
+        manual_power_entity.hass = hass
+
+        # Mock pilot
+        mock_pilot = AsyncMock()
+        mock_battery_data_number.pilot = mock_pilot
+
+        with (
+            patch.object(manual_power_entity, "_update_icon") as mock_update_icon,
+            patch.object(
+                manual_power_entity, "async_write_ha_state"
+            ) as mock_write_state,
+        ):
+            await manual_power_entity.async_set_native_value(2500.0)
+
+            # Verify value was set
+            assert manual_power_entity._attr_native_value == 2500.0
+
+            # Verify pilot was called
+            mock_pilot.set_manual_power.assert_called_once_with(2500.0)
+
+            # Verify icon was updated
+            mock_update_icon.assert_called_once()
+
+            # Verify state was written
+            mock_write_state.assert_called_once()
+
+    async def test_async_set_native_value_without_pilot(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test async_set_native_value works without pilot."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find manual power entity
+        manual_power_entity = None
+        for entity in entities:
+            if "manual_power" in str(entity.unique_id).lower():
+                manual_power_entity = entity
+                break
+
+        assert manual_power_entity is not None
+        manual_power_entity.hass = hass
+
+        # Remove pilot attribute
+        if hasattr(mock_battery_data_number, "pilot"):
+            delattr(mock_battery_data_number, "pilot")
+
+        with (
+            patch.object(manual_power_entity, "_update_icon") as mock_update_icon,
+            patch.object(
+                manual_power_entity, "async_write_ha_state"
+            ) as mock_write_state,
+        ):
+            await manual_power_entity.async_set_native_value(-1800.0)
+
+            # Verify value was set
+            assert manual_power_entity._attr_native_value == -1800.0
+
+            # Verify icon was updated
+            mock_update_icon.assert_called_once()
+
+            # Verify state was written
+            mock_write_state.assert_called_once()
+
+    async def test_async_set_native_value_negative_value(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test async_set_native_value with negative value (discharge)."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find manual power entity
+        manual_power_entity = None
+        for entity in entities:
+            if "manual_power" in str(entity.unique_id).lower():
+                manual_power_entity = entity
+                break
+
+        assert manual_power_entity is not None
+        manual_power_entity.hass = hass
+
+        # Mock pilot
+        mock_pilot = AsyncMock()
+        mock_battery_data_number.pilot = mock_pilot
+
+        with (
+            patch.object(manual_power_entity, "_update_icon") as mock_update_icon,
+            patch.object(
+                manual_power_entity, "async_write_ha_state"
+            ) as mock_write_state,
+        ):
+            await manual_power_entity.async_set_native_value(-3000.0)
+
+            # Verify value was set
+            assert manual_power_entity._attr_native_value == -3000.0
+
+            # Verify pilot was called with negative value
+            mock_pilot.set_manual_power.assert_called_once_with(-3000.0)
+
+            # Verify icon was updated
+            mock_update_icon.assert_called_once()
+
+            # Verify state was written
+            mock_write_state.assert_called_once()
+
+    async def test_async_added_to_hass_calls_update_icon(
+        self,
+        hass: HomeAssistant,
+        mock_sax_number_entry_full,
+        mock_battery_data_number,
+    ) -> None:
+        """Test async_added_to_hass calls _update_icon."""
+        # Store in hass.data
+        hass.data.setdefault(DOMAIN, {})[mock_sax_number_entry_full.entry_id] = (
+            mock_battery_data_number
+        )
+
+        entities = []
+
+        def mock_add_entities(new_entities, update_before_add=False):
+            entities.extend(new_entities)
+
+        await async_setup_entry(hass, mock_sax_number_entry_full, mock_add_entities)
+
+        # Find manual power entity
+        manual_power_entity = None
+        for entity in entities:
+            if "manual_power" in str(entity.unique_id).lower():
+                manual_power_entity = entity
+                break
+
+        assert manual_power_entity is not None
+        manual_power_entity.hass = hass
+
+        with patch.object(manual_power_entity, "_update_icon") as mock_update_icon:
+            await manual_power_entity.async_added_to_hass()
+
+            # Verify _update_icon was called
+            mock_update_icon.assert_called_once()
