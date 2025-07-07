@@ -62,7 +62,7 @@ class TestStatusItem:
         item._description = None
 
         assert item.number == 0  # Should return 0 when None
-        assert item.text == ""   # Should return empty string when None
+        assert item.text == ""  # Should return empty string when None
         assert item.description == ""  # Should return empty string when None
 
 
@@ -158,7 +158,7 @@ class TestApiItem:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.UK,
         )
-        item.params = None
+        item.params = {}
         assert item.params == {}
 
     def test_get_text_from_number_no_resultlist(self) -> None:

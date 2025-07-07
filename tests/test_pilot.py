@@ -550,11 +550,14 @@ class TestSAXBatteryPilotErrorHandling:
         pilot = SAXBatteryPilot(hass, mock_battery_data_pilot)
         entity = SAXBatterySolarChargingSwitch(pilot)
 
-        # Make pilot set_solar_charging raise an error
-        pilot.set_solar_charging = AsyncMock(side_effect=ConnectionError("Pilot error"))
-
-        # Test that error is propagated (SAXBatterySolarChargingSwitch doesn't handle errors)
-        with pytest.raises(ConnectionError, match="Pilot error"):
+        # Mock pilot set_solar_charging to raise an error
+        with (
+            patch.object(
+                pilot, "set_solar_charging", side_effect=ConnectionError("Pilot error")
+            ),
+            pytest.raises(ConnectionError, match="Pilot error"),
+        ):
+            # Test that error is propagated (SAXBatterySolarChargingSwitch doesn't handle errors)
             await entity.async_turn_on()
 
     async def test_solar_charging_switch_turn_off_error(
@@ -569,11 +572,14 @@ class TestSAXBatteryPilotErrorHandling:
         pilot = SAXBatteryPilot(hass, mock_battery_data_pilot)
         entity = SAXBatterySolarChargingSwitch(pilot)
 
-        # Make pilot set_solar_charging raise an error
-        pilot.set_solar_charging = AsyncMock(side_effect=ValueError("Invalid value"))
-
-        # Test that error is propagated (SAXBatterySolarChargingSwitch doesn't handle errors)
-        with pytest.raises(ValueError, match="Invalid value"):
+        # Mock pilot set_solar_charging to raise an error
+        with (
+            patch.object(
+                pilot, "set_solar_charging", side_effect=ValueError("Invalid value")
+            ),
+            pytest.raises(ValueError, match="Invalid value"),
+        ):
+            # Test that error is propagated (SAXBatterySolarChargingSwitch doesn't handle errors)
             await entity.async_turn_off()
 
     async def test_pilot_soc_constraints_edge_cases(

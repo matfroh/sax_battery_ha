@@ -212,14 +212,20 @@ class TestSAXBatterySystem:
         mock_entry = MagicMock()
         system = SAXBatterySystem(entry=mock_entry)
 
-        assert system.get_polling_interval_for_battery("battery_a", "battery_realtime") == 10
+        assert (
+            system.get_polling_interval_for_battery("battery_a", "battery_realtime")
+            == 10
+        )
 
     def test_get_polling_interval_for_battery_static(self) -> None:
         """Test get_polling_interval_for_battery for static data."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(entry=mock_entry)
 
-        assert system.get_polling_interval_for_battery("battery_a", "battery_static") == 300
+        assert (
+            system.get_polling_interval_for_battery("battery_a", "battery_static")
+            == 300
+        )
 
     def test_get_polling_interval_for_battery_smartmeter_basic_master(self) -> None:
         """Test get_polling_interval_for_battery for smart meter basic data on master."""
@@ -227,8 +233,14 @@ class TestSAXBatterySystem:
         system = SAXBatterySystem(entry=mock_entry)
         system.master_battery_id = "battery_a"
 
-        assert system.get_polling_interval_for_battery("battery_a", "smartmeter_basic") == 10
-        assert system.get_polling_interval_for_battery("battery_b", "smartmeter_basic") == 0
+        assert (
+            system.get_polling_interval_for_battery("battery_a", "smartmeter_basic")
+            == 10
+        )
+        assert (
+            system.get_polling_interval_for_battery("battery_b", "smartmeter_basic")
+            == 0
+        )
 
     def test_get_polling_interval_for_battery_smartmeter_phase_master(self) -> None:
         """Test get_polling_interval_for_battery for smart meter phase data on master."""
@@ -236,8 +248,14 @@ class TestSAXBatterySystem:
         system = SAXBatterySystem(entry=mock_entry)
         system.master_battery_id = "battery_a"
 
-        assert system.get_polling_interval_for_battery("battery_a", "smartmeter_phase") == 60
-        assert system.get_polling_interval_for_battery("battery_b", "smartmeter_phase") == 0
+        assert (
+            system.get_polling_interval_for_battery("battery_a", "smartmeter_phase")
+            == 60
+        )
+        assert (
+            system.get_polling_interval_for_battery("battery_b", "smartmeter_phase")
+            == 0
+        )
 
     def test_get_polling_interval_for_battery_default(self) -> None:
         """Test get_polling_interval_for_battery with unknown data type."""

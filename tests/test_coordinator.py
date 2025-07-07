@@ -5,12 +5,12 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.models import SAXBatteryData
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 
 @pytest.fixture
@@ -116,11 +116,15 @@ class TestSAXBatteryCoordinator:
         assert "combined" in result
         assert result["combined"] == {"total_power": 3500, "avg_soc": 77}
 
-    async def test_async_update_data_battery_update_exception_first_update(self, coordinator):
+    async def test_async_update_data_battery_update_exception_first_update(
+        self, coordinator
+    ):
         """Test _async_update_data with battery update exception on first update."""
         # Create mock battery that raises exception
         mock_battery = MagicMock()
-        mock_battery.async_update = AsyncMock(side_effect=ConnectionError("Connection failed"))
+        mock_battery.async_update = AsyncMock(
+            side_effect=ConnectionError("Connection failed")
+        )
 
         coordinator.sax_data.batteries = {"battery_a": mock_battery}
         coordinator._first_update_done = False
@@ -128,7 +132,9 @@ class TestSAXBatteryCoordinator:
         with pytest.raises(ConfigEntryNotReady):
             await coordinator._async_update_data()
 
-    async def test_async_update_data_battery_update_exception_subsequent_update(self, coordinator):
+    async def test_async_update_data_battery_update_exception_subsequent_update(
+        self, coordinator
+    ):
         """Test _async_update_data with battery update exception on subsequent update."""
         # Create mock batteries, one successful, one failing
         mock_battery1 = MagicMock()
@@ -136,7 +142,9 @@ class TestSAXBatteryCoordinator:
         mock_battery1.data = {"sax_power": 1500}
 
         mock_battery2 = MagicMock()
-        mock_battery2.async_update = AsyncMock(side_effect=ConnectionError("Connection failed"))
+        mock_battery2.async_update = AsyncMock(
+            side_effect=ConnectionError("Connection failed")
+        )
 
         coordinator.sax_data.batteries = {
             "battery_a": mock_battery1,
@@ -165,7 +173,9 @@ class TestSAXBatteryCoordinator:
 
             assert "Failed to setup SAX Battery" in str(exc_info.value)
 
-    async def test_async_update_data_general_exception_subsequent_update(self, coordinator):
+    async def test_async_update_data_general_exception_subsequent_update(
+        self, coordinator
+    ):
         """Test _async_update_data with general exception on subsequent update."""
         coordinator.sax_data.batteries = {"battery_a": MagicMock()}
         coordinator._first_update_done = True
@@ -207,12 +217,14 @@ class TestSAXBatteryCoordinator:
         mock_master.data = {"sax_power": 1500}
 
         # Use spec to limit what attributes are available
-        mock_master_limited = MagicMock(spec=['async_update', 'data'])
+        mock_master_limited = MagicMock(spec=["async_update", "data"])
         mock_master_limited.async_update = AsyncMock()
         mock_master_limited.data = {"sax_power": 1500}
 
         coordinator.sax_data.batteries = {"battery_a": mock_master_limited}
-        coordinator.sax_data.get_master_battery = MagicMock(return_value=mock_master_limited)
+        coordinator.sax_data.get_master_battery = MagicMock(
+            return_value=mock_master_limited
+        )
 
         result = await coordinator._async_update_data()
 
@@ -222,9 +234,9 @@ class TestSAXBatteryCoordinator:
     async def test_async_update_data_master_battery_no_combined_data(self, coordinator):
         """Test _async_update_data with master battery data_manager without combined_data."""
         # Create mock master battery with data_manager but no combined_data
-        mock_data_manager = MagicMock(spec=['some_other_method'])  # No combined_data
+        mock_data_manager = MagicMock(spec=["some_other_method"])  # No combined_data
 
-        mock_master = MagicMock(spec=['async_update', 'data', 'data_manager'])
+        mock_master = MagicMock(spec=["async_update", "data", "data_manager"])
         mock_master.async_update = AsyncMock()
         mock_master.data = {"sax_power": 1500}
         mock_master.data_manager = mock_data_manager
