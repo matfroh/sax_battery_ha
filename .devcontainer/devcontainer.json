@@ -29,7 +29,8 @@
         "njpwerner.autodocstring",
         "batisteo.vscode-django",
         "ryanluker.vscode-coverage-gutters",
-        "streetsidesoftware.code-spell-checker"
+        "streetsidesoftware.code-spell-checker",
+        "keesschollaart.vscode-home-assistant"
       ],
       "settings": {
         "python.experiments.optOutFrom": [

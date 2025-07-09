@@ -19,8 +19,8 @@ class TypeConstants(Enum):
 class FormatConstants(Enum):
     """Format constants for Modbus items."""
 
-    TEMPERATURE = "temperature"
-    PERCENTAGE = "percentage"
+    TEMPERATURE = "temperature"  # redundant - should be removed
+    PERCENTAGE = "percentage"  # redundant - should be removed
     NUMBER = "number"
     STATUS = "status"
     UNKNOWN = "unknown"

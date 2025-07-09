@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.components.number import NumberEntityDescription
+from homeassistant.components.sensor import SensorEntityDescription
+from homeassistant.components.switch import SwitchEntityDescription
+
 from .enums import DeviceConstants, FormatConstants, TypeConstants
 
 
@@ -85,6 +89,7 @@ class ApiItem:
     _state: Any = None
     _is_invalid: bool = False
     _translation_key: str = ""
+    _description: SensorEntityDescription | None = None
     _params: dict[Any, Any] | None = None
     _divider: int = 1
 
@@ -107,6 +112,7 @@ class ApiItem:
         self._state = None
         self._is_invalid = False
         self._translation_key = translation_key or ""
+        self._description = None
         self._params = params
         self._divider = 1
 
@@ -118,6 +124,16 @@ class ApiItem:
     @params.setter
     def params(self, val: dict[Any, Any] | None) -> None:
         self._params = val
+
+    @property
+    def description(self) -> SensorEntityDescription | None:
+        """Return description."""
+        return self._description
+
+    @description.setter
+    def description(self, val: SensorEntityDescription | None) -> None:
+        """Set description."""
+        self._description = val
 
     @property
     def divider(self) -> int:
@@ -250,6 +266,10 @@ class ModbusItem(ApiItem):
         translation_key: str | None = None,
         resultlist: Any = None,
         slave: int = 1,
+        description: SensorEntityDescription
+        | NumberEntityDescription
+        | SwitchEntityDescription
+        | None = None,
         params: dict[Any, Any] | None = None,
     ) -> None:
         """ModbusItem is used to generate entities.
@@ -263,6 +283,7 @@ class ModbusItem(ApiItem):
             translation_key: Translation key of the entity.
             resultlist: Result list of the entity. Defaults to None.
             slave: Modbus slave ID for the device. Defaults to 1.
+            description: Sensor entity description for additional metadata. Defaults to None.
             params: Additional parameters for the entity. Defaults to None.
 
         """
