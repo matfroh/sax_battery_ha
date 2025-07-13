@@ -20,7 +20,7 @@ from homeassistant.const import (
 )
 
 from .enums import DeviceConstants, FormatConstants, TypeConstants
-from .items import ModbusItem, StatusItem
+from .items import ModbusItem, SAXItem, StatusItem
 
 DOMAIN = "sax_battery"
 
@@ -70,6 +70,7 @@ SAX_NOMINAL_FACTOR = "sax_nominal_factor"
 SAX_MAX_CHARGE = "sax_max_charge"
 SAX_MAX_DISCHARGE = "sax_max_discharge"
 SAX_STATUS = "sax_status"
+SAX_BATTERY_SWITCH = "sax_battery_switch"
 SAX_SOC = "sax_soc"
 SAX_POWER = "sax_power"
 SAX_SMARTMETER = "sax_smartmeter"
@@ -618,6 +619,7 @@ PARAMS_SAX_COMBINED_SOC: dict = {
 #              NUMBER_RO: In principle, this is also a number entity that ir writable. But to avoid damages
 #                         we decided to make this entity read only.
 # device: The device this entity is assigned to. Devices are used here to group the entities in a meaningful way
+# entitydescription: The entity description that is used to create the Home Assistant entity.
 # params: Parameters to control the behavior of the entity, see description of the params lists
 # translation_key: The identifier that points to the right translation key. Therefore, the files strings.json and the
 #                  language specific files in the subfolder "translations" have to be up-to-date
@@ -625,73 +627,73 @@ PARAMS_SAX_COMBINED_SOC: dict = {
 
 # Battery items - real-time data (polled at standard interval)
 MODBUS_BATTERY_REALTIME_ITEMS: list[ModbusItem] = [
-    ModbusItem(slave=64, address=41, name=SAX_NOMINAL_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_NOMINAL_POWER),
-    ModbusItem(slave=64, address=42, name=SAX_NOMINAL_FACTOR, mformat=FormatConstants.NUMBER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_NOMINAL_FACTOR),
-    ModbusItem(slave=64, address=43, name=SAX_MAX_DISCHARGE, mformat=FormatConstants.NUMBER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_MAX_DISCHARGE),
-    ModbusItem(slave=64, address=44, name=SAX_MAX_CHARGE, mformat=FormatConstants.NUMBER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_MAX_CHARGE),
-    ModbusItem(slave=64, address=45, name=SAX_STATUS, mformat=FormatConstants.STATUS, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_BATTERY_SWITCH, resultlist=SYS_STATUSANZEIGE),
-    ModbusItem(slave=64, address=46, name=SAX_SOC, mformat=FormatConstants.PERCENTAGE, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_SOC),
-    ModbusItem(slave=64, address=47, name=SAX_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_POWER),
-    ModbusItem(slave=64, address=48, name=SAX_SMARTMETER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_SMARTMETER),
+    ModbusItem(battery_slave_id=64, address=41, name=SAX_NOMINAL_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_POWER),
+    ModbusItem(battery_slave_id=64, address=42, name=SAX_NOMINAL_FACTOR, mformat=FormatConstants.NUMBER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_FACTOR),
+    ModbusItem(battery_slave_id=64, address=43, name=SAX_MAX_DISCHARGE, mformat=FormatConstants.NUMBER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE),
+    ModbusItem(battery_slave_id=64, address=44, name=SAX_MAX_CHARGE, mformat=FormatConstants.NUMBER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_CHARGE),
+    ModbusItem(battery_slave_id=64, address=45, name=SAX_BATTERY_SWITCH, mformat=FormatConstants.STATUS, mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_BATTERY_SWITCH, resultlist=SYS_STATUSANZEIGE),
+    ModbusItem(battery_slave_id=64, address=46, name=SAX_SOC, mformat=FormatConstants.PERCENTAGE, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_SOC),
+    ModbusItem(battery_slave_id=64, address=47, name=SAX_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_POWER),
+    ModbusItem(battery_slave_id=64, address=48, name=SAX_SMARTMETER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_SMARTMETER),
 ]
 # Battery items - static/accumulated data (polled at lower frequency)
 MODBUS_BATTERY_STATIC_ITEMS: list[ModbusItem] = [
-    ModbusItem(slave=40, address=40115, name=SAX_CAPACITY, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_CAPACITY),
-    ModbusItem(slave=40, address=40116, name=SAX_CYCLES, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_CYCLES),
-    ModbusItem(slave=40, address=40117, name=SAX_TEMP, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_TEMP),
-    ModbusItem(slave=40, address=40096, name=SAX_ENERGY_PRODUCED, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_ENERGY_PRODUCED),
-    ModbusItem(slave=40, address=40097, name=SAX_ENERGY_CONSUMED, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_ENERGY_CONSUMED),
+    ModbusItem(battery_slave_id=40, address=40115, name=SAX_CAPACITY, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CAPACITY),
+    ModbusItem(battery_slave_id=40, address=40116, name=SAX_CYCLES, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CYCLES),
+    ModbusItem(battery_slave_id=40, address=40117, name=SAX_TEMP, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_TEMP),
+    ModbusItem(battery_slave_id=40, address=40096, name=SAX_ENERGY_PRODUCED, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_ENERGY_PRODUCED),
+    ModbusItem(battery_slave_id=40, address=40097, name=SAX_ENERGY_CONSUMED, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_ENERGY_CONSUMED),
 ]
 # Battery items - smart meter data accessed through battery (polled at standard interval)
 MODBUS_BATTERY_SMARTMETER_ITEMS: list[ModbusItem] = [
-    ModbusItem(slave=40, address=40073, name=SAX_PHASE_CURRENTS_SUM, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_PHASE_CURRENTS_SUM),
-    ModbusItem(slave=40, address=40103, name=SAX_ACTIVE_POWER_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_ACTIVE_POWER_L1),
-    ModbusItem(slave=40, address=40104, name=SAX_ACTIVE_POWER_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS,description=DESCRIPTION_SAX_ACTIVE_POWER_L2),
-    ModbusItem(slave=40, address=40105, name=SAX_ACTIVE_POWER_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS,description=DESCRIPTION_SAX_ACTIVE_POWER_L3),
-    ModbusItem(slave=40, address=40074, name=SAX_CURRENT_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_CURRENT_L1),
-    ModbusItem(slave=40, address=40075, name=SAX_CURRENT_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_CURRENT_L2),
-    ModbusItem(slave=40, address=40076, name=SAX_CURRENT_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_CURRENT_L3),
-    ModbusItem(slave=40, address=40081, name=SAX_VOLTAGE_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_VOLTAGE_L1),
-    ModbusItem(slave=40, address=40082, name=SAX_VOLTAGE_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_VOLTAGE_L2),
-    ModbusItem(slave=40, address=40083, name=SAX_VOLTAGE_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_VOLTAGE_L3),
-    ModbusItem(slave=40, address=40085, name=SAX_AC_POWER_TOTAL, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_AC_POWER_TOTAL),
-    ModbusItem(slave=40, address=40087, name=SAX_GRID_FREQUENCY, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS,description=DESCRIPTION_SAX_GRID_FREQUENCY),
-    ModbusItem(slave=40, address=40089, name=SAX_APPARENT_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_APPARENT_POWER),
-    ModbusItem(slave=40, address=40091, name=SAX_REACTIVE_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_REACTIVE_POWER),
-    ModbusItem(slave=40, address=40093, name=SAX_POWER_FACTOR, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_POWER_FACTOR),
-    ModbusItem(slave=40, address=40099, name=SAX_STORAGE_STATUS, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_STORAGE_STATUS),
+    ModbusItem(battery_slave_id=40, address=40073, name=SAX_PHASE_CURRENTS_SUM, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_PHASE_CURRENTS_SUM),
+    ModbusItem(battery_slave_id=40, address=40103, name=SAX_ACTIVE_POWER_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_ACTIVE_POWER_L1),
+    ModbusItem(battery_slave_id=40, address=40104, name=SAX_ACTIVE_POWER_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS,entitydescription=DESCRIPTION_SAX_ACTIVE_POWER_L2),
+    ModbusItem(battery_slave_id=40, address=40105, name=SAX_ACTIVE_POWER_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS,entitydescription=DESCRIPTION_SAX_ACTIVE_POWER_L3),
+    ModbusItem(battery_slave_id=40, address=40074, name=SAX_CURRENT_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CURRENT_L1),
+    ModbusItem(battery_slave_id=40, address=40075, name=SAX_CURRENT_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CURRENT_L2),
+    ModbusItem(battery_slave_id=40, address=40076, name=SAX_CURRENT_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CURRENT_L3),
+    ModbusItem(battery_slave_id=40, address=40081, name=SAX_VOLTAGE_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_VOLTAGE_L1),
+    ModbusItem(battery_slave_id=40, address=40082, name=SAX_VOLTAGE_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_VOLTAGE_L2),
+    ModbusItem(battery_slave_id=40, address=40083, name=SAX_VOLTAGE_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_VOLTAGE_L3),
+    ModbusItem(battery_slave_id=40, address=40085, name=SAX_AC_POWER_TOTAL, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_AC_POWER_TOTAL),
+    ModbusItem(battery_slave_id=40, address=40087, name=SAX_GRID_FREQUENCY, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS,entitydescription=DESCRIPTION_SAX_GRID_FREQUENCY),
+    ModbusItem(battery_slave_id=40, address=40089, name=SAX_APPARENT_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_APPARENT_POWER),
+    ModbusItem(battery_slave_id=40, address=40091, name=SAX_REACTIVE_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_REACTIVE_POWER),
+    ModbusItem(battery_slave_id=40, address=40093, name=SAX_POWER_FACTOR, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_POWER_FACTOR),
+    ModbusItem(battery_slave_id=40, address=40099, name=SAX_STORAGE_STATUS, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_STORAGE_STATUS),
 ]
 # Combined battery items (all battery data)
 MODBUS_BATTERY_ITEMS: list[ModbusItem] = MODBUS_BATTERY_REALTIME_ITEMS + MODBUS_BATTERY_STATIC_ITEMS + MODBUS_BATTERY_SMARTMETER_ITEMS
 # Smart meter items - basic data (polled at standard interval)
 MODBUS_SMARTMETER_BASIC_ITEMS: list[ModbusItem] = [
-    ModbusItem(slave=40, address=40110, name=SAX_SMARTMETER_TOTAL_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, description=DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER),
+    ModbusItem(battery_slave_id=40, address=40110, name=SAX_SMARTMETER_TOTAL_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER),
 ]
 # Smart meter items - phase-specific data (polled at lower frequency)
 MODBUS_SMARTMETER_PHASE_ITEMS: list[ModbusItem] = [
-    ModbusItem(slave=40, address=40100, name=SAX_SMARTMETER_CURRENT_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, description=DESCRIPTION_SAX_SMARTMETER_CURRENT_L1),
-    ModbusItem(slave=40, address=40101, name=SAX_SMARTMETER_CURRENT_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, description=DESCRIPTION_SAX_SMARTMETER_CURRENT_L2),
-    ModbusItem(slave=40, address=40102, name=SAX_SMARTMETER_CURRENT_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, description=DESCRIPTION_SAX_SMARTMETER_CURRENT_L3),
-    ModbusItem(slave=40, address=40107, name=SAX_SMARTMETER_VOLTAGE_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, description=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L1),
-    ModbusItem(slave=40, address=40108, name=SAX_SMARTMETER_VOLTAGE_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, description=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L2),
-    ModbusItem(slave=40, address=40109, name=SAX_SMARTMETER_VOLTAGE_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, description=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L3),
+    ModbusItem(battery_slave_id=40, address=40100, name=SAX_SMARTMETER_CURRENT_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_CURRENT_L1),
+    ModbusItem(battery_slave_id=40, address=40101, name=SAX_SMARTMETER_CURRENT_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_CURRENT_L2),
+    ModbusItem(battery_slave_id=40, address=40102, name=SAX_SMARTMETER_CURRENT_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_CURRENT_L3),
+    ModbusItem(battery_slave_id=40, address=40107, name=SAX_SMARTMETER_VOLTAGE_L1, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L1),
+    ModbusItem(battery_slave_id=40, address=40108, name=SAX_SMARTMETER_VOLTAGE_L2, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L2),
+    ModbusItem(battery_slave_id=40, address=40109, name=SAX_SMARTMETER_VOLTAGE_L3, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L3),
 ]
-# Combined smart meter items (all smart meter data)
+# Combined smart meter items (all smart meter data from battery)
 MODBUS_SMARTMETER_ITEMS: list[ModbusItem] = MODBUS_SMARTMETER_BASIC_ITEMS + MODBUS_SMARTMETER_PHASE_ITEMS
 # Complete modbus items (battery + smart meter) - used by master battery only
 MODBUS_ALL_ITEMS: list[ModbusItem] = MODBUS_BATTERY_ITEMS + MODBUS_SMARTMETER_ITEMS
-# Aggregated items - calculated values (e.g., combined power)
-AGGREGATED_ITEMS: list[ModbusItem] = [
-    ModbusItem( address=0, name=SAX_CUMULATIVE_ENERGY_PRODUCED, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_CUMULATIVE_ENERGY_PRODUCED, params=PARAMS_SAX_CUMULATIVE_ENERGY),
-    ModbusItem( address=0, name=SAX_CUMULATIVE_ENERGY_CONSUMED, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_CUMULATIVE_ENERGY_CONSUMED, params=PARAMS_SAX_CUMULATIVE_ENERGY),
-    ModbusItem( address=0, name=SAX_COMBINED_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_COMBINED_POWER, params=PARAMS_SAX_COMBINED_POWER),
-    ModbusItem( address=0, name=SAX_COMBINED_SOC, mformat=FormatConstants.PERCENTAGE, mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.SYS, description=DESCRIPTION_SAX_COMBINED_SOC, params=PARAMS_SAX_COMBINED_SOC),
+# Aggregated items - calculated values (e.g., combined power) from all available batteries
+AGGREGATED_ITEMS: list[SAXItem] = [
+    SAXItem(name=SAX_CUMULATIVE_ENERGY_PRODUCED, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CUMULATIVE_ENERGY_PRODUCED, params=PARAMS_SAX_CUMULATIVE_ENERGY),
+    SAXItem(name=SAX_CUMULATIVE_ENERGY_CONSUMED, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CUMULATIVE_ENERGY_CONSUMED, params=PARAMS_SAX_CUMULATIVE_ENERGY),
+    SAXItem(name=SAX_COMBINED_POWER, mformat=FormatConstants.NUMBER, mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_COMBINED_POWER, params=PARAMS_SAX_COMBINED_POWER),
+    SAXItem( name=SAX_COMBINED_SOC, mformat=FormatConstants.PERCENTAGE, mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_COMBINED_SOC, params=PARAMS_SAX_COMBINED_SOC),
 ]
 
 # Pilot items - switches for manual control and solar charging
-PILOT_ITEMS: list[ModbusItem] = [
-    ModbusItem(address=0, name=SOLAR_CHARGING_SWITCH, mformat=FormatConstants.STATUS, mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, description=DESCRIPTION_SOLAR_CHARGING_SWITCH),
-    ModbusItem(address=0, name=MANUAL_CONTROL_SWITCH, mformat=FormatConstants.STATUS, mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, description=DESCRIPTION_MANUAL_CONTROL_SWITCH),
+PILOT_ITEMS: list[SAXItem] = [
+    SAXItem(name=SOLAR_CHARGING_SWITCH, mformat=FormatConstants.STATUS, mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SOLAR_CHARGING_SWITCH),
+    SAXItem(name=MANUAL_CONTROL_SWITCH, mformat=FormatConstants.STATUS, mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_MANUAL_CONTROL_SWITCH),
 
 ]
 # fmt: on

@@ -2,225 +2,216 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    CONF_MASTER_BATTERY,
-    DEFAULT_DEVICE_INFO,
-    DOMAIN,
-    MODBUS_BATTERY_ITEMS,
-    SAX_POWER,
-    SAX_SOC,
-    SENSOR_TYPES,
-    TypeConstants,
+from .const import DOMAIN
+from .coordinator import SAXBatteryCoordinator
+from .entity_helpers import (
+    build_entity_list,
+    create_entity_unique_id,
+    determine_entity_category,
 )
+from .enums import TypeConstants
+from .items import ModbusItem
 from .models import SAXBatteryData
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the SAX Battery sensors."""
-    sax_data: SAXBatteryData = hass.data[DOMAIN][entry.entry_id]
-    master_battery_id = entry.data.get(CONF_MASTER_BATTERY)
+    """Set up SAX Battery sensor entities."""
+    sax_data: SAXBatteryData = hass.data[DOMAIN][config_entry.entry_id]
 
     entities: list[SensorEntity] = []
 
-    # Add combined sensors
-    entities.append(SAXBatteryCombinedPowerSensor(sax_data))
-    entities.append(SAXBatteryCombinedSOCSensor(sax_data))
+    # Create sensor entities for each battery
+    for battery_id, coordinator in sax_data.coordinators.items():
+        api_items = sax_data.get_modbus_items_for_battery(battery_id)
 
-    # Add individual battery sensors based on SENSOR_TYPES and MODBUS_BATTERY_ITEMS
-    for battery_id in sax_data.batteries:
-        # Create sensors for each sensor type that's also in MODBUS_BATTERY_ITEMS
-        sensor_entities = [
-            SAXBatteryGenericSensor(
-                sax_data, battery_id, item.name, SENSOR_TYPES[item.name]
-            )
-            for item in MODBUS_BATTERY_ITEMS
-            if item.name in SENSOR_TYPES and item.type == TypeConstants.SENSOR
-        ]
-        entities.extend(sensor_entities)
+        # Regular sensors
+        await build_entity_list(
+            entries=entities,
+            config_entry=config_entry,
+            api_items=api_items,
+            item_type=TypeConstants.SENSOR,
+            coordinator=coordinator,
+            battery_id=battery_id,
+        )
 
-        # Add cumulative energy sensors only for the master battery
-        if battery_id == master_battery_id:
-            entities.extend(
-                [
-                    SAXBatteryCumulativeEnergyProducedSensor(sax_data, battery_id),
-                    SAXBatteryCumulativeEnergyConsumedSensor(sax_data, battery_id),
-                ]
-            )
+        # Read-only number sensors
+        await build_entity_list(
+            entries=entities,
+            config_entry=config_entry,
+            api_items=api_items,
+            item_type=TypeConstants.NUMBER_RO,
+            coordinator=coordinator,
+            battery_id=battery_id,
+        )
+
+        # Calculated sensors
+        await build_entity_list(
+            entries=entities,
+            config_entry=config_entry,
+            api_items=api_items,
+            item_type=TypeConstants.SENSOR_CALC,
+            coordinator=coordinator,
+            battery_id=battery_id,
+        )
 
     async_add_entities(entities)
 
 
-class SAXBatterySensorBase(CoordinatorEntity, SensorEntity):
-    """Base class for SAX Battery sensors."""
-
-    def __init__(self, sax_data: SAXBatteryData, battery_id: str) -> None:
-        """Initialize the SAX Battery sensor."""
-        coordinator = sax_data.coordinator
-        if coordinator is None:
-            raise ValueError("Coordinator is required but not available")
-        super().__init__(coordinator)
-        self._sax_data = sax_data
-        self._battery_id = battery_id
-        self._battery = sax_data.batteries.get(battery_id)
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._sax_data.device_id or "unknown")},
-            name=DEFAULT_DEVICE_INFO.name,
-            manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
-            model=DEFAULT_DEVICE_INFO.model,
-            sw_version=DEFAULT_DEVICE_INFO.sw_version,
-        )
-
-
-class SAXBatteryGenericSensor(SAXBatterySensorBase):
-    """Generic SAX Battery sensor based on entity description."""
+class SAXBatterySensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
+    """SAX Battery sensor entity using coordinator for data."""
 
     def __init__(
         self,
-        sax_data: SAXBatteryData,
+        coordinator: SAXBatteryCoordinator,
         battery_id: str,
-        sensor_key: str,
-        entity_description: Any,
+        modbus_item: ModbusItem,
+        index: int,
     ) -> None:
-        """Initialize the generic sensor."""
-        super().__init__(sax_data, battery_id)
-        self.entity_description = entity_description
-        self._sensor_key = sensor_key
-        self._attr_unique_id = f"{DOMAIN}_{self._battery_id}_{sensor_key}"
-        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} {entity_description.name.replace('SAX Battery ', '')}"
+        """Initialize the sensor entity."""
+        super().__init__(coordinator)
+        self._battery_id = battery_id
+        self._modbus_item = modbus_item
+        self._index = index
+
+        # Entity configuration
+        self._attr_unique_id = create_entity_unique_id(battery_id, modbus_item, index)
+        self._attr_name = (
+            f"{battery_id.title()} {modbus_item.name.replace('_', ' ').title()}"
+        )
+        self._attr_entity_category = determine_entity_category(modbus_item)
+
+        # Sensor configuration from ModbusItem
+        self._attr_native_unit_of_measurement = getattr(modbus_item, "unit", None)
+        self._attr_suggested_display_precision = getattr(modbus_item, "precision", None)
+
+        # Use state class from modbus item description
+        if hasattr(modbus_item, "description") and modbus_item.description:
+            self._attr_state_class = getattr(
+                modbus_item.description, "state_class", None
+            )
+        else:
+            self._attr_state_class = None
+
+        # Device info
+        self._attr_device_info = coordinator.sax_data.get_device_info(battery_id)
 
     @property
-    def native_value(self) -> Any:
-        """Return the native value of the sensor."""
-        if self._battery:
-            return self._battery.data.get(self._sensor_key)
-        return None
+    def native_value(self) -> StateType | date | datetime | Decimal | None:
+        """Return the current value from coordinator data."""
+        if not self.coordinator.last_update_success:
+            return None
 
+        value = self.coordinator.data.get(self._modbus_item.name)
 
-class SAXBatteryCombinedPowerSensor(SAXBatterySensorBase):
-    """SAX Battery Combined Power sensor."""
+        if value is None:
+            return None
 
-    def __init__(self, sax_data: SAXBatteryData) -> None:
-        """Initialize the sensor."""
-        super().__init__(sax_data, "combined")
-        self._attr_name = "SAX Battery Combined Power"
-        self._attr_unique_id = f"{DOMAIN}_combined_power"
-        self._attr_device_class = SensorDeviceClass.POWER
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        # Apply divider if specified and convert to Decimal for precision
+        divider = getattr(self._modbus_item, "divider", 1)
+        if isinstance(value, (int, float)) and divider and divider != 1:
+            return Decimal(str(value)) / Decimal(str(divider))
+
+        # Convert numeric values to Decimal for consistency
+        if isinstance(value, (int, float)):
+            return Decimal(str(value))
+
+        return str(value) if value is not None else None
 
     @property
-    def native_value(self) -> Any:
-        """Return the native value of the sensor."""
-        if not self._sax_data.batteries:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
+        if not self.coordinator.last_update_success:
             return None
 
-        total_power = 0
-        for battery in self._sax_data.batteries.values():
-            power = battery.data.get(SAX_POWER)
-            if power is not None:
-                total_power += power
-        return total_power
+        attributes = {
+            "battery_id": self._battery_id,
+            "modbus_address": getattr(self._modbus_item, "address", None),
+            "last_updated": self.coordinator.last_update_success_time,
+        }
+
+        # Add divider info if present
+        divider = getattr(self._modbus_item, "divider", None)
+        if divider:
+            attributes["divider"] = divider
+
+        return attributes
 
 
-class SAXBatteryCombinedSOCSensor(SAXBatterySensorBase):
-    """SAX Battery Combined SOC sensor."""
+class SAXBatteryCalcSensor(SAXBatterySensor):
+    """SAX Battery calculated sensor entity."""
 
-    def __init__(self, sax_data: SAXBatteryData) -> None:
-        """Initialize the sensor."""
-        super().__init__(sax_data, "combined")
-        self._attr_name = "SAX Battery Combined SOC"
-        self._attr_unique_id = f"{DOMAIN}_combined_soc"
-        self._attr_device_class = SensorDeviceClass.BATTERY
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = PERCENTAGE
+    def __init__(
+        self,
+        coordinator: SAXBatteryCoordinator,
+        battery_id: str,
+        modbus_item: ModbusItem,
+        index: int,
+    ) -> None:
+        """Initialize the calculated sensor entity."""
+        super().__init__(coordinator, battery_id, modbus_item, index)
+
+        # Override name for calculated sensors
+        self._attr_name = f"{battery_id.title()} {modbus_item.name.replace('_', ' ').title()} (Calculated)"
 
     @property
-    def native_value(self) -> Any:
-        """Return the native value of the sensor."""
-        if not self._sax_data.batteries:
+    def native_value(self) -> StateType | date | datetime | Decimal | None:
+        """Return the calculated value."""
+        if not self.coordinator.last_update_success:
             return None
 
-        total_soc = 0
-        battery_count = 0
-        for battery in self._sax_data.batteries.values():
-            soc = battery.data.get(SAX_SOC)
-            if soc is not None:
-                total_soc += soc
-                battery_count += 1
+        # Implement calculation logic based on item configuration
+        return self._calculate_value()
 
-        if battery_count == 0:
+    def _calculate_value(self) -> StateType | date | datetime | Decimal | None:
+        """Calculate the sensor value based on other data points."""
+        data = self.coordinator.data
+
+        # Example calculations based on common patterns
+        if "total_power" in self._modbus_item.name.lower():
+            # Calculate total power from charge/discharge
+            charge_power = data.get("sax_charge_power", 0) or 0
+            discharge_power = data.get("sax_discharge_power", 0) or 0
+            return Decimal(str(discharge_power - charge_power))
+
+        if "efficiency" in self._modbus_item.name.lower():
+            # Calculate efficiency from energy in/out
+            energy_in = data.get("sax_energy_in", 0) or 0
+            energy_out = data.get("sax_energy_out", 0) or 0
+            if energy_in > 0:
+                return Decimal(str((energy_out / energy_in) * 100))
             return None
 
-        return total_soc / battery_count
+        if "remaining_time" in self._modbus_item.name.lower():
+            # Calculate remaining time based on SOC and power
+            soc = data.get("sax_soc", 0) or 0
+            power = data.get("sax_power", 0) or 0
+            capacity = data.get("sax_capacity", 0) or 0
 
-
-class SAXBatteryCumulativeEnergyProducedSensor(SAXBatterySensorBase):
-    """SAX Battery Cumulative Energy Produced sensor."""
-
-    def __init__(self, sax_data: SAXBatteryData, battery_id: str) -> None:
-        """Initialize the sensor."""
-        super().__init__(sax_data, battery_id)
-        self._attr_name = f"SAX Battery {battery_id.replace('_', ' ').title()} Cumulative Energy Produced"
-        self._attr_unique_id = f"{DOMAIN}_{battery_id}_cumulative_energy_produced"
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._cumulative_energy_produced = 0
-
-    @property
-    def native_value(self) -> Any:
-        """Return the native value of the sensor."""
-        if not self._battery:
+            if power > 0 and capacity > 0:  # Discharging
+                remaining_energy = (soc / 100) * capacity
+                return Decimal(str(remaining_energy / power))  # Hours
+            if power < 0 and capacity > 0:  # Charging
+                remaining_energy = ((100 - soc) / 100) * capacity
+                return Decimal(str(remaining_energy / abs(power)))  # Hours
             return None
 
-        energy_produced = self._battery.data.get("sax_energy_produced")
-        if energy_produced is not None:
-            self._cumulative_energy_produced += energy_produced
-        return self._cumulative_energy_produced
-
-
-class SAXBatteryCumulativeEnergyConsumedSensor(SAXBatterySensorBase):
-    """SAX Battery Cumulative Energy Consumed sensor."""
-
-    def __init__(self, sax_data: SAXBatteryData, battery_id: str) -> None:
-        """Initialize the sensor."""
-        super().__init__(sax_data, battery_id)
-        self._attr_name = f"SAX Battery {battery_id.replace('_', ' ').title()} Cumulative Energy Consumed"
-        self._attr_unique_id = f"{DOMAIN}_{battery_id}_cumulative_energy_consumed"
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._cumulative_energy_consumed = 0
-
-    @property
-    def native_value(self) -> Any:
-        """Return the native value of the sensor."""
-        if not self._battery:
-            return None
-
-        energy_consumed = self._battery.data.get("sax_energy_consumed")
-        if energy_consumed is not None:
-            self._cumulative_energy_consumed += energy_consumed
-        return self._cumulative_energy_consumed
+        # Default: return raw value as Decimal if numeric
+        raw_value = data.get(self._modbus_item.name)
+        if isinstance(raw_value, (int, float)):
+            return Decimal(str(raw_value))
+        return str(raw_value) if raw_value is not None else None

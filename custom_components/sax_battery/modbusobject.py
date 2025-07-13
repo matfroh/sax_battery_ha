@@ -13,7 +13,9 @@ from typing import Any
 from pymodbus import ExceptionResponse, ModbusException
 from pymodbus.client import AsyncModbusTcpClient
 
-from .const import FormatConstants, TypeConstants
+from homeassistant.components.sensor import SensorDeviceClass
+
+from .const import TypeConstants
 from .items import ModbusItem
 from .models import SAXBatteryData
 
@@ -23,11 +25,12 @@ _LOGGER = logging.getLogger(__name__)
 class ModbusAPI:
     """ModbusAPI class provides a connection to the modbus, which is used by the ModbusItems."""
 
-    def __init__(self, config_entry: SAXBatteryData) -> None:
+    def __init__(self, config_entry: SAXBatteryData, battery_id: str) -> None:
         """Construct ModbusAPI.
 
         Args:
             config_entry: HASS config entry
+            battery_id: Battery identifier (e.g., "battery_a", "battery_b", "battery_c")
 
         """
         # self._ip: str = config_entry.data[CONF.HOST]
@@ -36,15 +39,15 @@ class ModbusAPI:
         self._connect_pending: bool = False
         self._failed_reconnect_counter: int = 0
         self.entry = config_entry.entry
-        # battery_count = config_entry.entry.data.get("battery_count")
-        # master_battery_id = config_entry.entry.data.get("master_battery")
-        battery_id = f"battery_{chr(96 + 1)}"
+        self.battery_id = battery_id
+
         _host_data = self.entry.data.get(f"{battery_id}_host")
         _port_data = self.entry.data.get(f"{battery_id}_port")
         _host = str(_host_data) if _host_data is not None else ""
         _port = int(_port_data) if _port_data is not None else 502
+
         self._modbus_client: AsyncModbusTcpClient = AsyncModbusTcpClient(
-            host=_host, port=_port, name="SAX_BATTERY", retries=1
+            host=_host, port=_port, name=f"SAX_BATTERY_{battery_id.upper()}", retries=1
         )
 
     async def connect(self, startup: bool = False) -> bool:
@@ -83,17 +86,58 @@ class ModbusAPI:
         try:
             self._modbus_client.close()
         except ModbusException:
-            _LOGGER.warning("Closing connection to heat pump failed")
+            _LOGGER.warning("Closing connection to battery failed")
             return False
-        _LOGGER.info("Connection to heat pump closed")
+        _LOGGER.info("Connection to battery closed")
         return True
 
     def get_device(self) -> AsyncModbusTcpClient:
         """Return modbus connection."""
         return self._modbus_client
 
+    async def write_holding_register(
+        self, address: int, value: int, slave: int = 1
+    ) -> bool:
+        """Write a single holding register."""
+        if not self._modbus_client.connected:
+            await self.connect()
+            if not self._modbus_client.connected:
+                return False
 
-class ModbusObject:
+        try:
+            result = await self._modbus_client.write_register(
+                address=address, value=value, slave=slave
+            )
+            return not result.isError() if result else False
+        except ModbusException as exc:
+            _LOGGER.warning("Failed to write holding register %d: %s", address, exc)
+            return False
+
+    async def read_holding_registers(
+        self, address: int, count: int = 1, slave: int = 1
+    ) -> list[int] | None:
+        """Read multiple holding registers."""
+        if not self._modbus_client.connected:
+            await self.connect()
+            if not self._modbus_client.connected:
+                return None
+
+        try:
+            result = await self._modbus_client.read_holding_registers(
+                address=address, count=count, slave=slave
+            )
+            if result.isError():
+                _LOGGER.warning(
+                    "Error reading holding registers at %d: %s", address, result
+                )
+                return None
+            return result.registers
+        except ModbusException as exc:
+            _LOGGER.warning("Failed to read holding registers at %d: %s", address, exc)
+            return None
+
+
+class ModbusObject(ModbusAPI):
     """ModbusObject.
 
     A Modbus object that contains a Modbus item and communicates with the Modbus.
@@ -120,12 +164,29 @@ class ModbusObject:
 
     def check_valid_result(self, val: int) -> int | None:
         """Check if item is available and valid."""
-        match self._modbus_item.format:
-            case FormatConstants.TEMPERATURE:
+        # Check if entitydescription exists and has device_class
+
+        if not self._modbus_item.entitydescription:
+            self._modbus_item.is_invalid = False
+            return val
+
+        device_class = self._modbus_item.entitydescription.device_class
+
+        if not device_class:
+            self._modbus_item.is_invalid = False
+            return val
+
+        match device_class:
+            case SensorDeviceClass.TEMPERATURE:
                 return self.check_temperature(val)
-            case FormatConstants.PERCENTAGE:
+            case SensorDeviceClass.BATTERY:
                 return self.check_percentage(val)
-            case FormatConstants.STATUS:
+            case (
+                SensorDeviceClass.POWER
+                | SensorDeviceClass.ENERGY
+                | SensorDeviceClass.VOLTAGE
+                | SensorDeviceClass.CURRENT
+            ):
                 return self.check_status(val)
             case _:
                 self._modbus_item.is_invalid = False
@@ -181,9 +242,9 @@ class ModbusObject:
 
     def check_valid_response(self, val: int) -> int:
         """Check if item is valid to write."""
-        match self._modbus_item.format:
-            case FormatConstants.TEMPERATURE:
-                if val < 0:
+        match self._modbus_item.mformat:
+            case SensorDeviceClass.TEMPERATURE:
+                if val < 0:  # type: ignore[unreachable]
                     val = val + 65536
                 return val
             case _:
@@ -219,53 +280,78 @@ class ModbusObject:
             val = self.check_valid_result(mbr.registers[0])
         return val
 
-    @property
-    async def value(self) -> int | None:
-        """Returns the value from the modbus register."""
-        if self._modbus_client.connected is False:
-            # on first check_availability call connection still not available, suppress warning
-            if self._no_connect_warn is True:
-                return None
+    async def async_read_value(self, slave_id: int) -> int | None:
+        """Read the value from the modbus register."""
+        # if slave_id is None:
+        #     _LOGGER.error(
+        #         "slave_id cannot be None for reading %s", self._modbus_item.name
+        #     )
+        #     return None
+
+        if not self._modbus_client.connected:
+            if not self._no_connect_warn:
+                _LOGGER.warning(
+                    "Try to read value for %s without connection",
+                    self._modbus_item.translation_key,
+                )
+            return None
+
+        if self._modbus_item.is_invalid:
+            return None
+
+        try:
+            match self._modbus_item.type:
+                case TypeConstants.SENSOR | TypeConstants.SENSOR_CALC:
+                    mbr = await self._modbus_client.read_input_registers(
+                        self._modbus_item.address, slave=slave_id
+                    )
+                    return self.validate_modbus_answer(mbr)
+                case (
+                    TypeConstants.SELECT
+                    | TypeConstants.NUMBER
+                    | TypeConstants.NUMBER_RO
+                ):
+                    mbr = await self._modbus_client.read_holding_registers(
+                        self._modbus_item.address, slave=slave_id
+                    )
+                    return self.validate_modbus_answer(mbr)
+                case _:
+                    _LOGGER.warning(
+                        "Unsupported modbus item type %s for %s",
+                        self._modbus_item.type,
+                        self._modbus_item.name,
+                    )
+                    return None
+        except ModbusException as exc:
             _LOGGER.warning(
-                "Try to get value for %s without connection",
-                self._modbus_item.translation_key,
+                "ModbusException: Reading %s in item: %s failed",
+                exc,
+                self._modbus_item.name,
             )
             return None
-        if not self._modbus_item.is_invalid:
-            try:
-                match self._modbus_item.type:
-                    case TypeConstants.SENSOR | TypeConstants.SENSOR_CALC:
-                        # Sensor entities are read-only
-                        mbr = await self._modbus_client.read_input_registers(
-                            self._modbus_item.address, slave=1
-                        )
-                        return self.validate_modbus_answer(mbr)
-                    case (
-                        TypeConstants.SELECT
-                        | TypeConstants.NUMBER
-                        | TypeConstants.NUMBER_RO
-                    ):
-                        mbr = await self._modbus_client.read_holding_registers(
-                            self._modbus_item.address, slave=1
-                        )
-                        return self.validate_modbus_answer(mbr)
-            except ModbusException as exc:
-                _LOGGER.warning(
-                    "ModbusException: Reading %s in item: %s failed",
-                    str(exc),
-                    str(self._modbus_item.name),
-                )
-        return None
 
-    # @value.setter
-    async def setvalue(self, value: int) -> None:
-        """Set the value of the modbus register, does nothing when not R/W.
+    async def async_write_value(self, slave_id: int, value: int) -> bool:
+        """Write the value to the modbus register.
 
-        :param val: The value to write to the modbus
-        :type val: int
+        Args:
+            slave_id: The Modbus slave ID
+            value: The value to write to the modbus register
+
+        Returns:
+            True if write was successful, False otherwise
         """
-        if self._modbus_client.connected is False:
-            return
+        # if slave_id is None:
+        #     _LOGGER.error(
+        #         "slave_id cannot be None for writing to %s", self._modbus_item.name
+        #     )
+        #     return False
+
+        if not self._modbus_client.connected:
+            _LOGGER.warning(
+                "Cannot write to %s - no connection", self._modbus_item.name
+            )
+            return False
+
         try:
             match self._modbus_item.type:
                 case (
@@ -274,17 +360,209 @@ class ModbusObject:
                     | TypeConstants.SENSOR_CALC
                 ):
                     # Sensor entities are read-only
-                    return
+                    _LOGGER.warning(
+                        "Attempted to write to read-only register %s",
+                        self._modbus_item.name,
+                    )
+                    return False
                 case _:
                     await self._modbus_client.write_register(
                         self._modbus_item.address,
                         self.check_valid_response(value),
-                        slave=1,
+                        slave=slave_id,
                     )
-        except ModbusException:
+                    return True
+        except ModbusException as exc:
             _LOGGER.warning(
-                "ModbusException: Writing %s to %s (%s) failed",
+                "ModbusException: Writing %s to %s (%s) failed: %s",
                 str(value),
                 str(self._modbus_item.name),
                 str(self._modbus_item.address),
+                exc,
             )
+            return False
+
+    async def async_write_switch_value(self, value: bool) -> bool:
+        """Write switch value with proper conversion for this ModbusItem."""
+        if not self._modbus_client.connected:
+            _LOGGER.warning(
+                "Cannot write switch value to %s - no connection",
+                self._modbus_item.name,
+            )
+            return False
+
+        # Convert boolean to appropriate Modbus value
+        modbus_value = self._convert_switch_value(value)
+
+        # Get slave ID from modbus item
+        slave_id = getattr(self._modbus_item, "battery_slave_id", None)
+        if slave_id is None:
+            _LOGGER.error(
+                "battery_slave_id not set for switch %s - cannot write value",
+                self._modbus_item.name,
+            )
+            return False
+
+        try:
+            await self._modbus_client.write_register(
+                address=self._modbus_item.address, value=modbus_value, slave=slave_id
+            )
+            _LOGGER.debug(
+                "Successfully wrote switch value %s (modbus: %d) to %s",
+                value,
+                modbus_value,
+                self._modbus_item.name,
+            )
+            return True
+        except ModbusException as exc:
+            _LOGGER.warning(
+                "ModbusException: Writing switch value %s to %s (%s) failed: %s",
+                str(value),
+                str(self._modbus_item.name),
+                str(self._modbus_item.address),
+                exc,
+            )
+            return False
+
+    async def async_write_number_value(self, value: float) -> bool:
+        """Write numeric value with proper conversion for this ModbusItem.
+
+        Args:
+            value: The float value to write
+
+        Returns:
+            True if write was successful, False otherwise
+        """
+        if not self._modbus_client.connected:
+            _LOGGER.warning(
+                "Cannot write number value to %s - no connection",
+                self._modbus_item.name,
+            )
+            return False
+
+        # Get slave ID from modbus item
+        slave_id = getattr(self._modbus_item, "battery_slave_id", None)
+        if slave_id is None:
+            _LOGGER.error(
+                "battery_slave_id not set for number %s - cannot write value",
+                self._modbus_item.name,
+            )
+            return False
+
+        # Convert float to integer for Modbus
+        try:
+            # Apply scaling/conversion based on item properties
+            divider = getattr(self._modbus_item, "divider", 1)
+            modbus_value = int(value * divider) if divider != 1 else int(value)
+
+            # Validate range if specified
+            min_value = getattr(self._modbus_item, "min_value", None)
+            max_value = getattr(self._modbus_item, "max_value", None)
+
+            if min_value is not None and modbus_value < min_value:
+                _LOGGER.warning(
+                    "Value %d below minimum %d for %s",
+                    modbus_value,
+                    min_value,
+                    self._modbus_item.name,
+                )
+                return False
+
+            if max_value is not None and modbus_value > max_value:
+                _LOGGER.warning(
+                    "Value %d above maximum %d for %s",
+                    modbus_value,
+                    max_value,
+                    self._modbus_item.name,
+                )
+                return False
+
+            await self._modbus_client.write_register(
+                address=self._modbus_item.address,
+                value=self.check_valid_response(modbus_value),
+                slave=slave_id,
+            )
+            _LOGGER.debug(
+                "Successfully wrote number value %s (modbus: %d) to %s",
+                value,
+                modbus_value,
+                self._modbus_item.name,
+            )
+            return True
+
+        except (ValueError, TypeError) as exc:
+            _LOGGER.error(
+                "Invalid value conversion for %s: %s -> %s",
+                self._modbus_item.name,
+                value,
+                exc,
+            )
+            return False
+        except ModbusException as exc:
+            _LOGGER.warning(
+                "ModbusException: Writing number value %s to %s (%s) failed: %s",
+                str(value),
+                str(self._modbus_item.name),
+                str(self._modbus_item.address),
+                exc,
+            )
+            return False
+
+    def _convert_switch_value(self, value: bool) -> int:
+        """Convert boolean switch value to appropriate Modbus register value."""
+        if value:
+            # Check for pilot switches first
+            if self._is_pilot_switch():
+                return 1  # Pilot switches use 1 for "on"
+
+            # Use on_value from ModbusItem if defined
+            on_value = getattr(self._modbus_item, "on_value", None)
+            if on_value is not None:
+                return int(on_value)
+
+            # Check resultlist for "on" state mapping
+            resultlist = getattr(self._modbus_item, "resultlist", None)
+            if resultlist:
+                for status_item in resultlist:
+                    if status_item.text.lower() in ["connected", "on", "enabled"]:
+                        return int(status_item.number)
+
+            return 1  # Default "on" value
+        else:
+            # Check for pilot switches first
+            if self._is_pilot_switch():
+                return 0  # Pilot switches use 0 for "off"
+
+            # Use off_value from ModbusItem if defined
+            off_value = getattr(self._modbus_item, "off_value", None)
+            if off_value is not None:
+                return int(off_value)
+
+            # Check resultlist for "off" state mapping
+            resultlist = getattr(self._modbus_item, "resultlist", None)
+            if resultlist:
+                for status_item in resultlist:
+                    if status_item.text.lower() in ["off", "disconnected", "disabled"]:
+                        return int(status_item.number)
+
+            return 0  # Default "off" value
+
+    def _is_pilot_switch(self) -> bool:
+        """Check if this is a pilot switch."""
+        from .const import SOLAR_CHARGING_SWITCH, MANUAL_CONTROL_SWITCH
+
+        return self._modbus_item.name in [SOLAR_CHARGING_SWITCH, MANUAL_CONTROL_SWITCH]
+
+    def get_switch_state(self) -> bool | None:
+        """Get current switch state from coordinator data."""
+        # This will be called by the switch entity to get current state
+        # The actual value comes from the coordinator's data
+        pass  # Implementation depends on how coordinator stores data
+
+    def get_on_value(self) -> int:
+        """Get the Modbus value that represents "on" state."""
+        return self._convert_switch_value(True)
+
+    def get_off_value(self) -> int:
+        """Get the Modbus value that represents "off" state."""
+        return self._convert_switch_value(False)

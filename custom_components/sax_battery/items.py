@@ -1,12 +1,14 @@
-"""Item classes."""
+"""Item definitions for SAX Battery integration."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.sensor import SensorEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
+from homeassistant.const import EntityCategory
 
 from .enums import DeviceConstants, FormatConstants, TypeConstants
 
@@ -82,10 +84,8 @@ class ApiItem:
     """
 
     _name: str = "empty"
-    _format: FormatConstants = FormatConstants.UNKNOWN
-    _type: TypeConstants = TypeConstants.SENSOR
     _resultlist: Any = None
-    _device: DeviceConstants = DeviceConstants.UK
+    _device: DeviceConstants = DeviceConstants.UNKNOWN
     _state: Any = None
     _is_invalid: bool = False
     _translation_key: str = ""
@@ -96,17 +96,13 @@ class ApiItem:
     def __init__(
         self,
         name: str,
-        mformat: FormatConstants,
-        mtype: TypeConstants,
-        device: DeviceConstants,
+        device: DeviceConstants = DeviceConstants.UNKNOWN,
         translation_key: str | None = None,
         resultlist: Any = None,
         params: dict[Any, Any] | None = None,
     ) -> None:
         """Initialise ModbusItem."""
         self._name: str = name
-        self._format: FormatConstants = mformat
-        self._type: TypeConstants = mtype
         self._device: DeviceConstants = device
         self._resultlist = resultlist
         self._state = None
@@ -172,16 +168,6 @@ class ApiItem:
     def name(self, val: str) -> None:
         """Set name."""
         self._name = val
-
-    @property
-    def format(self) -> FormatConstants:
-        """Return format."""
-        return self._format
-
-    @property
-    def type(self) -> TypeConstants:
-        """Return type."""
-        return self._type
 
     @property
     def device(self) -> DeviceConstants:
@@ -255,6 +241,15 @@ class ModbusItem(ApiItem):
     """Represents an Modbus item."""
 
     _address: int
+    _mformat: FormatConstants = FormatConstants.UNKNOWN
+    _mtype: TypeConstants = TypeConstants.SENSOR
+    _entitydescription: (
+        SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None
+    ) = None
+    _battery_slave_id: int = 1
 
     def __init__(
         self,
@@ -262,23 +257,23 @@ class ModbusItem(ApiItem):
         name: str,
         mformat: FormatConstants,
         mtype: TypeConstants,
-        device: DeviceConstants,
+        entitydescription: SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None = None,
+        device: DeviceConstants = DeviceConstants.UNKNOWN,
         translation_key: str | None = None,
         resultlist: Any = None,
-        slave: int = 1,
-        description: SensorEntityDescription
-        | NumberEntityDescription
-        | SwitchEntityDescription
-        | None = None,
         params: dict[Any, Any] | None = None,
+        battery_slave_id: int = 1,
     ) -> None:
         """ModbusItem is used to generate entities.
 
         Args:
             address: Modbus Address of the item.
             name: Name of the entity.
-            mformat: Format of the entity.
-            mtype: Type of the entity.
+            mformat: modbus Format of the entity.
+            mtype: modbus Type of the entity.
             device: Device the entity belongs to.
             translation_key: Translation key of the entity.
             resultlist: Result list of the entity. Defaults to None.
@@ -289,14 +284,16 @@ class ModbusItem(ApiItem):
         """
         super().__init__(
             name=name,
-            mformat=mformat,
-            mtype=mtype,
             device=device,
             translation_key=translation_key,
             resultlist=resultlist,
             params=params,
         )
         self._address = address
+        self._entitydescription = entitydescription
+        self._battery_slave_id = battery_slave_id
+        self._mformat: FormatConstants = mformat
+        self._mtype: TypeConstants = mtype
 
     @property
     def address(self) -> int:
@@ -307,3 +304,105 @@ class ModbusItem(ApiItem):
     def address(self, val: int) -> None:
         """Set address."""
         self._address = val
+
+    @property
+    def entitydescription(
+        self,
+    ) -> (
+        SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None
+    ):
+        """Return entitydescription."""
+        return self._entitydescription
+
+    @entitydescription.setter
+    def entitydescription(
+        self,
+        val: SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None,
+    ) -> None:
+        """Set entitydescription."""
+        self._entitydescription = val
+
+    @property
+    def battery_slave_id(self) -> int:
+        """Return battery slave ID."""
+        return self._battery_slave_id
+
+    @battery_slave_id.setter
+    def battery_slave_id(self, slave: int) -> None:
+        """Set battery slave ID."""
+        self._battery_slave_id = slave
+
+    @property
+    def mformat(self) -> FormatConstants:
+        """Return format."""
+        return self._mformat
+
+    @property
+    def type(self) -> TypeConstants:
+        """Return type."""
+        return self._mtype
+
+
+@dataclass
+class SAXItem:
+    """SAX item definition for pilot functionality."""
+
+    name: str
+    mformat: FormatConstants  # modbus format -> not home assistant formats
+    mtype: TypeConstants  # modbus type -> not home assistant type
+    device: DeviceConstants
+    entitydescription: (
+        SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None
+    ) = None
+    translation_key: str = ""
+    icon: str | None = None
+    category: EntityCategory | str | None = None
+    unit: str | None = None
+    on_value: int = 1
+    off_value: int = 0
+    master_only: bool = True
+    params: dict[str, Any] = field(default_factory=dict)
+    required_features: list[str] = field(default_factory=list)
+    _last_update: float = 0.0
+    _update_interval: int = 60  # SAX items update every minute
+
+    @property
+    def format(self) -> FormatConstants:
+        """Return format constant for compatibility."""
+        return self.mformat
+
+    @property
+    def type(self) -> TypeConstants:
+        """Return type constant for compatibility."""
+        return self.mtype
+
+    @property
+    def last_update(self) -> float:
+        """Return timestamp of last update."""
+        return self._last_update
+
+    @property
+    def update_interval(self) -> int:
+        """Return update interval in seconds."""
+        return self._update_interval
+
+    def mark_updated(self) -> None:
+        """Mark item as recently updated."""
+        import time
+
+        self._last_update = time.time()
+
+    def needs_update(self) -> bool:
+        """Check if item needs updating based on interval."""
+        import time
+
+        return (time.time() - self._last_update) >= self._update_interval

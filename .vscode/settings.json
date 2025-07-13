@@ -33,6 +33,7 @@
     "reportIncompatibleMethodOverride": false
   },
   "cSpell.words": [
+    "mformat",
     "mypy",
     "pymodbus"
   ],

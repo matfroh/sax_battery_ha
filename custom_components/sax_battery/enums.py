@@ -5,30 +5,44 @@ from __future__ import annotations
 from enum import Enum
 
 
-class TypeConstants(Enum):
-    """Types for Modbus items."""
+class DeviceConstants(Enum):
+    """Device type constants."""
 
-    SENSOR = "Sensor"
-    SENSOR_CALC = "Sensor_Calc"
-    SELECT = "Select"
-    SWITCH = "Switch"
-    NUMBER = "Number"
-    NUMBER_RO = "Number_RO"
+    SYS = "sys"  # One or more batteries [1..3]
+    SM = "sm"  # always one smart meter
+    UNKNOWN = "unknown"
 
 
-class FormatConstants(Enum):
-    """Format constants for Modbus items."""
+# fmt: off
+# Modbus data model
+# Modbus defines its data model based on a series of tables of four primary types:
+#
+# Primary tables	       | Access | Size                   | Features
+#------------------------|--------|------------------------|---------------------------------
+# Discrete input	       | R      | 1 bit (01)            | Read on/off value
+# Coil (discrete output) | R/W    | 1 bit (01)            | Read/Write on/off value
+# Input register	       | R      | 16 bit words (065,535)| Read measurements and statuses
+# Holding register	     | R/W    | 16 bit words (065,535)| Read/Write configuration values
+# fmt: on
 
-    TEMPERATURE = "temperature"  # redundant - should be removed
-    PERCENTAGE = "percentage"  # redundant - should be removed
+
+class FormatConstants(Enum):  # modbus format -> not home assistant formats
+    """Modbus format constants for data adaptation."""
+
+    PERCENTAGE = "percentage"
+    TEMPERATURE = "temperature"
     NUMBER = "number"
     STATUS = "status"
     UNKNOWN = "unknown"
 
 
-class DeviceConstants(Enum):
-    """Device constants."""
+class TypeConstants(Enum):  # item types -> not home assistant types
+    """Modbus type constants mapped to Home Assistant entity types."""
 
-    SYS = "dev_battery"
-    SM = "dev_smartmeter"
-    UK = "dev_unknown"
+    SENSOR = "sensor"
+    SENSOR_CALC = "sensor_calc"
+    NUMBER = "number"
+    NUMBER_RO = "number_ro"
+    SWITCH = "switch"
+    BINARY_SENSOR = "binary_sensor"
+    SELECT = "select"
