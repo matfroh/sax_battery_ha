@@ -1,301 +1,315 @@
-"""Test coordinator.py functionality."""
+"""Test SAX Battery coordinator."""
 
-import asyncio
+from __future__ import annotations
+
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pymodbus import ModbusException
 
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
-from custom_components.sax_battery.models import SAXBatteryData
+from custom_components.sax_battery.enums import (
+    DeviceConstants,
+    FormatConstants,
+    TypeConstants,
+)
+from custom_components.sax_battery.items import ModbusItem
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 
 @pytest.fixture
-def mock_hass():
-    """Create a mock Home Assistant instance."""
-    return MagicMock(spec=HomeAssistant)
+def mock_modbus_api():
+    """Create mock ModbusAPI."""
+    api = MagicMock()
+    api.write_holding_register = AsyncMock(return_value=True)
+    api.read_holding_registers = AsyncMock(return_value=[100])
+
+    # Mock the modbus client that gets returned by get_device()
+    mock_client = MagicMock()
+    mock_client.connected = True
+    mock_client.write_register = AsyncMock(return_value=True)
+    api.get_device.return_value = mock_client
+
+    return api
 
 
 @pytest.fixture
 def mock_sax_data():
-    """Create a mock SAXBatteryData instance."""
-    mock_data = MagicMock(spec=SAXBatteryData)
-    mock_data.batteries = {}
-    return mock_data
+    """Create mock SAX battery data."""
+    data = MagicMock()
+    data.batteries = {"battery_a": MagicMock()}
+    data.batteries["battery_a"].async_update = AsyncMock()
+    data.batteries["battery_a"].data = {"test_value": 42}
+    data.should_poll_smart_meter = MagicMock(return_value=False)
+    data.get_modbus_items_for_battery = MagicMock(return_value=[])
+    data.smart_meter_data = MagicMock()
+    return data
 
 
 @pytest.fixture
-def coordinator(mock_hass, mock_sax_data):
-    """Create a SAXBatteryCoordinator instance."""
-    return SAXBatteryCoordinator(
-        mock_hass,
-        mock_sax_data,
-        update_interval=timedelta(seconds=5),
+def mock_modbus_item():
+    """Create mock ModbusItem."""
+    item = ModbusItem(
+        address=100,
+        name="test_item",
+        mformat=FormatConstants.PERCENTAGE,
+        mtype=TypeConstants.NUMBER,
+        device=DeviceConstants.UNKNOWN,
     )
+    item.divider = 10
+    return item
 
 
 class TestSAXBatteryCoordinator:
-    """Test SAXBatteryCoordinator class."""
+    """Test SAX Battery coordinator."""
 
-    def test_coordinator_init(self, mock_hass, mock_sax_data):
+    async def test_coordinator_init(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+    ) -> None:
         """Test coordinator initialization."""
         coordinator = SAXBatteryCoordinator(
-            mock_hass,
-            mock_sax_data,
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
             update_interval=timedelta(seconds=10),
         )
 
-        assert coordinator.hass == mock_hass
+        assert coordinator.battery_id == "battery_a"
         assert coordinator.sax_data == mock_sax_data
-        assert coordinator.update_interval == timedelta(seconds=10)
-        assert coordinator._first_update_done is False
+        assert coordinator.modbus_api == mock_modbus_api
+        assert not coordinator._first_update_done
 
-    def test_coordinator_init_default_interval(self, mock_hass, mock_sax_data):
-        """Test coordinator initialization with default interval."""
-        coordinator = SAXBatteryCoordinator(mock_hass, mock_sax_data)
-
-        assert coordinator.update_interval == timedelta(seconds=30)
-
-    async def test_async_update_data_no_batteries(self, coordinator):
-        """Test _async_update_data with no batteries."""
-        coordinator.sax_data.batteries = {}
-        # Mock get_master_battery to return None
-        coordinator.sax_data.get_master_battery = MagicMock(return_value=None)
-
-        result = await coordinator._async_update_data()
-
-        assert result == {}
-        assert coordinator._first_update_done is True
-
-    async def test_async_update_data_successful(self, coordinator):
-        """Test _async_update_data with successful battery updates."""
-        # Create mock batteries
-        mock_battery1 = MagicMock()
-        mock_battery1.async_update = AsyncMock()
-        mock_battery1.data = {"sax_power": 1500, "sax_soc": 80}
-
-        mock_battery2 = MagicMock()
-        mock_battery2.async_update = AsyncMock()
-        mock_battery2.data = {"sax_power": 2000, "sax_soc": 75}
-
-        coordinator.sax_data.batteries = {
-            "battery_a": mock_battery1,
-            "battery_b": mock_battery2,
-        }
-
-        result = await coordinator._async_update_data()
-
-        # Verify batteries were updated
-        mock_battery1.async_update.assert_called_once()
-        mock_battery2.async_update.assert_called_once()
-
-        # Verify result structure
-        assert "battery_a" in result
-        assert "battery_b" in result
-        assert result["battery_a"] == {"sax_power": 1500, "sax_soc": 80}
-        assert result["battery_b"] == {"sax_power": 2000, "sax_soc": 75}
-        assert coordinator._first_update_done is True
-
-    async def test_async_update_data_with_combined_data(self, coordinator):
-        """Test _async_update_data with combined data from master battery."""
-        # Create mock master battery with data manager
-        mock_master = MagicMock()
-        mock_master.async_update = AsyncMock()
-        mock_master.data = {"sax_power": 1500}
-        mock_master.data_manager.combined_data = {"total_power": 3500, "avg_soc": 77}
-
-        coordinator.sax_data.batteries = {"battery_a": mock_master}
-        coordinator.sax_data.get_master_battery = MagicMock(return_value=mock_master)
-
-        result = await coordinator._async_update_data()
-
-        assert "battery_a" in result
-        assert "combined" in result
-        assert result["combined"] == {"total_power": 3500, "avg_soc": 77}
-
-    async def test_async_update_data_battery_update_exception_first_update(
-        self, coordinator
-    ):
-        """Test _async_update_data with battery update exception on first update."""
-        # Create mock battery that raises exception
-        mock_battery = MagicMock()
-        mock_battery.async_update = AsyncMock(
-            side_effect=ConnectionError("Connection failed")
+    async def test_successful_update(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+    ) -> None:
+        """Test successful data update."""
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
         )
 
-        coordinator.sax_data.batteries = {"battery_a": mock_battery}
-        coordinator._first_update_done = False
+        data = await coordinator._async_update_data()
 
-        with pytest.raises(ConfigEntryNotReady):
+        assert data == {"test_value": 42}
+        assert coordinator._first_update_done
+        mock_sax_data.batteries["battery_a"].async_update.assert_called_once()
+
+    async def test_update_battery_not_found(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+    ) -> None:
+        """Test update when battery not found."""
+        mock_sax_data.batteries = {}
+
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
+        )
+
+        with pytest.raises(
+            ConfigEntryNotReady, match="Failed to setup battery battery_a"
+        ):
             await coordinator._async_update_data()
 
-    async def test_async_update_data_battery_update_exception_subsequent_update(
-        self, coordinator
-    ):
-        """Test _async_update_data with battery update exception on subsequent update."""
-        # Create mock batteries, one successful, one failing
-        mock_battery1 = MagicMock()
-        mock_battery1.async_update = AsyncMock()
-        mock_battery1.data = {"sax_power": 1500}
-
-        mock_battery2 = MagicMock()
-        mock_battery2.async_update = AsyncMock(
-            side_effect=ConnectionError("Connection failed")
+    async def test_first_update_failure(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+    ) -> None:
+        """Test first update failure raises ConfigEntryNotReady."""
+        mock_sax_data.batteries["battery_a"].async_update.side_effect = Exception(
+            "Connection failed"
         )
 
-        coordinator.sax_data.batteries = {
-            "battery_a": mock_battery1,
-            "battery_b": mock_battery2,
-        }
-        coordinator._first_update_done = True  # Simulate subsequent update
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
+        )
 
-        with patch("custom_components.sax_battery.coordinator._LOGGER") as mock_logger:
-            result = await coordinator._async_update_data()
+        with pytest.raises(
+            ConfigEntryNotReady, match="Failed to setup battery battery_a"
+        ):
+            await coordinator._async_update_data()
 
-            # Should still return data from successful battery
-            assert "battery_a" in result
-            assert result["battery_a"] == {"sax_power": 1500}
+    async def test_subsequent_update_failure(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+    ) -> None:
+        """Test subsequent update failure raises UpdateFailed."""
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
+        )
 
-            # Should log warning about failed updates
-            mock_logger.warning.assert_called_once()
-            assert "Some battery updates failed" in str(mock_logger.warning.call_args)
-
-    async def test_async_update_data_general_exception_first_update(self, coordinator):
-        """Test _async_update_data with general exception on first update."""
-        coordinator.sax_data.batteries = {"battery_a": MagicMock()}
-
-        with patch("asyncio.gather", side_effect=RuntimeError("General error")):
-            with pytest.raises(ConfigEntryNotReady) as exc_info:
-                await coordinator._async_update_data()
-
-            assert "Failed to setup SAX Battery" in str(exc_info.value)
-
-    async def test_async_update_data_general_exception_subsequent_update(
-        self, coordinator
-    ):
-        """Test _async_update_data with general exception on subsequent update."""
-        coordinator.sax_data.batteries = {"battery_a": MagicMock()}
+        # Simulate successful first update
         coordinator._first_update_done = True
-
-        with patch("asyncio.gather", side_effect=RuntimeError("General error")):
-            with pytest.raises(UpdateFailed) as exc_info:
-                await coordinator._async_update_data()
-
-            assert "Error communicating with SAX Battery" in str(exc_info.value)
-
-    async def test_async_update_data_battery_with_no_data(self, coordinator):
-        """Test _async_update_data with battery that has no data."""
-        # Create mock battery with no data
-        mock_battery1 = MagicMock()
-        mock_battery1.async_update = AsyncMock()
-        mock_battery1.data = {"sax_power": 1500}
-
-        mock_battery2 = MagicMock()
-        mock_battery2.async_update = AsyncMock()
-        mock_battery2.data = None  # No data
-
-        coordinator.sax_data.batteries = {
-            "battery_a": mock_battery1,
-            "battery_b": mock_battery2,
-        }
-
-        result = await coordinator._async_update_data()
-
-        # Only battery with data should be in result
-        assert "battery_a" in result
-        assert "battery_b" not in result
-        assert result["battery_a"] == {"sax_power": 1500}
-
-    async def test_async_update_data_master_battery_no_data_manager(self, coordinator):
-        """Test _async_update_data with master battery without data_manager."""
-        # Create mock master battery without data_manager
-        mock_master = MagicMock()
-        mock_master.async_update = AsyncMock()
-        mock_master.data = {"sax_power": 1500}
-
-        # Use spec to limit what attributes are available
-        mock_master_limited = MagicMock(spec=["async_update", "data"])
-        mock_master_limited.async_update = AsyncMock()
-        mock_master_limited.data = {"sax_power": 1500}
-
-        coordinator.sax_data.batteries = {"battery_a": mock_master_limited}
-        coordinator.sax_data.get_master_battery = MagicMock(
-            return_value=mock_master_limited
+        mock_sax_data.batteries["battery_a"].async_update.side_effect = Exception(
+            "Connection failed"
         )
 
-        result = await coordinator._async_update_data()
+        with pytest.raises(
+            UpdateFailed, match="Error communicating with battery battery_a"
+        ):
+            await coordinator._async_update_data()
 
-        assert "battery_a" in result
-        assert "combined" not in result  # No combined data without data_manager
+    async def test_write_modbus_register_success(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+        mock_modbus_item,
+    ) -> None:
+        """Test successful Modbus register write."""
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
+        )
 
-    async def test_async_update_data_master_battery_no_combined_data(self, coordinator):
-        """Test _async_update_data with master battery data_manager without combined_data."""
-        # Create mock master battery with data_manager but no combined_data
-        mock_data_manager = MagicMock(spec=["some_other_method"])  # No combined_data
+        success = await coordinator.async_write_number_value(mock_modbus_item, 50.0)
 
-        mock_master = MagicMock(spec=["async_update", "data", "data_manager"])
-        mock_master.async_update = AsyncMock()
-        mock_master.data = {"sax_power": 1500}
-        mock_master.data_manager = mock_data_manager
+        assert success
+        # The coordinator uses ModbusObject which calls write_register on the client
+        mock_client = mock_modbus_api.get_device.return_value
+        mock_client.write_register.assert_called_once_with(
+            100,  # address
+            100,  # 50.0 * 10 (divider) = 500, but clamped to 100 due to PERCENTAGE format
+            slave=1,  # default slave_id
+        )
 
-        coordinator.sax_data.batteries = {"battery_a": mock_master}
-        coordinator.sax_data.get_master_battery = MagicMock(return_value=mock_master)
+    async def test_write_modbus_register_failure(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+        mock_modbus_item,
+    ) -> None:
+        """Test failed Modbus register write."""
+        # Make the client's write_register raise an exception to simulate failure
+        mock_client = mock_modbus_api.get_device.return_value
+        mock_client.write_register.side_effect = ModbusException("Write failed")
 
-        result = await coordinator._async_update_data()
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
+        )
 
-        assert "battery_a" in result
-        assert "combined" not in result  # No combined data without combined_data
+        success = await coordinator.async_write_number_value(mock_modbus_item, 50.0)
 
-    async def test_async_update_data_no_master_battery(self, coordinator):
-        """Test _async_update_data when get_master_battery returns None."""
-        # Create mock battery
-        mock_battery = MagicMock()
-        mock_battery.async_update = AsyncMock()
-        mock_battery.data = {"sax_power": 1500}
+        assert not success
 
-        coordinator.sax_data.batteries = {"battery_a": mock_battery}
-        coordinator.sax_data.get_master_battery = MagicMock(return_value=None)
+    @pytest.mark.skip(reason="Throttling not yet implemented")
+    async def test_write_throttling(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+        mock_modbus_item,
+    ) -> None:
+        """Test write throttling prevents rapid writes."""
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
+        )
 
-        result = await coordinator._async_update_data()
+        # First write
+        await coordinator.async_write_number_value(mock_modbus_item, 50.0)
 
-        assert "battery_a" in result
-        assert "combined" not in result  # No combined data without master battery
+        # Second write should be throttled
+        with (
+            patch("time.time", return_value=1000.0),
+            patch("asyncio.sleep") as mock_sleep,
+        ):
+            coordinator._last_write_time[mock_modbus_item.address] = 999.5
 
-    async def test_async_update_data_concurrent_execution(self, coordinator):
-        """Test that battery updates are executed concurrently."""
-        # Create mock batteries with async_update that tracks call order
-        call_order = []
+            await coordinator.async_write_number_value(mock_modbus_item, 60.0)
 
-        async def mock_update_1():
-            call_order.append("battery_1_start")
-            await asyncio.sleep(0.1)  # Simulate some work
-            call_order.append("battery_1_end")
+            mock_sleep.assert_called_once()
 
-        async def mock_update_2():
-            call_order.append("battery_2_start")
-            await asyncio.sleep(0.05)  # Shorter work
-            call_order.append("battery_2_end")
+    async def test_value_conversion(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+    ) -> None:
+        """Test value conversion for different formats."""
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
+        )
 
-        mock_battery1 = MagicMock()
-        mock_battery1.async_update = mock_update_1
-        mock_battery1.data = {"sax_power": 1500}
+        # Test percentage format (should clamp to 0-100)
+        percentage_item = ModbusItem(
+            address=100,
+            name="test_percentage",
+            mformat=FormatConstants.PERCENTAGE,
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.UNKNOWN,
+        )
 
-        mock_battery2 = MagicMock()
-        mock_battery2.async_update = mock_update_2
-        mock_battery2.data = {"sax_power": 2000}
+        result = coordinator._convert_value_for_writing(percentage_item, 150.0)
+        assert result == 100  # Clamped to max
 
-        coordinator.sax_data.batteries = {
-            "battery_a": mock_battery1,
-            "battery_b": mock_battery2,
-        }
+        result = coordinator._convert_value_for_writing(percentage_item, -10.0)
+        assert result == 0  # Clamped to min
+
+    async def test_smart_meter_polling_master_only(
+        self,
+        hass: HomeAssistant,
+        mock_sax_data,
+        mock_modbus_api,
+    ) -> None:
+        """Test smart meter polling only on master battery."""
+        # Mock master battery
+        mock_sax_data.should_poll_smart_meter.return_value = True
+        mock_smart_meter_item = MagicMock()
+        mock_smart_meter_item.name = "smartmeter_total_power"
+        mock_smart_meter_item.address = 200
+        mock_smart_meter_item.divider = 1
+        mock_sax_data.get_modbus_items_for_battery.return_value = [
+            mock_smart_meter_item
+        ]
+
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
+        )
 
         await coordinator._async_update_data()
 
-        # Both should start before either ends (concurrent execution)
-        assert call_order.index("battery_1_start") < call_order.index("battery_1_end")
-        assert call_order.index("battery_2_start") < call_order.index("battery_2_end")
-        # Battery 2 should finish before battery 1 (it has less work)
-        assert call_order.index("battery_2_end") < call_order.index("battery_1_end")
+        # Should call smart meter update
+        mock_modbus_api.read_holding_registers.assert_called_once_with(
+            200, 1, "battery_a"
+        )

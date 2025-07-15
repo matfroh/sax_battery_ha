@@ -70,7 +70,12 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
         self._attr_entity_category = determine_entity_category(modbus_item)
 
         # Number configuration from ModbusItem
-        self._attr_native_unit_of_measurement = getattr(modbus_item, "unit", None)
+        if hasattr(modbus_item, "entitydescription") and modbus_item.entitydescription:
+            self._attr_native_unit_of_measurement = getattr(
+                modbus_item.entitydescription, "native_unit_of_measurement", None
+            )
+        else:
+            self._attr_native_unit_of_measurement = None
 
         # Set min/max values based on description or defaults
         if hasattr(modbus_item, "description") and modbus_item.entitydescription:
