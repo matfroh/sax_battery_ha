@@ -15,10 +15,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUAL_CONTROL_SWITCH, PILOT_ITEMS, SOLAR_CHARGING_SWITCH
 from .coordinator import SAXBatteryCoordinator
-from .utils import create_entity_unique_id, determine_entity_category
 from .enums import TypeConstants
 from .items import SAXItem
 from .models import SAXBatteryData
+from .utils import create_entity_unique_id, determine_entity_category
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -167,14 +167,12 @@ class TestSAXBatterySystem:
         """Test get_master_battery when master is set."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add a master battery
         master_battery = system.add_battery(
-            battery_id="battery_a",
-            host="192.168.1.100",
-            role="master"
+            battery_id="battery_a", host="192.168.1.100", role="master"
         )
-        
+
         assert system.get_master_battery() == master_battery
 
     def test_get_slave_batteries_empty(self) -> None:
@@ -188,22 +186,16 @@ class TestSAXBatterySystem:
         """Test get_slave_batteries with master and slave batteries."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add batteries
         master_battery = system.add_battery(
-            battery_id="battery_a",
-            host="192.168.1.100",
-            role="master"
+            battery_id="battery_a", host="192.168.1.100", role="master"
         )
         slave_battery_1 = system.add_battery(
-            battery_id="battery_b",
-            host="192.168.1.101",
-            role="slave"
+            battery_id="battery_b", host="192.168.1.101", role="slave"
         )
         slave_battery_2 = system.add_battery(
-            battery_id="battery_c",
-            host="192.168.1.102",
-            role="slave"
+            battery_id="battery_c", host="192.168.1.102", role="slave"
         )
 
         slaves = system.get_slave_batteries()
@@ -216,13 +208,9 @@ class TestSAXBatterySystem:
         """Test should_poll_smart_meter for master battery."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add master battery
-        system.add_battery(
-            battery_id="battery_a",
-            host="192.168.1.100",
-            role="master"
-        )
+        system.add_battery(battery_id="battery_a", host="192.168.1.100", role="master")
 
         assert system.should_poll_smart_meter("battery_a") is True
 
@@ -237,13 +225,9 @@ class TestSAXBatterySystem:
         """Test get_polling_interval_for_battery for master battery."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add master battery
-        system.add_battery(
-            battery_id="battery_a",
-            host="192.168.1.100",
-            role="master"
-        )
+        system.add_battery(battery_id="battery_a", host="192.168.1.100", role="master")
 
         assert system.get_polling_interval_for_battery("battery_a") == 5
 
@@ -251,13 +235,9 @@ class TestSAXBatterySystem:
         """Test get_polling_interval_for_battery for slave battery."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add slave battery
-        system.add_battery(
-            battery_id="battery_b",
-            host="192.168.1.101",
-            role="slave"
-        )
+        system.add_battery(battery_id="battery_b", host="192.168.1.101", role="slave")
 
         assert system.get_polling_interval_for_battery("battery_b") == 10
 
@@ -287,11 +267,11 @@ class TestSAXBatterySystem:
         """Test get_total_system_power with batteries."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add batteries with power data
         battery_a = system.add_battery("battery_a", "192.168.1.100")
         battery_b = system.add_battery("battery_b", "192.168.1.101")
-        
+
         battery_a.data["power"] = 1000.0
         battery_b.data["power"] = 1500.0
 
@@ -301,16 +281,16 @@ class TestSAXBatterySystem:
         """Test get_total_system_power with invalid power data."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add batteries with mixed data types
         battery_a = system.add_battery("battery_a", "192.168.1.100")
         battery_b = system.add_battery("battery_b", "192.168.1.101")
         battery_c = system.add_battery("battery_c", "192.168.1.102")
-        
+
         battery_a.data["power"] = 1000.0  # Valid
         battery_b.data["power"] = "invalid"  # Invalid - string
         battery_c.data["power"] = None  # Invalid - None
-        
+
         # Should only count valid power values
         assert system.get_total_system_power() == 1000.0
 
@@ -325,12 +305,12 @@ class TestSAXBatterySystem:
         """Test get_average_soc with batteries."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add batteries with SOC data
         battery_a = system.add_battery("battery_a", "192.168.1.100")
         battery_b = system.add_battery("battery_b", "192.168.1.101")
         battery_c = system.add_battery("battery_c", "192.168.1.102")
-        
+
         battery_a.data["soc"] = 80.0
         battery_b.data["soc"] = 85.0
         battery_c.data["soc"] = 90.0
@@ -341,16 +321,16 @@ class TestSAXBatterySystem:
         """Test get_average_soc with invalid SOC data."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add batteries with mixed data types
         battery_a = system.add_battery("battery_a", "192.168.1.100")
         battery_b = system.add_battery("battery_b", "192.168.1.101")
         battery_c = system.add_battery("battery_c", "192.168.1.102")
-        
+
         battery_a.data["soc"] = 80.0  # Valid
         battery_b.data["soc"] = "invalid"  # Invalid - string
         battery_c.data["soc"] = None  # Invalid - None
-        
+
         # Should only count valid SOC values
         assert system.get_average_soc() == 80.0
 
@@ -358,30 +338,30 @@ class TestSAXBatterySystem:
         """Test get_average_soc with no valid SOC data."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add batteries with invalid SOC data
         battery_a = system.add_battery("battery_a", "192.168.1.100")
         battery_b = system.add_battery("battery_b", "192.168.1.101")
-        
+
         battery_a.data["soc"] = "invalid"
         battery_b.data["soc"] = None
-        
+
         assert system.get_average_soc() is None
 
     def test_add_battery(self) -> None:
         """Test add_battery method."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         battery = system.add_battery(
             battery_id="battery_a",
             host="192.168.1.100",
             port=503,
             slave_id=65,
             role="master",
-            phase="L2"
+            phase="L2",
         )
-        
+
         assert battery.battery_id == "battery_a"
         assert battery.host == "192.168.1.100"
         assert battery.port == 503
@@ -395,12 +375,12 @@ class TestSAXBatterySystem:
         """Test remove_battery method."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add battery
         system.add_battery("battery_a", "192.168.1.100", role="master")
         assert "battery_a" in system.batteries
         assert system.master_battery_id == "battery_a"
-        
+
         # Remove battery
         system.remove_battery("battery_a")
         assert "battery_a" not in system.batteries
@@ -410,16 +390,16 @@ class TestSAXBatterySystem:
         """Test get_batteries_by_phase method."""
         mock_entry = MagicMock()
         system = SAXBatterySystem(config_entry=mock_entry)
-        
+
         # Add batteries on different phases
         battery_l1 = system.add_battery("battery_a", "192.168.1.100", phase="L1")
         battery_l2 = system.add_battery("battery_b", "192.168.1.101", phase="L2")
         battery_l3 = system.add_battery("battery_c", "192.168.1.102", phase="L3")
-        
+
         l1_batteries = system.get_batteries_by_phase("L1")
         l2_batteries = system.get_batteries_by_phase("L2")
         l3_batteries = system.get_batteries_by_phase("L3")
-        
+
         assert len(l1_batteries) == 1
         assert battery_l1 in l1_batteries
         assert len(l2_batteries) == 1
@@ -435,7 +415,7 @@ class TestSAXBatteryDataAlias:
         """Test that SAXBatteryData is an alias for SAXBatterySystem."""
         mock_entry = MagicMock()
         data = SAXBatteryData(config_entry=mock_entry)
-        
+
         # Should be the same class
         assert isinstance(data, SAXBatterySystem)
         assert SAXBatteryData == SAXBatterySystem

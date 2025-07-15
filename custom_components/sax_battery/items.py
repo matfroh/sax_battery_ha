@@ -297,7 +297,6 @@ class ModbusItem(ApiItem):
         self._battery_slave_id = battery_slave_id
         self._mformat: FormatConstants = mformat
         self._mtype: TypeConstants = mtype
-        self.required_features = []
 
     @property
     def address(self) -> int:

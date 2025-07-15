@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
-
-from pymodbus import ExceptionResponse, ModbusException
-import pytest
-from homeassistant.components.sensor import SensorDeviceClass
+from unittest.mock import MagicMock, PropertyMock, patch
 
 from custom_components.sax_battery.const import (
     DeviceConstants,
@@ -15,7 +11,6 @@ from custom_components.sax_battery.const import (
 )
 from custom_components.sax_battery.items import ModbusItem
 from custom_components.sax_battery.modbusobject import ModbusAPI, ModbusObject
-from custom_components.sax_battery.models import SAXBatteryData
 
 
 class TestModbusAPI:
@@ -233,7 +228,7 @@ class TestModbusObject:
             name="test_item",
             address=100,
             mtype=TypeConstants.SENSOR,
-            mformat=SensorDeviceClass.TEMPERATURE,
+            mformat=FormatConstants.TEMPERATURE,
             translation_key="test_key",
             device=DeviceConstants.SYS,
         )
@@ -312,7 +307,9 @@ class TestModbusObject:
             result = await obj.async_read_value(1)
 
             assert result == 250
-            mock_modbus_client.read_input_registers.assert_called_once_with(100, slave=1)
+            mock_modbus_client.read_input_registers.assert_called_once_with(
+                100, slave=1
+            )
 
     async def test_async_write_value_not_connected(
         self, mock_sax_battery_data, mock_modbus_item, mock_modbus_client

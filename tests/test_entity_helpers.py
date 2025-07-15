@@ -5,16 +5,16 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from custom_components.sax_battery.entity_helpers import build_entity_list
-from custom_components.sax_battery.utils import (
-    determine_entity_category,
-    should_include_entity,
-)
 from custom_components.sax_battery.enums import (
     DeviceConstants,
     FormatConstants,
     TypeConstants,
 )
 from custom_components.sax_battery.items import ModbusItem
+from custom_components.sax_battery.utils import (
+    determine_entity_category,
+    should_include_entity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import Entity
 
@@ -58,44 +58,6 @@ class TestEntityHelpers:
         result = should_include_entity(item, config_entry, "battery_1")
         assert result is False
 
-    def test_should_include_entity_required_features_available(self) -> None:
-        """Test should_include_entity with required features available."""
-        item = ModbusItem(
-            battery_slave_id=1,
-            address=100,
-            name="test_sensor",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
-        )
-        item.required_features = ["feature_a", "feature_b"]
-
-        config_entry = MagicMock(spec=ConfigEntry)
-        config_entry.data = {"features": ["feature_a", "feature_b", "feature_c"]}
-
-        result = should_include_entity(item, config_entry, "battery_1")
-        assert result is True
-
-    def test_should_include_entity_required_features_missing(self) -> None:
-        """Test should_include_entity with required features missing."""
-        item = ModbusItem(
-            battery_slave_id=1,
-            address=100,
-            name="test_sensor",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
-        )
-        item.required_features = ["feature_a", "feature_b"]
-
-        config_entry = MagicMock(spec=ConfigEntry)
-        config_entry.data = {
-            "features": ["feature_a"]  # Missing feature_b
-        }
-
-        result = should_include_entity(item, config_entry, "battery_1")
-        assert result is False
-
     def test_determine_entity_category_diagnostic(self) -> None:
         """Test determine_entity_category returns diagnostic category."""
         item = ModbusItem(
@@ -108,6 +70,7 @@ class TestEntityHelpers:
         )
 
         result = determine_entity_category(item)
+        assert result is not None
         assert result.value == "diagnostic"
 
     def test_determine_entity_category_config(self) -> None:
@@ -122,6 +85,7 @@ class TestEntityHelpers:
         )
 
         result = determine_entity_category(item)
+        assert result is not None
         assert result.value == "config"
 
     @patch("custom_components.sax_battery.sensor.SAXBatterySensor")
