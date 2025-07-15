@@ -9,7 +9,8 @@ if [ -n "$CODECOV_TOKEN" ]; then
 else
   echo "CODECOV_TOKEN is NOT set in container !!!"
 fi
-# pip3 install -r requirements_dev.txt
+
+pip install -r requirements_test.txt
 echo $VIRTUAL_ENV
 which python3
 python --version

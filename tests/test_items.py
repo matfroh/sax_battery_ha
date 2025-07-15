@@ -73,15 +73,11 @@ class TestApiItem:
         """Test ApiItem initialization with defaults."""
         item = ApiItem(
             name="test_item",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
         )
 
         assert item.name == "test_item"
-        assert item.format == FormatConstants.TEMPERATURE
-        assert item.type == TypeConstants.SENSOR
-        assert item.device == DeviceConstants.UK
+        assert item.device == DeviceConstants.UNKNOWN
         assert item.resultlist is None
         assert item.state is None
         assert item.is_invalid is False
@@ -96,18 +92,14 @@ class TestApiItem:
 
         item = ApiItem(
             name="test_item",
-            mformat=FormatConstants.PERCENTAGE,
-            mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
             translation_key="test_translation",
             resultlist=result_list,
             params=params,
         )
 
         assert item.name == "test_item"
-        assert item.format == FormatConstants.PERCENTAGE
-        assert item.type == TypeConstants.NUMBER
-        assert item.device == DeviceConstants.UK
+        assert item.device == DeviceConstants.UNKNOWN
         assert item.resultlist == result_list
         assert item.translation_key == "test_translation"
         assert item.params == params
@@ -116,9 +108,7 @@ class TestApiItem:
         """Test ApiItem property setters."""
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
         )
 
         # Test name setter
@@ -126,8 +116,8 @@ class TestApiItem:
         assert item.name == "updated_name"
 
         # Test device setter
-        item.device = DeviceConstants.UK
-        assert item.device == DeviceConstants.UK
+        item.device = DeviceConstants.UNKNOWN
+        assert item.device == DeviceConstants.UNKNOWN
 
         # Test translation_key setter
         item.translation_key = "updated_key"
@@ -154,9 +144,7 @@ class TestApiItem:
         """Test ApiItem params property when None."""
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
         )
         item.params = {}
         assert item.params == {}
@@ -165,9 +153,7 @@ class TestApiItem:
         """Test get_text_from_number when resultlist is None."""
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
         )
 
         assert item.get_text_from_number(1) is None
@@ -183,9 +169,7 @@ class TestApiItem:
 
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.STATUS,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
             resultlist=result_list,
         )
 
@@ -199,9 +183,7 @@ class TestApiItem:
         """Test get_number_from_text when resultlist is None."""
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
         )
 
         assert item.get_number_from_text("Status One") is None
@@ -216,9 +198,7 @@ class TestApiItem:
 
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.STATUS,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
             resultlist=result_list,
         )
 
@@ -231,9 +211,7 @@ class TestApiItem:
         """Test get_translation_key_from_number when resultlist is None."""
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
         )
 
         assert item.get_translation_key_from_number(1) is None
@@ -249,9 +227,7 @@ class TestApiItem:
 
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.STATUS,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
             resultlist=result_list,
         )
 
@@ -265,9 +241,7 @@ class TestApiItem:
         """Test get_number_from_translation_key when resultlist is None."""
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
         )
 
         assert item.get_number_from_translation_key("status_one") is None
@@ -283,9 +257,7 @@ class TestApiItem:
 
         item = ApiItem(
             name="test",
-            mformat=FormatConstants.STATUS,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
             resultlist=result_list,
         )
 
@@ -306,14 +278,14 @@ class TestModbusItem:
             name="test_modbus",
             mformat=FormatConstants.TEMPERATURE,
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
         )
 
         assert item.address == 100
         assert item.name == "test_modbus"
-        assert item.format == FormatConstants.TEMPERATURE
+        assert item.mformat == FormatConstants.TEMPERATURE
         assert item.type == TypeConstants.SENSOR
-        assert item.device == DeviceConstants.UK
+        assert item.device == DeviceConstants.UNKNOWN
         assert item.translation_key == ""
         assert item.resultlist is None
         assert item.params == {}
@@ -328,18 +300,18 @@ class TestModbusItem:
             name="test_modbus",
             mformat=FormatConstants.PERCENTAGE,
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
             translation_key="test_translation",
             resultlist=result_list,
-            slave=2,
+            battery_slave_id=2,
             params=params,
         )
 
         assert item.address == 200
         assert item.name == "test_modbus"
-        assert item.format == FormatConstants.PERCENTAGE
+        assert item.mformat == FormatConstants.PERCENTAGE
         assert item.type == TypeConstants.NUMBER
-        assert item.device == DeviceConstants.UK
+        assert item.device == DeviceConstants.UNKNOWN
         assert item.translation_key == "test_translation"
         assert item.resultlist == result_list
         assert item.params == params
@@ -351,7 +323,7 @@ class TestModbusItem:
             name="test",
             mformat=FormatConstants.TEMPERATURE,
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
         )
 
         item.address = 300
@@ -369,7 +341,7 @@ class TestModbusItem:
             name="test_modbus",
             mformat=FormatConstants.STATUS,
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.UK,
+            device=DeviceConstants.UNKNOWN,
             resultlist=result_list,
         )
 

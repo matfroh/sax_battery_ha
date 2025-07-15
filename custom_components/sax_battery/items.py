@@ -250,6 +250,9 @@ class ModbusItem(ApiItem):
         | None
     ) = None
     _battery_slave_id: int = 1
+    on_value: int = 1
+    off_value: int = 0
+    master_only: bool = False
 
     def __init__(
         self,
@@ -294,6 +297,7 @@ class ModbusItem(ApiItem):
         self._battery_slave_id = battery_slave_id
         self._mformat: FormatConstants = mformat
         self._mtype: TypeConstants = mtype
+        self.required_features = []
 
     @property
     def address(self) -> int:

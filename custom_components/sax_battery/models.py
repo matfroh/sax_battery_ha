@@ -322,6 +322,7 @@ class SAXBatteryData:
 
         Returns:
             True if at least one battery connection succeeded, False otherwise
+
         """
         _LOGGER.debug("Initializing SAX battery cluster connections")
 
@@ -397,6 +398,7 @@ class SAXBatteryData:
 
         Returns:
             Battery ID of the master battery or None if not found
+
         """
         batteries_config = self.entry.data.get("batteries", {})
 
@@ -418,6 +420,7 @@ class SAXBatteryData:
 
         Returns:
             ModbusAPI instance or None if not found
+
         """
         if not hasattr(self, "_modbus_apis"):
             return None

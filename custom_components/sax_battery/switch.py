@@ -13,15 +13,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import SAXBatteryCoordinator
-from .entity_helpers import (
-    build_entity_list,
-    create_entity_unique_id,
-    determine_entity_category,
-)
+from .entity_helpers import build_entity_list
 from .enums import TypeConstants
 from .items import ModbusItem
 from .modbusobject import ModbusObject
 from .models import SAXBatteryData
+from .utils import create_entity_unique_id, determine_entity_category
 
 
 async def async_setup_entry(

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pymodbus import ExceptionResponse, ModbusException
 from pymodbus.client import AsyncModbusTcpClient
@@ -17,7 +17,9 @@ from homeassistant.components.sensor import SensorDeviceClass
 
 from .const import TypeConstants
 from .items import ModbusItem
-from .models import SAXBatteryData
+
+if TYPE_CHECKING:
+    from .models import SAXBatteryData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -339,6 +341,7 @@ class ModbusObject(ModbusAPI):
 
         Returns:
             True if write was successful, False otherwise
+
         """
         # if slave_id is None:
         #     _LOGGER.error(
@@ -432,6 +435,7 @@ class ModbusObject(ModbusAPI):
 
         Returns:
             True if write was successful, False otherwise
+
         """
         if not self._modbus_client.connected:
             _LOGGER.warning(
@@ -528,28 +532,27 @@ class ModbusObject(ModbusAPI):
                         return int(status_item.number)
 
             return 1  # Default "on" value
-        else:
-            # Check for pilot switches first
-            if self._is_pilot_switch():
-                return 0  # Pilot switches use 0 for "off"
+        # Check for pilot switches first
+        if self._is_pilot_switch():
+            return 0  # Pilot switches use 0 for "off"
 
-            # Use off_value from ModbusItem if defined
-            off_value = getattr(self._modbus_item, "off_value", None)
-            if off_value is not None:
-                return int(off_value)
+        # Use off_value from ModbusItem if defined
+        off_value = getattr(self._modbus_item, "off_value", None)
+        if off_value is not None:
+            return int(off_value)
 
-            # Check resultlist for "off" state mapping
-            resultlist = getattr(self._modbus_item, "resultlist", None)
-            if resultlist:
-                for status_item in resultlist:
-                    if status_item.text.lower() in ["off", "disconnected", "disabled"]:
-                        return int(status_item.number)
+        # Check resultlist for "off" state mapping
+        resultlist = getattr(self._modbus_item, "resultlist", None)
+        if resultlist:
+            for status_item in resultlist:
+                if status_item.text.lower() in ["off", "disconnected", "disabled"]:
+                    return int(status_item.number)
 
-            return 0  # Default "off" value
+        return 0  # Default "off" value
 
     def _is_pilot_switch(self) -> bool:
         """Check if this is a pilot switch."""
-        from .const import SOLAR_CHARGING_SWITCH, MANUAL_CONTROL_SWITCH
+        from .const import MANUAL_CONTROL_SWITCH, SOLAR_CHARGING_SWITCH
 
         return self._modbus_item.name in [SOLAR_CHARGING_SWITCH, MANUAL_CONTROL_SWITCH]
 
@@ -557,7 +560,7 @@ class ModbusObject(ModbusAPI):
         """Get current switch state from coordinator data."""
         # This will be called by the switch entity to get current state
         # The actual value comes from the coordinator's data
-        pass  # Implementation depends on how coordinator stores data
+        # Implementation depends on how coordinator stores data
 
     def get_on_value(self) -> int:
         """Get the Modbus value that represents "on" state."""
