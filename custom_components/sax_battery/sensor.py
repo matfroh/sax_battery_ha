@@ -947,4 +947,5 @@ class SAXBatterySmartmeterTotalPowerSensor(SAXBatterySensor):
     @property
     def native_value(self) -> Any:
         """Return the native value of the sensor."""
-        return self.battery.data.get(SAX_SMARTMETER_TOTAL_POWER)
+        value = self.battery.data.get(SAX_SMARTMETER_TOTAL_POWER)
+        return self.convertToSignedValue(value, 10)
