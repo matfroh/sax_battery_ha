@@ -151,6 +151,13 @@ class SAXBatterySensor(SensorEntity):
         """Return True if entity has to be polled for state."""
         return True
 
+    def convertToSignedValue(self,value,scale):
+        """Some values are not returned in a properly signed form by the battery. Negative values appear as very high positive numbers"""
+        max_value = 65536 * scale # for int16 values (2^16 = 65536)
+        if (value > max_value / 2):
+            return value - max_value # value is actually negative
+        return value # value is positive, return it unchanged
+
     async def async_update(self) -> None:
         """Update the sensor."""
         await self.battery.async_update()
@@ -622,7 +629,6 @@ class SAXBatteryVoltageL3Sensor(SAXBatterySensor):
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_VOLTAGE_L3)
 
-
 class SAXBatteryACPowerTotalSensor(SAXBatterySensor):
     """SAX Battery AC Power Total sensor."""
 
@@ -639,7 +645,8 @@ class SAXBatteryACPowerTotalSensor(SAXBatterySensor):
     @property
     def native_value(self) -> Any:
         """Return the native value of the sensor."""
-        return self.battery.data.get(SAX_AC_POWER_TOTAL)
+        value = self.battery.data.get(SAX_AC_POWER_TOTAL)
+        return self.convertToSignedValue(value, 10)
 
 
 class SAXBatteryGridFrequencySensor(SAXBatterySensor):
@@ -696,7 +703,8 @@ class SAXBatteryReactivePowerSensor(SAXBatterySensor):
     @property
     def native_value(self) -> Any:
         """Return the native value of the sensor."""
-        return self.battery.data.get(SAX_REACTIVE_POWER)
+        value= self.battery.data.get(SAX_REACTIVE_POWER)
+        return self.convertToSignedValue(value, 10)
 
 
 class SAXBatteryPowerFactorSensor(SAXBatterySensor):
@@ -819,7 +827,8 @@ class SAXBatteryActivePowerL1Sensor(SAXBatterySensor):
     @property
     def native_value(self) -> Any:
         """Return the native value of the sensor."""
-        return self.battery.data.get(SAX_ACTIVE_POWER_L1)
+        value = self.battery.data.get(SAX_ACTIVE_POWER_L1)
+        return self.convertToSignedValue(value, 10)
 
 
 class SAXBatteryActivePowerL2Sensor(SAXBatterySensor):
@@ -838,7 +847,8 @@ class SAXBatteryActivePowerL2Sensor(SAXBatterySensor):
     @property
     def native_value(self) -> Any:
         """Return the native value of the sensor."""
-        return self.battery.data.get(SAX_ACTIVE_POWER_L2)
+        value = self.battery.data.get(SAX_ACTIVE_POWER_L2)
+        return self.convertToSignedValue(value, 10)
 
 
 class SAXBatteryActivePowerL3Sensor(SAXBatterySensor):
@@ -857,7 +867,8 @@ class SAXBatteryActivePowerL3Sensor(SAXBatterySensor):
     @property
     def native_value(self) -> Any:
         """Return the native value of the sensor."""
-        return self.battery.data.get(SAX_ACTIVE_POWER_L3)
+        value = self.battery.data.get(SAX_ACTIVE_POWER_L3)
+        return self.convertToSignedValue(value, 10)
 
 
 class SAXBatterySmartmeterVoltageL1Sensor(SAXBatterySensor):
@@ -937,4 +948,5 @@ class SAXBatterySmartmeterTotalPowerSensor(SAXBatterySensor):
     @property
     def native_value(self) -> Any:
         """Return the native value of the sensor."""
-        return self.battery.data.get(SAX_SMARTMETER_TOTAL_POWER)
+        value = self.battery.data.get(SAX_SMARTMETER_TOTAL_POWER)
+        return self.convertToSignedValue(value, 1)

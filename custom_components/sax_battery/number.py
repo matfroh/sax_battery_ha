@@ -237,7 +237,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 _LOGGER.error("Failed to write max discharge value")
 
         except (ConnectionError, TimeoutError) as err:
-            _LOGGER.error("Failed to write max charge value: %s", err)
+            _LOGGER.error("Failed to write max discharge value: %s", err)
 
 
 class SAXBatteryPilotIntervalNumber(NumberEntity):
