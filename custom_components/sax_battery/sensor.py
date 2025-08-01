@@ -629,7 +629,6 @@ class SAXBatteryVoltageL3Sensor(SAXBatterySensor):
         """Return the native value of the sensor."""
         return self.battery.data.get(SAX_VOLTAGE_L3)
 
-
 class SAXBatteryACPowerTotalSensor(SAXBatterySensor):
     """SAX Battery AC Power Total sensor."""
 
@@ -646,6 +645,8 @@ class SAXBatteryACPowerTotalSensor(SAXBatterySensor):
     @property
     def native_value(self) -> Any:
         """Return the native value of the sensor."""
+        value = self.battery.data.get(SAX_AC_POWER_TOTAL)
+        return self.convertToSignedValue(value, 10)
 
 
 class SAXBatteryGridFrequencySensor(SAXBatterySensor):
