@@ -5,16 +5,16 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 
 from .enums import TypeConstants
-from .items import ModbusItem
+from .items import ApiItem
 from .utils import should_include_entity
 
 
 def filter_items_by_type(
-    api_items: list[ModbusItem],
+    api_items: list[ApiItem],
     item_type: TypeConstants,
     config_entry: ConfigEntry,
     battery_id: str,
-) -> list[ModbusItem]:
+) -> list[ApiItem]:
     """Filter modbus items by type and inclusion criteria."""
     return [
         item

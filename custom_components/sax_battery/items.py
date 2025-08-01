@@ -78,7 +78,127 @@ class StatusItem:
         self._translation_key = val
 
 
-class ApiItem:
+class ModbusItem:
+    """Represents an Modbus item."""
+
+    _address: int
+    _mformat: FormatConstants = FormatConstants.UNKNOWN
+    _mtype: TypeConstants = TypeConstants.SENSOR
+    _entitydescription: (
+        SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None
+    ) = None
+    _battery_slave_id: int | None = 1
+    on_value: int = 1
+    off_value: int = 0
+    master_only: bool = False
+
+    def __init__(
+        self,
+        address: int,
+        name: str,
+        mformat: FormatConstants,
+        mtype: TypeConstants,
+        entitydescription: SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None = None,
+        device: DeviceConstants = DeviceConstants.UNKNOWN,
+        translation_key: str | None = None,
+        resultlist: Any = None,
+        params: dict[Any, Any] | None = None,
+        battery_slave_id: int | None = None,
+        on_value: int = 1,
+        off_value: int = 0,
+        conversion_factor: float = 1.0,
+        rounding: int = 0,
+        write_enabled: bool = False,
+        master_only: bool = False,
+    ) -> None:
+        """Initialize ModbusItem.
+
+        Args:
+            address: Modbus register address
+            name: Item name
+            mformat: Data format constant
+            mtype: Item type constant
+            entitydescription: Home Assistant entity description
+            device: Device type constant
+            translation_key: Translation key for entity
+            resultlist: List of results for processing
+            params: Additional parameters
+            battery_slave_id: Slave ID for the battery
+            on_value: Value representing "on" state
+            off_value: Value representing "off" state
+            conversion_factor: Factor for value conversion
+            rounding: Number of decimal places for rounding
+            write_enabled: Whether write operations are enabled
+            master_only: Whether item is only for master battery
+
+        """
+        self._address = address
+        self._entitydescription = entitydescription
+        self._battery_slave_id = battery_slave_id
+        self._mformat: FormatConstants = mformat
+        self._mtype: TypeConstants = mtype
+
+    @property
+    def address(self) -> int:
+        """Return address."""
+        return self._address
+
+    @address.setter
+    def address(self, val: int) -> None:
+        """Set address."""
+        self._address = val
+
+    @property
+    def entitydescription(
+        self,
+    ) -> (
+        SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None
+    ):
+        """Return entitydescription."""
+        return self._entitydescription
+
+    @entitydescription.setter
+    def entitydescription(
+        self,
+        val: SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None,
+    ) -> None:
+        """Set entitydescription."""
+        self._entitydescription = val
+
+    @property
+    def battery_slave_id(self) -> int | None:
+        """Return battery slave ID."""
+        return self._battery_slave_id
+
+    @battery_slave_id.setter
+    def battery_slave_id(self, slave: int) -> None:
+        """Set battery slave ID."""
+        self._battery_slave_id = slave
+
+    @property
+    def mformat(self) -> FormatConstants:
+        """Return format."""
+        return self._mformat
+
+    @property
+    def mtype(self) -> TypeConstants:
+        """Return type."""
+        return self._mtype
+
+
+class ApiItem(ModbusItem):
     """Class ApiIem item.
 
     This can either be a ModbusItem or other
@@ -103,6 +223,13 @@ class ApiItem:
         params: dict[Any, Any] | None = None,
     ) -> None:
         """Initialise ModbusItem."""
+        super().__init__(
+            address=0,
+            name=name,
+            mformat=FormatConstants.UNKNOWN,
+            mtype=TypeConstants.SENSOR,
+            entitydescription=None,
+        )
         self._name: str = name
         self._device: DeviceConstants = device
         self._resultlist = resultlist
@@ -204,7 +331,7 @@ class ApiItem:
         for _useless, item in enumerate(self._resultlist):
             if val == item.number:
                 return str(item.text)
-        return f"unbekannt <{val}>"
+        return f"unknown <{val}>"
 
     def get_number_from_text(self, val: str) -> int | None:
         """Get number of corresponding errortext."""
@@ -224,7 +351,7 @@ class ApiItem:
         for _useless, item in enumerate(self._resultlist):
             if val == item.number:
                 return str(item.translation_key)
-        return f"unbekannt <{val}>"
+        return f"unknown <{val}>"
 
     def get_number_from_translation_key(self, val: str | None) -> int | None:
         """Get number of corresponding errortext."""
@@ -236,133 +363,6 @@ class ApiItem:
             if val == item.translation_key:
                 return int(item.number)
         return -1
-
-
-class ModbusItem(ApiItem):
-    """Represents an Modbus item."""
-
-    _address: int
-    _mformat: FormatConstants = FormatConstants.UNKNOWN
-    _mtype: TypeConstants = TypeConstants.SENSOR
-    _entitydescription: (
-        SwitchEntityDescription
-        | SensorEntityDescription
-        | NumberEntityDescription
-        | None
-    ) = None
-    _battery_slave_id: int | None = 1
-    on_value: int = 1
-    off_value: int = 0
-    master_only: bool = False
-
-    def __init__(
-        self,
-        address: int,
-        name: str,
-        mformat: FormatConstants,
-        mtype: TypeConstants,
-        entitydescription: SwitchEntityDescription
-        | SensorEntityDescription
-        | NumberEntityDescription
-        | None = None,
-        device: DeviceConstants = DeviceConstants.UNKNOWN,
-        translation_key: str | None = None,
-        resultlist: Any = None,
-        params: dict[Any, Any] | None = None,
-        battery_slave_id: int | None = None,
-        on_value: int = 1,
-        off_value: int = 0,
-        conversion_factor: float = 1.0,
-        rounding: int = 0,
-        write_enabled: bool = False,
-        master_only: bool = False,
-    ) -> None:
-        """Initialize ModbusItem.
-
-        Args:
-            address: Modbus register address
-            name: Item name
-            mformat: Data format constant
-            mtype: Item type constant
-            entitydescription: Home Assistant entity description
-            device: Device type constant
-            translation_key: Translation key for entity
-            resultlist: List of results for processing
-            params: Additional parameters
-            battery_slave_id: Slave ID for the battery
-            on_value: Value representing "on" state
-            off_value: Value representing "off" state
-            conversion_factor: Factor for value conversion
-            rounding: Number of decimal places for rounding
-            write_enabled: Whether write operations are enabled
-            master_only: Whether item is only for master battery
-
-        """
-        super().__init__(
-            name=name,
-            device=device,
-            translation_key=translation_key,
-            resultlist=resultlist,
-            params=params,
-        )
-        self._address = address
-        self._entitydescription = entitydescription
-        self._battery_slave_id = battery_slave_id
-        self._mformat: FormatConstants = mformat
-        self._mtype: TypeConstants = mtype
-
-    @property
-    def address(self) -> int:
-        """Return address."""
-        return self._address
-
-    @address.setter
-    def address(self, val: int) -> None:
-        """Set address."""
-        self._address = val
-
-    @property
-    def entitydescription(
-        self,
-    ) -> (
-        SwitchEntityDescription
-        | SensorEntityDescription
-        | NumberEntityDescription
-        | None
-    ):
-        """Return entitydescription."""
-        return self._entitydescription
-
-    @entitydescription.setter
-    def entitydescription(
-        self,
-        val: SwitchEntityDescription
-        | SensorEntityDescription
-        | NumberEntityDescription
-        | None,
-    ) -> None:
-        """Set entitydescription."""
-        self._entitydescription = val
-
-    @property
-    def battery_slave_id(self) -> int | None:
-        """Return battery slave ID."""
-        return self._battery_slave_id
-
-    @battery_slave_id.setter
-    def battery_slave_id(self, slave: int) -> None:
-        """Set battery slave ID."""
-        self._battery_slave_id = slave
-
-    @property
-    def mformat(self) -> FormatConstants:
-        """Return format."""
-        return self._mformat
-
-    @property
-    def mtype(self) -> TypeConstants:
-        """Return type."""
-        return self._mtype
 
 
 @dataclass

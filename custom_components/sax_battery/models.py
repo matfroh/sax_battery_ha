@@ -13,8 +13,8 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import DOMAIN, PILOT_ITEMS
 from .enums import DeviceConstants
-from .items import ModbusItem, SAXItem
-from .modbusobject import ModbusAPI
+from .items import ApiItem, SAXItem
+from .modbusobject import SAXBatteryAPI
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ class SAXBatteryData:
         """Check if this battery should poll smart meter data."""
         return battery_id == self.master_battery_id
 
-    def get_modbus_items_for_battery(self, battery_id: str) -> list[ModbusItem]:
+    def get_modbus_items_for_battery(self, battery_id: str) -> list[ApiItem]:
         """Get Modbus items for a specific battery."""
         return []
 
@@ -338,11 +338,11 @@ class SAXBatteryData:
                 _LOGGER.debug("Initializing connection for battery %s", battery_id)
 
                 # Create ModbusAPI instance for this battery
-                modbus_api = ModbusAPI(config_entry=self, battery_id=battery_id)
+                modbus_api = SAXBatteryAPI(config_entry=self, battery_id=battery_id)
 
                 # Store the API instance
                 if not hasattr(self, "_modbus_apis"):
-                    self._modbus_apis: dict[str, ModbusAPI] = {}
+                    self._modbus_apis: dict[str, SAXBatteryAPI] = {}
                 self._modbus_apis[battery_id] = modbus_api
 
                 # Attempt connection (startup=True for initial connection)
@@ -409,8 +409,8 @@ class SAXBatteryData:
 
         return None
 
-    def get_modbus_api(self, battery_id: str) -> ModbusAPI | None:
-        """Get ModbusAPI instance for a specific battery.
+    def get_modbus_api(self, battery_id: str) -> SAXBatteryAPI | None:
+        """Get SAXBatteryAPI instance for a specific battery.
 
         Args:
             battery_id: Battery identifier (e.g., "battery_a", "battery_b", "battery_c")

@@ -16,7 +16,7 @@ from pymodbus.client import AsyncModbusTcpClient
 from homeassistant.components.sensor import SensorDeviceClass
 
 from .const import MANUAL_CONTROL_SWITCH, SOLAR_CHARGING_SWITCH, TypeConstants
-from .items import ModbusItem
+from .items import ApiItem
 
 if TYPE_CHECKING:
     from .models import SAXBatteryData
@@ -24,11 +24,11 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class ModbusAPI:
-    """ModbusAPI class provides a connection to the modbus, which is used by the ModbusItems."""
+class SAXBatteryAPI:
+    """SAXBatteryAPI class provides a connection to the modbus, which is used by the ModbusItems."""
 
     def __init__(self, config_entry: SAXBatteryData, battery_id: str) -> None:
-        """Construct ModbusAPI.
+        """Construct SAXBatteryAPI.
 
         Args:
             config_entry: HASS config entry
@@ -140,7 +140,7 @@ class ModbusAPI:
             return result.registers
 
 
-class ModbusObject(ModbusAPI):
+class ModbusObject(SAXBatteryAPI):
     """ModbusObject.
 
     A Modbus object that contains a Modbus item and communicates with the Modbus.
@@ -149,8 +149,8 @@ class ModbusObject(ModbusAPI):
 
     def __init__(
         self,
-        modbus_api: ModbusAPI,
-        modbus_item: ModbusItem,
+        modbus_api: SAXBatteryAPI,
+        modbus_item: ApiItem,
         config_entry: SAXBatteryData,
         battery_id: str,
         no_connect_warn: bool = False,
@@ -159,15 +159,17 @@ class ModbusObject(ModbusAPI):
 
         Args:
             modbus_api: The modbus API
-            modbus_item: definition of modbus item
-            no_connect_warn: suppress connection warnings
+            modbus_item: Definition of modbus item
+            config_entry: HASS config entry
+            battery_id: Battery identifier (e.g., "battery_a", "battery_b", "battery_c")
+            no_connect_warn: Suppress connection warnings
 
         """
         super().__init__(
             config_entry,
             battery_id,
         )
-        self._modbus_item: ModbusItem = modbus_item
+        self._modbus_item: ApiItem = modbus_item
         self._modbus_client: AsyncModbusTcpClient = modbus_api.get_device()
         self._no_connect_warn: bool = no_connect_warn
 

@@ -8,6 +8,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -15,7 +16,7 @@ from .const import DOMAIN
 from .coordinator import SAXBatteryCoordinator
 from .entity_utils import filter_items_by_type
 from .enums import TypeConstants
-from .items import ModbusItem
+from .items import ApiItem
 from .models import SAXBatteryData
 from .utils import create_entity_unique_id, determine_entity_category
 
@@ -58,16 +59,14 @@ class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):
         self,
         coordinator: SAXBatteryCoordinator,
         battery_id: str,
-        modbus_item: ModbusItem,
+        modbus_item: ApiItem,
         index: int,
     ) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
         self._modbus_item = modbus_item
         self._battery_id = battery_id
-        self._attr_unique_id = create_entity_unique_id(
-            battery_id, modbus_item.name, index
-        )
+        self._attr_unique_id = create_entity_unique_id(battery_id, modbus_item, index)
         self._attr_entity_category = determine_entity_category(modbus_item)
         self._attr_has_entity_name = True
 
@@ -128,7 +127,7 @@ class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):
         }
 
     @property
-    def device_info(self) -> dict[str, Any]:
+    def device_info(self) -> DeviceInfo:
         """Return device information."""
         return self.coordinator.sax_data.get_device_info(self._battery_id)
 

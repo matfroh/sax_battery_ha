@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import DOMAIN
 from .enums import FormatConstants
-from .items import ModbusItem, SAXItem
+from .items import ApiItem, SAXItem
 from .modbusobject import ModbusObject
 from .models import SAXBatteryData
 
@@ -57,7 +57,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return time.time()
         return None
 
-    def _should_immediate_refresh(self, modbus_item: ModbusItem) -> bool:
+    def _should_immediate_refresh(self, modbus_item: ApiItem) -> bool:
         """Determine if immediate refresh is needed after write."""
         critical_items = {
             "sax_max_charge_power",
@@ -68,7 +68,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return modbus_item.name in critical_items
 
     def _convert_value_for_writing(
-        self, modbus_item: ModbusItem | SAXItem, value: float
+        self, modbus_item: ApiItem | SAXItem, value: float
     ) -> int:
         """Convert value according to Modbus item configuration."""
         # Apply divider if specified
@@ -192,7 +192,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (OSError, ValueError, TypeError, AttributeError) as err:
             _LOGGER.debug("Smart meter update failed: %s", err)
 
-    async def _read_smart_meter_item(self, item: ModbusItem) -> None:
+    async def _read_smart_meter_item(self, item: ApiItem) -> None:
         """Read a single smart meter item."""
         try:
             values = await self.modbus_api.read_holding_registers(
@@ -203,7 +203,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (OSError, ValueError, TypeError, AttributeError) as err:
             _LOGGER.debug("Failed to read smart meter item %s: %s", item.name, err)
 
-    def _update_smart_meter_value(self, item: ModbusItem, value: int) -> None:
+    def _update_smart_meter_value(self, item: ApiItem, value: int) -> None:
         """Update smart meter data based on item name."""
         smart_meter_mapping = {
             "smartmeter_total_power": "total_power",
@@ -229,9 +229,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             setattr(self.sax_data.smart_meter_data, attr_name, converted_value)
             self.sax_data.smart_meter_data.last_update = time.time()
 
-    async def async_write_switch_value(
-        self, modbus_item: ModbusItem, value: bool
-    ) -> bool:
+    async def async_write_switch_value(self, modbus_item: ApiItem, value: bool) -> bool:
         """Write a boolean switch value to a Modbus register for this battery."""
         try:
             # Get the ModbusObject for this item
@@ -266,7 +264,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return success
 
     async def async_write_number_value(
-        self, modbus_item: ModbusItem, value: float
+        self, modbus_item: ApiItem, value: float
     ) -> bool:
         """Write a numeric value to a Modbus register for this battery."""
         try:
@@ -313,7 +311,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             return success
 
-    async def async_write_int_value(self, modbus_item: ModbusItem, value: int) -> bool:
+    async def async_write_int_value(self, modbus_item: ApiItem, value: int) -> bool:
         """Write an integer value to a Modbus register for this battery."""
         try:
             # Convert and clamp int value to 16-bit signed range
