@@ -151,8 +151,8 @@ class SAXBatterySensor(SensorEntity):
         """Return True if entity has to be polled for state."""
         return True
 
-    def convertToSignedValue(self,value,scale):
-        """Some values are not returned in a properly signed form by the battery. Negative values appear as very high positive numbers"""
+    def convertToSignedValue(self ,value: int, scale: int) -> int:
+        """Transform values in signed form as negative values appear as very high positive numbers."""
         max_value = 65536 * scale # for int16 values (2^16 = 65536)
         if (value > max_value / 2):
             return value - max_value # value is actually negative
