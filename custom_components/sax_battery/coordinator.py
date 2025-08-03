@@ -1,358 +1,310 @@
-"""Data update coordinator for SAX Battery integration."""
+"""SAX Battery data update coordinator."""
 
 from __future__ import annotations
 
-import asyncio
-from datetime import timedelta
+import ast
+from collections.abc import Callable
+from datetime import datetime, timedelta
 import logging
-import time
-from typing import Any, NoReturn
+import operator
+from typing import Any
+
+from pymodbus import ModbusException
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
-from .enums import FormatConstants
-from .items import ApiItem, SAXItem
-from .modbusobject import ModbusObject
+from .const import BATTERY_POLL_INTERVAL, DOMAIN
+from .items import ApiItem, ModbusItem, SAXItem
+from .modbusobject import ModbusAPI, ModbusObject
 from .models import SAXBatteryData
 
 _LOGGER = logging.getLogger(__name__)
 
+# Safe operations for calculation evaluation
+SAFE_OPERATIONS: dict[type[ast.AST], Callable[..., float]] = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
 
 class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator for individual SAX Battery with Modbus operations."""
+    """SAX Battery data update coordinator."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         battery_id: str,
         sax_data: SAXBatteryData,
-        modbus_api: Any,
-        update_interval: timedelta = timedelta(seconds=10),
+        modbus_api: ModbusAPI,
     ) -> None:
-        """Initialize coordinator for specific battery."""
+        """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_{battery_id}",
-            update_interval=update_interval,
+            update_interval=timedelta(seconds=BATTERY_POLL_INTERVAL),
         )
+
         self.battery_id = battery_id
         self.sax_data = sax_data
         self.modbus_api = modbus_api
         self._first_update_done = False
-        self._last_write_time: dict[int, float] = {}
-        self._sax_item_states: dict[str, Any] = {}
-
-    def update_sax_item_state(self, item_name: str, value: Any) -> None:
-        """Update SAX item state."""
-        self._sax_item_states[item_name] = value
-
-    @property
-    def last_update_success_time(self) -> float | None:
-        """Return the time of the last successful update."""
-        if hasattr(self, "last_update_success") and self.last_update_success:
-            return time.time()
-        return None
-
-    def _should_immediate_refresh(self, modbus_item: ApiItem) -> bool:
-        """Determine if immediate refresh is needed after write."""
-        critical_items = {
-            "sax_max_charge_power",
-            "sax_max_discharge_power",
-            "sax_solar_charging",
-            "sax_pilot_enabled",
-        }
-        return modbus_item.name in critical_items
-
-    def _convert_value_for_writing(
-        self, modbus_item: ApiItem | SAXItem, value: float
-    ) -> int:
-        """Convert value according to Modbus item configuration."""
-        # Apply divider if specified
-        divider = getattr(modbus_item, "divider", 1)
-        if divider and divider != 1:
-            value = value * divider
-
-        # Apply format-specific conversions
-        item_format = getattr(modbus_item, "mformat", None) or getattr(
-            modbus_item, "mformat", None
-        )
-        if item_format == FormatConstants.PERCENTAGE:
-            value = max(0, min(100, value))
-
-        # Ensure we return an integer value within valid Modbus range
-        return int(max(-32768, min(32767, value)))
+        self._modbus_objects: dict[str, ModbusObject] = {}
+        self.last_update_success_time: datetime | None = None
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from specific battery and update SAX items."""
+        """Update data from battery."""
         try:
-            battery = self.sax_data.batteries.get(self.battery_id)
-            if not battery:
-                self._raise_battery_not_found_error()
+            # Get modbus items for this battery
+            modbus_items = self.sax_data.get_modbus_items_for_battery(self.battery_id)
 
-            # Type assertion to help MyPy understand battery is not None
-            assert battery is not None
+            # Create ModbusObjects if not already created
+            for item in modbus_items:
+                if item.name not in self._modbus_objects:
+                    # Convert ModbusItem to ApiItem for compatibility
+                    api_item = self._convert_modbus_to_api_item(item)
+                    self._modbus_objects[item.name] = ModbusObject(
+                        self.modbus_api, api_item
+                    )
 
-            # Update Modbus data from battery
-            await battery.async_update()
+            # Read data from modbus
+            data: dict[str, Any] = {}
+            for item_name, modbus_obj in self._modbus_objects.items():
+                try:
+                    raw_value = await modbus_obj.async_read_value()
+                    if raw_value is not None:
+                        converted_value = modbus_obj.item.convert_raw_value(raw_value)
+                        data[item_name] = converted_value
+                    else:
+                        data[item_name] = None
+                except (ModbusException, OSError, TimeoutError) as err:
+                    _LOGGER.debug("Failed to read %s: %s", item_name, err)
+                    data[item_name] = None
 
-            # Update SAX items for this battery
-            await self._update_sax_items()
-
-            # For master battery, also update smart meter data
+            # Handle smart meter data if this is the master battery
             if self.sax_data.should_poll_smart_meter(self.battery_id):
-                await self._update_smart_meter_data()
+                await self._update_smart_meter_data(data)
+
+            # Update battery in sax_data
+            if battery := self.sax_data.batteries.get(self.battery_id):
+                battery.update_data(data)
+
+            # Handle calculated SAX items
+            sax_items = self.sax_data.get_sax_items_for_battery(self.battery_id)
+            for sax_item in sax_items:
+                if (
+                    hasattr(sax_item.mtype, "name")
+                    and sax_item.mtype.name == "SENSOR_CALC"
+                ):
+                    calculated_value = self._calculate_sax_value(sax_item)
+                    data[sax_item.name] = calculated_value
 
             self._first_update_done = True
-        except (OSError, ValueError, TypeError, AttributeError) as err:
-            return self._handle_update_error(err)
-        else:
-            return battery.data or {}
+            self.last_update_success_time = datetime.now()
+            return data  # noqa: TRY300
 
-    def _raise_battery_not_found_error(self) -> NoReturn:
-        """Raise appropriate error when battery is not found."""
-        raise UpdateFailed(f"Battery {self.battery_id} not found")
+        except (ModbusException, OSError, TimeoutError) as err:
+            if not self._first_update_done:
+                raise ConfigEntryNotReady(
+                    f"Failed to setup battery {self.battery_id}: {err}"
+                ) from err
 
-    def _handle_update_error(self, err: Exception) -> dict[str, Any]:
-        """Handle update errors appropriately."""
-        if not self._first_update_done:
-            raise ConfigEntryNotReady(
-                f"Failed to setup battery {self.battery_id}: {err}"
+            raise UpdateFailed(
+                f"Error communicating with battery {self.battery_id}: {err}"
             ) from err
 
-        raise UpdateFailed(
-            f"Error communicating with battery {self.battery_id}: {err}"
-        ) from err
+    def _convert_modbus_to_api_item(self, modbus_item: ModbusItem) -> ApiItem:
+        """Convert ModbusItem to ApiItem for backward compatibility."""
+        return ApiItem(
+            name=modbus_item.name,
+            mformat=modbus_item.mformat,
+            mtype=modbus_item.mtype,
+            device=modbus_item.device,
+            translation_key=modbus_item.translation_key,
+            params=modbus_item.params,
+            address=modbus_item.address,
+            battery_slave_id=modbus_item.battery_slave_id,
+            divider=modbus_item.divider,
+            entitydescription=modbus_item.entitydescription,
+            resultlist=modbus_item.resultlist,
+        )
 
-    async def _update_sax_items(self) -> None:
-        """Update all SAX items for this battery."""
-        # Get SAX items from the data model
-        sax_items = self.sax_data.get_sax_items_for_battery(self.battery_id)
+    def _convert_api_to_modbus_item(self, api_item: ApiItem) -> ModbusItem:
+        """Convert ApiItem to ModbusItem for method compatibility."""
+        return ModbusItem(
+            name=api_item.name,
+            mformat=api_item.mformat,
+            mtype=api_item.mtype,
+            device=api_item.device,
+            translation_key=api_item.translation_key,
+            params=api_item.params,
+            address=api_item.address,
+            battery_slave_id=api_item.battery_slave_id,
+            divider=api_item.divider,
+            entitydescription=api_item.entitydescription,
+            resultlist=api_item.resultlist or [],
+        )
 
-        # Update each SAX item
-        for sax_item in sax_items:
-            await self._refresh_sax_item(sax_item)
-
-    async def _refresh_sax_item(self, sax_item: SAXItem) -> None:
-        """Refresh a specific SAX item's state."""
+    async def _update_smart_meter_data(self, data: dict[str, Any]) -> None:
+        """Update smart meter data (only for master battery)."""
         try:
-            # For pilot functionality, manage state locally
-            if "pilot" in sax_item.name.lower():
-                current_state = await self._get_pilot_state(sax_item.name)
-                self._sax_item_states[sax_item.name] = current_state
-            elif "solar_charging" in sax_item.name.lower():
-                current_state = await self._get_solar_charging_state()
-                self._sax_item_states[sax_item.name] = current_state
-            elif "manual_control" in sax_item.name.lower():
-                current_state = await self._get_manual_control_state()
-                self._sax_item_states[sax_item.name] = current_state
+            smart_meter_items = self.sax_data.get_smart_meter_items()
+            for item in smart_meter_items:
+                try:
+                    raw_values = await self.modbus_api.read_holding_registers(
+                        item.address, 1, item.battery_slave_id
+                    )
+                    if raw_values:
+                        converted_value = item.convert_raw_value(raw_values[0])
+                        data[item.name] = converted_value
+                        # Update smart meter data in sax_data
+                        if self.sax_data.smart_meter_data:
+                            self.sax_data.smart_meter_data.set_value(
+                                item.name, converted_value
+                            )
+                except (ModbusException, OSError, TimeoutError) as err:
+                    _LOGGER.debug("Failed to read smart meter %s: %s", item.name, err)
+                    data[item.name] = None
+        except (ModbusException, OSError, TimeoutError) as err:
+            _LOGGER.debug("Failed to update smart meter data: %s", err)
 
-            _LOGGER.debug("Refreshed SAX item: %s", sax_item.name)
-
-        except (OSError, ValueError, TypeError, AttributeError) as err:
-            _LOGGER.debug("Failed to refresh SAX item %s: %s", sax_item.name, err)
-
-    async def _get_pilot_state(self, item_name: str) -> int:
-        """Get current pilot state from system."""
-        stored_state = self._sax_item_states.get(item_name, 0)
-        return int(stored_state) if stored_state is not None else 0
-
-    async def _get_solar_charging_state(self) -> int:
-        """Get current solar charging state from system."""
-        stored_state = self._sax_item_states.get("solar_charging", 0)
-        return int(stored_state) if stored_state is not None else 0
-
-    async def _get_manual_control_state(self) -> int:
-        """Get current manual control state from system."""
-        stored_state = self._sax_item_states.get("manual_control", 0)
-        return int(stored_state) if stored_state is not None else 0
-
-    async def _update_smart_meter_data(self) -> None:
-        """Update smart meter data (master battery only)."""
+    def _safe_eval_expression(
+        self, expr: str, variables: dict[str, float]
+    ) -> float | None:
+        """Safely evaluate mathematical expressions using AST."""
         try:
-            # Get smart meter items for this battery
-            smart_meter_items = self.sax_data.get_modbus_items_for_battery(
-                self.battery_id
-            )
+            # Parse the expression
+            tree = ast.parse(expr, mode="eval")
 
-            # Filter for smart meter specific items
-            smartmeter_items = [
-                item for item in smart_meter_items if "smartmeter" in item.name.lower()
-            ]
+            def _eval_node(node: ast.AST) -> float:
+                if isinstance(node, ast.Expression):
+                    return _eval_node(node.body)
+                elif isinstance(node, ast.Constant):  # Numbers  # noqa: RET505
+                    if isinstance(node.value, (int, float)):
+                        return float(node.value)
+                    raise ValueError(f"Unsupported constant type: {type(node.value)}")  # noqa: TRY301
+                elif isinstance(node, ast.Name):  # Variables
+                    if node.id in variables:
+                        return float(variables[node.id])
+                    raise ValueError(f"Unknown variable: {node.id}")  # noqa: TRY301
+                elif isinstance(node, ast.BinOp):  # Binary operations
+                    if type(node.op) in SAFE_OPERATIONS:
+                        left = _eval_node(node.left)
+                        right = _eval_node(node.right)
+                        op_func = SAFE_OPERATIONS[type(node.op)]
+                        return float(op_func(left, right))
+                    raise ValueError(f"Unsupported operation: {type(node.op)}")  # noqa: TRY301
+                elif isinstance(node, ast.UnaryOp):  # Unary operations
+                    if type(node.op) in SAFE_OPERATIONS:
+                        operand = _eval_node(node.operand)
+                        op_func = SAFE_OPERATIONS[type(node.op)]
+                        return float(op_func(operand))
+                    raise ValueError(f"Unsupported unary operation: {type(node.op)}")  # noqa: TRY301
+                else:
+                    raise ValueError(f"Unsupported node type: {type(node)}")  # noqa: TRY004, TRY301
 
-            # Read smart meter data in parallel for efficiency
-            tasks = [self._read_smart_meter_item(item) for item in smartmeter_items]
+            return _eval_node(tree)
 
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+        except (ValueError, SyntaxError, TypeError, ZeroDivisionError) as err:
+            _LOGGER.debug("Failed to evaluate expression '%s': %s", expr, err)
+            return None
 
-        except (OSError, ValueError, TypeError, AttributeError) as err:
-            _LOGGER.debug("Smart meter update failed: %s", err)
+    def _calculate_sax_value(self, item: SAXItem) -> float | None:
+        """Calculate value for SAX calculated items."""
+        if not item.params or "calculation" not in item.params:
+            return None
 
-    async def _read_smart_meter_item(self, item: ApiItem) -> None:
-        """Read a single smart meter item."""
         try:
-            values = await self.modbus_api.read_holding_registers(
-                item.address, 1, self.battery_id
-            )
-            if values and len(values) > 0:
-                self._update_smart_meter_value(item, values[0])
-        except (OSError, ValueError, TypeError, AttributeError) as err:
-            _LOGGER.debug("Failed to read smart meter item %s: %s", item.name, err)
+            # Prepare variables for calculation
+            calc_vars: dict[str, float] = {}
+            for i in range(9):  # val_0 to val_8
+                val_key = f"val_{i}"
+                if val_key in item.params:
+                    source_key = item.params[val_key]
+                    # Get value from appropriate source
+                    if source_key.startswith("smartmeter_"):
+                        value = (
+                            self.sax_data.smart_meter_data.get_value(source_key)
+                            if self.sax_data.smart_meter_data
+                            else 0
+                        )
+                    else:
+                        # Get from battery data
+                        battery = self.sax_data.batteries.get(self.battery_id)
+                        value = battery.get_value(source_key) if battery else 0
+                    calc_vars[val_key] = float(value or 0)
 
-    def _update_smart_meter_value(self, item: ApiItem, value: int) -> None:
-        """Update smart meter data based on item name."""
-        smart_meter_mapping = {
-            "smartmeter_total_power": "total_power",
-            "smartmeter_grid_frequency": "grid_frequency",
-            "smartmeter_voltage_l1": "voltage_l1",
-            "smartmeter_voltage_l2": "voltage_l2",
-            "smartmeter_voltage_l3": "voltage_l3",
-            "smartmeter_current_l1": "current_l1",
-            "smartmeter_current_l2": "current_l2",
-            "smartmeter_current_l3": "current_l3",
-            "smartmeter_import_power": "import_power",
-            "smartmeter_export_power": "export_power",
-        }
+            # Execute calculation safely using AST
+            calculation = item.params["calculation"]
+            return self._safe_eval_expression(calculation, calc_vars)
 
-        attr_name = smart_meter_mapping.get(item.name)
-        if attr_name and hasattr(self.sax_data.smart_meter_data, attr_name):
-            # Apply divider if specified
-            converted_value = float(value)
-            divider = getattr(item, "divider", 1)
-            if divider and divider != 1:
-                converted_value = float(value) / divider
-
-            setattr(self.sax_data.smart_meter_data, attr_name, converted_value)
-            self.sax_data.smart_meter_data.last_update = time.time()
-
-    async def async_write_switch_value(self, modbus_item: ApiItem, value: bool) -> bool:
-        """Write a boolean switch value to a Modbus register for this battery."""
-        try:
-            # Get the ModbusObject for this item
-            modbus_object = ModbusObject(
-                modbus_api=self.modbus_api,
-                modbus_item=modbus_item,
-                config_entry=self.sax_data,
-                battery_id=self.battery_id,
-            )
-
-            # Write the boolean value using ModbusObject abstraction
-            success = await modbus_object.async_write_switch_value(value)
-
-            if success:
-                # Update the last write time for rate limiting
-                self._last_write_time[modbus_item.address] = time.time()
-
-                # Trigger immediate refresh for critical items
-                if self._should_immediate_refresh(modbus_item):
-                    await self.async_request_refresh()
-
-        except (OSError, ValueError, TypeError) as err:
-            _LOGGER.warning(
-                "Failed to write switch value %s for %s on battery %s: %s",
-                value,
-                modbus_item.name,
-                self.battery_id,
-                err,
-            )
-            return False
-        else:
-            return success
+        except (ValueError, KeyError, TypeError) as err:
+            _LOGGER.debug("Failed to calculate %s: %s", item.name, err)
+            return None
 
     async def async_write_number_value(
-        self, modbus_item: ApiItem, value: float
+        self, item: ModbusItem | ApiItem, value: float
     ) -> bool:
-        """Write a numeric value to a Modbus register for this battery."""
+        """Write a number value to modbus register."""
         try:
-            # Convert float value to appropriate Modbus format
-            converted_value = self._convert_value_for_writing(modbus_item, value)
+            # Convert ApiItem to ModbusItem if needed
+            if isinstance(item, ApiItem):
+                modbus_item = self._convert_api_to_modbus_item(item)
+            else:
+                modbus_item = item
 
-            # Get the ModbusObject for this item
-            modbus_object = ModbusObject(
-                modbus_api=self.modbus_api,
-                modbus_item=modbus_item,
-                config_entry=self.sax_data,
-                battery_id=self.battery_id,
-            )
+            # Get or create ModbusObject for this item
+            if modbus_item.name not in self._modbus_objects:
+                # Convert ModbusItem to ApiItem for compatibility
+                api_item = self._convert_modbus_to_api_item(modbus_item)
+                self._modbus_objects[modbus_item.name] = ModbusObject(
+                    self.modbus_api, api_item
+                )
 
-            # Get battery slave ID from modbus item or use battery configuration
-            slave_id = getattr(modbus_item, "battery_slave_id", None)
-            if slave_id is None:
-                # Fallback to battery configuration
-                battery = self.sax_data.batteries.get(self.battery_id)
-                slave_id = getattr(battery, "slave_id", 1) if battery else 1
+            modbus_obj = self._modbus_objects[modbus_item.name]
+            raw_value = modbus_item.convert_to_raw_value(value)
 
-            # Write the numeric value using ModbusObject abstraction
-            success = await modbus_object.async_write_value(
-                slave_id=slave_id, value=converted_value
-            )
+            success = await modbus_obj.async_write_value(raw_value)
 
             if success:
-                # Update the last write time for rate limiting
-                self._last_write_time[modbus_item.address] = time.time()
+                # Update local data
+                if battery := self.sax_data.batteries.get(self.battery_id):
+                    battery.set_value(modbus_item.name, value)
+                modbus_item.state = value
 
-                # Trigger immediate refresh for critical items
-                if self._should_immediate_refresh(modbus_item):
-                    await self.async_request_refresh()
+            return success  # noqa: TRY300
 
-        except (OSError, ValueError, TypeError) as err:
-            _LOGGER.warning(
-                "Failed to write numeric value %s for %s on battery %s: %s",
-                value,
-                modbus_item.name,
-                self.battery_id,
-                err,
-            )
+        except (ModbusException, OSError, TimeoutError, ValueError) as err:
+            _LOGGER.debug("Failed to write %s: %s", item.name, err)
             return False
+
+    async def async_write_switch_value(
+        self, item: ModbusItem | ApiItem, value: bool
+    ) -> bool:
+        """Write a switch value to modbus register."""
+        return await self.async_write_number_value(item, float(value))
+
+    async def async_write_int_value(
+        self, item: ModbusItem | ApiItem, value: int
+    ) -> bool:
+        """Write an integer value to modbus register."""
+        return await self.async_write_number_value(item, float(value))
+
+    def update_sax_item_state(self, item: SAXItem | str, value: Any) -> None:
+        """Update the state of a SAX item."""
+        if isinstance(item, str):
+            # Handle string case - find the item by name
+            item_name = item
         else:
-            return success
+            item.state = value
+            item_name = item.name
 
-    async def async_write_int_value(self, modbus_item: ApiItem, value: int) -> bool:
-        """Write an integer value to a Modbus register for this battery."""
-        try:
-            # Convert and clamp int value to 16-bit signed range
-            converted_value = int(max(-32768, min(32767, value)))
-
-            # Get the ModbusObject for this item
-            modbus_object = ModbusObject(
-                modbus_api=self.modbus_api,
-                modbus_item=modbus_item,
-                config_entry=self.sax_data,
-                battery_id=self.battery_id,
-            )
-
-            # Get battery slave ID from modbus item or use battery configuration
-            slave_id = getattr(modbus_item, "battery_slave_id", None)
-            if slave_id is None:
-                # Fallback to battery configuration
-                battery = self.sax_data.batteries.get(self.battery_id)
-                slave_id = getattr(battery, "slave_id", 1) if battery else 1
-
-            # Write the integer value using ModbusObject abstraction
-            success = await modbus_object.async_write_value(
-                slave_id=slave_id, value=converted_value
-            )
-
-            if success:
-                # Update the last write time for rate limiting
-                self._last_write_time[modbus_item.address] = time.time()
-
-                # Trigger immediate refresh for critical items
-                if self._should_immediate_refresh(modbus_item):
-                    await self.async_request_refresh()
-
-        except (OSError, ValueError, TypeError) as err:
-            _LOGGER.warning(
-                "Failed to write integer value %s for %s on battery %s: %s",
-                value,
-                modbus_item.name,
-                self.battery_id,
-                err,
-            )
-            return False
-        else:
-            return success
+        # Also update in battery data if available
+        if battery := self.sax_data.batteries.get(self.battery_id):
+            battery.set_value(item_name, value)

@@ -131,9 +131,9 @@ MANUAL_CONTROL_SWITCH = "manual_control_switch"
 # fmt: off
 
 SYS_STATUSANZEIGE: list[StatusItem] = [
-    StatusItem(number=1, text="OFF", translation_key="system_operationmode_off"),
-    StatusItem(number=3, text="Connected", translation_key="system_operationmode_connected"),
-    StatusItem(number=4, text="Standby", translation_key="system_operationmode_standby"),
+    StatusItem(number=1, text="OFF", name="system_operationmode_off"),
+    StatusItem(number=3, text="Connected", name="system_operationmode_connected"),
+    StatusItem(number=4, text="Standby", name="system_operationmode_standby"),
 ]
 
 

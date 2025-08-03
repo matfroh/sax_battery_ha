@@ -11,9 +11,9 @@ from custom_components.sax_battery.enums import (
     FormatConstants,
     TypeConstants,
 )
-from custom_components.sax_battery.items import ApiItem
+from custom_components.sax_battery.items import ApiItem, ModbusItem
+from custom_components.sax_battery.modbusobject import ModbusAPI
 
-# Only import what's absolutely necessary for tests
 pytest_plugins = "pytest_homeassistant_custom_component"
 
 
@@ -26,14 +26,24 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 @pytest.fixture
 def mock_modbus_api():
     """Create mock ModbusAPI."""
-    api = MagicMock()
+    api = MagicMock(spec=ModbusAPI)
+    api.battery_id = "battery_a"
+    api._host = "192.168.1.100"
+    api._port = 502
+    api._connected = True
+
+    api.connect = AsyncMock(return_value=True)
+    api.close = MagicMock(return_value=True)
     api.write_holding_register = AsyncMock(return_value=True)
     api.read_holding_registers = AsyncMock(return_value=[100])
+    api.read_input_registers = AsyncMock(return_value=[100])
 
-    # Mock the modbus client that gets returned by get_device()
+    # Mock the modbus client
     mock_client = MagicMock()
     mock_client.connected = True
-    mock_client.write_register = AsyncMock(return_value=True)
+    mock_client.write_register = AsyncMock(
+        return_value=MagicMock(isError=MagicMock(return_value=False))
+    )
     api.get_device.return_value = mock_client
 
     return api
@@ -46,9 +56,9 @@ def mock_sax_data():
     data.master_battery_id = "battery_a"
     data.coordinators = {}
     data.batteries = {"battery_a": MagicMock()}
-    data.batteries["battery_a"].async_update = AsyncMock()
     data.batteries["battery_a"].data = {"test_value": 42}
     data.smart_meter_data = MagicMock()
+    data.smart_meter_data.data = {"smartmeter_total_power": 2500.0}
 
     # Mock methods
     data.get_device_info = MagicMock(
@@ -63,6 +73,7 @@ def mock_sax_data():
     data.should_poll_smart_meter = MagicMock(return_value=False)
     data.get_modbus_items_for_battery = MagicMock(return_value=[])
     data.get_sax_items_for_battery = MagicMock(return_value=[])
+    data.get_smart_meter_items = MagicMock(return_value=[])
 
     return data
 
@@ -77,7 +88,6 @@ def mock_coordinator():
     coordinator.battery_id = "battery_a"
     coordinator._first_update_done = False
 
-    # Mock async methods with correct names
     coordinator.async_request_refresh = AsyncMock()
     coordinator.async_write_number_value = AsyncMock(return_value=True)
     coordinator._async_update_data = AsyncMock(return_value={"test_value": 42})
@@ -87,15 +97,32 @@ def mock_coordinator():
 
 @pytest.fixture
 def mock_modbus_item():
-    """Create mock ApiItem."""
-    item = ApiItem(
+    """Create mock ModbusItem."""
+    item = ModbusItem(
         name="test_item",
+        address=100,
+        battery_slave_id=1,
         mformat=FormatConstants.PERCENTAGE,
         mtype=TypeConstants.NUMBER,
-        device=DeviceConstants.UNKNOWN,
+        device=DeviceConstants.BATTERY,
+        divider=10,
     )
-    item.divider = 10
-    return item
+    return item  # noqa: RET504
+
+
+@pytest.fixture
+def mock_api_item():
+    """Create mock ApiItem for backward compatibility."""
+    item = ApiItem(
+        name="test_item",
+        address=100,
+        battery_slave_id=1,
+        mformat=FormatConstants.PERCENTAGE,
+        mtype=TypeConstants.NUMBER,
+        device=DeviceConstants.BATTERY,
+        divider=10,
+    )
+    return item  # noqa: RET504
 
 
 @pytest.fixture
@@ -104,8 +131,10 @@ def mock_config_entry():
     entry = MagicMock()
     entry.entry_id = "test_entry_id"
     entry.data = {
-        "host": "192.168.1.100",
-        "port": 502,
+        "battery_a_host": "192.168.1.100",
+        "battery_a_port": 502,
+        "battery_b_host": "192.168.1.101",
+        "battery_b_port": 502,
         "batteries": {
             "battery_a": {"name": "Battery A", "slave_id": 1},
             "battery_b": {"name": "Battery B", "slave_id": 2},

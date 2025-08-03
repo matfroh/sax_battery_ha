@@ -2,189 +2,156 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
+from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import CONF_AUTO_PILOT_INTERVAL, CONF_PILOT_FROM_HA, DOMAIN
+from .const import DOMAIN
 from .coordinator import SAXBatteryCoordinator
-from .models import SAXBatteryData
+from .modbusobject import ModbusAPI
+from .models import BatteryModel, SAXBatteryData, SmartMeterModel
+
+if TYPE_CHECKING:
+    pass  # noqa: TC005
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
-
-
-def _raise_config_not_ready(message: str) -> None:
-    """Raise ConfigEntryNotReady with the given message."""
-    raise ConfigEntryNotReady(message)
-
-
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the SAX Battery integration."""
-    return True
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.NUMBER,
+    Platform.SWITCH,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up SAX Battery from a config entry."""
-    try:
-        # Validate configuration before proceeding
-        if not _validate_config_entry(entry):
-            _raise_config_not_ready("Invalid configuration data")
+    # Initialize SAX Battery data structure
+    sax_data = SAXBatteryData()
 
-        # Create SAX Battery data instance
-        sax_battery_data = SAXBatteryData(entry)
+    # Initialize the data structure
+    await sax_data.async_initialize()
 
-        # Initialize batteries and modbus connections
-        # This creates ModbusAPI instances for each battery internally
-        initialization_success = await sax_battery_data.async_initialize()
+    # Create battery models based on config entry data
+    battery_count = entry.data.get("battery_count", 1)
+    _LOGGER.debug("Setting up %d batteries", battery_count)
 
-        if not initialization_success:
-            _raise_config_not_ready("Failed to initialize battery connections")
+    modbus_apis: dict[str, ModbusAPI] = {}
 
-        # Verify at least one battery is connected
-        connected_batteries = [
-            battery_id
-            for battery_id in sax_battery_data.batteries
-            if sax_battery_data.is_battery_connected(battery_id)
-        ]
+    for i in range(battery_count):
+        battery_letter = chr(ord("a") + i)
+        battery_id = f"battery_{battery_letter}"
 
-        if not connected_batteries:
-            _raise_config_not_ready("No battery connections available")
+        # Get battery configuration from config entry
+        battery_name = entry.data.get(
+            f"battery_{battery_letter}_name", f"Battery {battery_letter.upper()}"
+        )
+        battery_host = entry.data.get(f"battery_{battery_letter}_host")
+        battery_port = entry.data.get(f"battery_{battery_letter}_port", 502)
 
-        _LOGGER.debug("Connected batteries: %s", connected_batteries)
+        if not battery_host:
+            raise ConfigEntryNotReady(f"No host configured for {battery_name}")
 
-        # Create coordinators for each battery
-        coordinators = {}
-        update_interval = timedelta(
-            seconds=max(5, entry.data.get(CONF_AUTO_PILOT_INTERVAL, 30))
+        # Create individual Modbus API for each battery
+        modbus_api = ModbusAPI(
+            host=battery_host,
+            port=battery_port,
+            battery_id=battery_id,
+        )
+        modbus_apis[battery_id] = modbus_api
+
+        # Create battery model
+        battery_model = BatteryModel(
+            device_id=battery_id,
+            name=battery_name,
+            slave_id=i + 1,
+            host=battery_host,
+            port=battery_port,
+            is_master=(i == 0),  # First battery (Battery A) is master
         )
 
-        for battery_id in sax_battery_data.batteries:
-            modbus_api = sax_battery_data.get_modbus_api(battery_id)
-            if not modbus_api:
-                _LOGGER.warning("No ModbusAPI found for battery %s", battery_id)
-                continue
+        sax_data.batteries[battery_id] = battery_model
 
-            coordinator = SAXBatteryCoordinator(
-                hass=hass,
-                sax_data=sax_battery_data,
-                modbus_api=modbus_api,
-                battery_id=battery_id,
-                update_interval=update_interval,
-            )
-            coordinators[battery_id] = coordinator
+        # Set master battery ID for smart meter coordination
+        if battery_model.is_master:
+            sax_data.master_battery_id = battery_id
+            # Store the master's modbus API as the main one for smart meter access
+            sax_data.modbus_api = modbus_api
 
-            # Perform first update for this coordinator
-            await coordinator.async_config_entry_first_refresh()
-
-        if not coordinators:
-            _raise_config_not_ready("No coordinators could be created")
-
-        # Store coordinators in SAX data for easy access
-        sax_battery_data.coordinators = coordinators
-
-        # Store data in hass
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = sax_battery_data
-
-        # Setup platforms
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-        # Initialize pilot functionality if enabled
-        if entry.data.get(CONF_PILOT_FROM_HA, False):
-            _LOGGER.debug(
-                "Pilot functionality enabled - entities will be created via platforms"
-            )
-            # Pilot entities are created through the entity_helpers in each platform
-            # No separate setup needed - the SAXBatteryData already contains pilot items
-
-        _LOGGER.info(
-            "Successfully set up SAX Battery integration with %d batteries",
-            len(coordinators),
+    # Create smart meter model if we have a master battery
+    if sax_data.master_battery_id:
+        master_battery = sax_data.batteries[sax_data.master_battery_id]
+        sax_data.smart_meter_data = SmartMeterModel(
+            device_id=f"{sax_data.master_battery_id}_smartmeter",
+            name=f"{master_battery.name} Smart Meter",
         )
 
-    except (ConnectionError, TimeoutError) as err:
-        _LOGGER.error("Connection error during SAX Battery setup: %s", err)
-        raise ConfigEntryNotReady from err
-    except ValueError as err:
-        _LOGGER.error("Configuration error in SAX Battery setup: %s", err)
-        raise ConfigEntryNotReady from err
-    except Exception as err:
-        _LOGGER.error("Unexpected error during SAX Battery setup: %s", err)
-        raise ConfigEntryNotReady from err
+    # Create coordinators for each battery with individual connections
+    for battery_id, battery_model in sax_data.batteries.items():
+        if not sax_data.is_battery_connected(battery_id):
+            continue
 
-    return True
+        # Use the specific Modbus API for this battery
+        battery_modbus_api = modbus_apis[battery_id]
 
+        coordinator = SAXBatteryCoordinator(
+            hass=hass,
+            battery_id=battery_id,
+            sax_data=sax_data,
+            modbus_api=battery_modbus_api,
+        )
 
-def _validate_config_entry(entry: ConfigEntry) -> bool:
-    """Validate configuration entry has required data."""
-    if not entry.data:
-        _LOGGER.error("Config entry has no data")
-        return False
-
-    # Check for battery configurations
-    batteries_config = entry.data.get("batteries", {})
-    if not batteries_config:
-        _LOGGER.error("No battery configurations found")
-        return False
-
-    # Validate each battery configuration
-    for battery_id, battery_config in batteries_config.items():
-        if not isinstance(battery_config, dict):
-            _LOGGER.error("Invalid battery config for %s", battery_id)
-            return False
-
-        # Check required fields
-        required_fields = ["host", "port"]
-        for field in required_fields:
-            if field not in battery_config:
-                _LOGGER.error("Missing %s in battery config for %s", field, battery_id)
-                return False
-
-        # Validate host is not empty
-        if not battery_config["host"].strip():
-            _LOGGER.error("Empty host for battery %s", battery_id)
-            return False
-
-        # Validate port is numeric
+        # Test connection and perform first data update
         try:
-            port = int(battery_config["port"])
-            if not (1 <= port <= 65535):
-                _LOGGER.error("Invalid port %s for battery %s", port, battery_id)
-                return False
-        except (ValueError, TypeError):
-            _LOGGER.error("Non-numeric port for battery %s", battery_id)
-            return False
+            await coordinator.async_config_entry_first_refresh()
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to connect to %s at %s:%d",
+                battery_model.name,
+                battery_model.host,
+                battery_model.port,
+            )
+            raise ConfigEntryNotReady(
+                f"Failed to connect to {battery_model.name}: {err}"
+            ) from err
 
-    _LOGGER.debug(
-        "Configuration validation passed for %d batteries", len(batteries_config)
+        sax_data.coordinators[battery_id] = coordinator
+
+        _LOGGER.debug("Successfully initialized coordinator for %s", battery_model.name)
+
+    # Verify we have at least one working battery
+    if not sax_data.coordinators:
+        raise ConfigEntryNotReady("No battery coordinators could be initialized")
+
+    # Store in hass data
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = sax_data
+
+    # Set up platforms
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    _LOGGER.info(
+        "SAX Battery integration setup complete with %d batteries",
+        len(sax_data.coordinators),
     )
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        # Clean up modbus connections
+        sax_data = hass.data[DOMAIN].pop(entry.entry_id)
 
-    if unload_ok:
-        sax_battery_data = hass.data[DOMAIN][entry.entry_id]
+        # Close all modbus connections
+        for coordinator in sax_data.coordinators.values():
+            if hasattr(coordinator, "modbus_api"):
+                coordinator.modbus_api.close()
 
-        # Stop pilot service if running
-        if hasattr(sax_battery_data, "pilot"):
-            await sax_battery_data.pilot.async_stop()
-
-        # Close all Modbus connections gracefully
-        await sax_battery_data.async_close_connections()
-
-        # Clean up coordinator references
-        if hasattr(sax_battery_data, "coordinators"):
-            for coordinator in sax_battery_data.coordinators.values():
-                await coordinator.async_shutdown()
-
-        hass.data[DOMAIN].pop(entry.entry_id)
+        if sax_data.modbus_api:
+            sax_data.modbus_api.close()
 
     return unload_ok

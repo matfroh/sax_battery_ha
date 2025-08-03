@@ -1,454 +1,262 @@
-"""Data models for SAX Battery integration."""
+"""Simplified models using existing const.py definitions."""
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from enum import Enum
-import logging
-import time
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import DOMAIN, PILOT_ITEMS
-from .enums import DeviceConstants
-from .items import ApiItem, SAXItem
-from .modbusobject import SAXBatteryAPI
-
-_LOGGER = logging.getLogger(__name__)
-
-
-class BatteryRole(Enum):
-    """Battery roles in the system."""
-
-    MASTER = "master"
-    SLAVE = "slave"
-
-
-class CommunicationInterface(Enum):
-    """Communication interface types."""
-
-    MODBUS_TCP = "modbus_tcp"  # Ethernet port for individual battery communication
-    MODBUS_RTU = "modbus_rtu"  # RS485 port for smart meter communication
+from .const import (
+    AGGREGATED_ITEMS,
+    DEFAULT_DEVICE_INFO,
+    MODBUS_BATTERY_ITEMS,
+    MODBUS_SMARTMETER_ITEMS,
+    PILOT_ITEMS,
+    SAX_CURRENT_L1,
+    SAX_POWER,
+    SAX_SMARTMETER_TOTAL_POWER,
+    SAX_SOC,
+    SAX_VOLTAGE_L1,
+)
+from .items import ModbusItem, SAXItem
+from .modbusobject import ModbusAPI
 
 
 @dataclass
-class SmartMeterData:
-    """Smart meter data container."""
+class BaseModel(ABC):
+    """Base model with common functionality."""
 
-    # Total grid measurements
-    total_power: float | None = None
-    grid_frequency: float | None = None
+    device_id: str
+    name: str
+    _data: dict[str, Any] = field(default_factory=dict, init=False)
 
-    # Phase-specific measurements
-    voltage_l1: float | None = None
-    voltage_l2: float | None = None
-    voltage_l3: float | None = None
+    @property
+    def data(self) -> dict[str, Any]:
+        """Get the current data."""
+        return self._data
 
-    current_l1: float | None = None
-    current_l2: float | None = None
-    current_l3: float | None = None
-    # Power-specific measurements
-    import_power: float | None = None
-    export_power: float | None = None
-    active_power_l1: float | None = None
-    active_power_l2: float | None = None
-    active_power_l3: float | None = None
-    # time of last update
-    last_update: float = field(default_factory=time.time)
+    def get_value(self, key: str) -> Any:
+        """Get value for a specific key."""
+        return self._data.get(key)
 
-    def is_data_fresh(self, max_age_seconds: int = 60) -> bool:
-        """Check if smart meter data is fresh."""
-        return (time.time() - self.last_update) < max_age_seconds
+    def set_value(self, key: str, value: Any) -> None:
+        """Set value for a specific key."""
+        self._data[key] = value
+
+    def update_data(self, new_data: dict[str, Any]) -> None:
+        """Update multiple data values."""
+        self._data.update(new_data)
+
+    @abstractmethod
+    def get_device_info(self) -> DeviceInfo:
+        """Get device info for Home Assistant."""
+
+    @abstractmethod
+    def get_modbus_items(self) -> list[ModbusItem]:
+        """Get modbus items for this model."""
+
+    @abstractmethod
+    def get_sax_items(self) -> list[SAXItem]:
+        """Get SAX items for this model."""
 
 
 @dataclass
-class BatteryDevice:
-    """Represents a single battery device."""
+class BatteryModel(BaseModel):
+    """Battery model using predefined items from const.py."""
 
-    battery_id: str
-    host: str
+    slave_id: int = 1
+    host: str = ""
     port: int = 502
-    slave_id: int = 64
-    role: str = "slave"
-    phase: str = "L1"
-    data: dict[str, Any] = field(default_factory=dict)
-    last_update: float = field(default_factory=time.time)
+    is_master: bool = False
 
-    async def async_update(self) -> None:
-        """Update battery data via Modbus."""
-        self.last_update = time.time()
+    def get_device_info(self) -> DeviceInfo:
+        """Get device info for battery."""
+        return DeviceInfo(
+            identifiers={("sax_battery", self.device_id)},
+            name=self.name,
+            manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
+            model=DEFAULT_DEVICE_INFO.model,
+            sw_version=DEFAULT_DEVICE_INFO.sw_version,
+        )
+
+    def get_modbus_items(self) -> list[ModbusItem]:
+        """Get modbus items based on battery role."""
+        if self.is_master:
+            # Master battery gets all items including smart meter data
+            return MODBUS_BATTERY_ITEMS + MODBUS_SMARTMETER_ITEMS
+        else:  # noqa: RET505
+            # Slave batteries only get battery-specific items
+            return MODBUS_BATTERY_ITEMS
+
+    def get_sax_items(self) -> list[SAXItem]:
+        """Get SAX items for battery."""
+        items = []
+
+        if self.is_master:
+            # Master battery gets aggregated and pilot items
+            items.extend(AGGREGATED_ITEMS)
+            items.extend(PILOT_ITEMS)
+
+        return items
+
+    # Convenience properties for common battery values
+    @property
+    def soc(self) -> float | None:
+        """Get battery state of charge."""
+        value = self.get_value(SAX_SOC)
+        return float(value) if value is not None else None
 
     @property
-    def is_master(self) -> bool:
-        """Check if this battery is the master."""
-        return self.role == "master"
+    def power(self) -> float | None:
+        """Get battery power."""
+        value = self.get_value(SAX_POWER)
+        return float(value) if value is not None else None
+
+    @property
+    def voltage_l1(self) -> float | None:
+        """Get L1 voltage."""
+        value = self.get_value(SAX_VOLTAGE_L1)
+        return float(value) if value is not None else None
+
+    @property
+    def current_l1(self) -> float | None:
+        """Get L1 current."""
+        value = self.get_value(SAX_CURRENT_L1)
+        return float(value) if value is not None else None
 
 
+@dataclass
+class SmartMeterModel(BaseModel):
+    """Smart meter model for aggregated grid data."""
+
+    def get_device_info(self) -> DeviceInfo:
+        """Get device info for smart meter."""
+        return DeviceInfo(
+            identifiers={("sax_battery", f"{self.device_id}_smartmeter")},
+            name=f"{self.name} Smart Meter",
+            manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
+            model="Smart Meter",
+            via_device=("sax_battery", self.device_id),
+        )
+
+    def get_modbus_items(self) -> list[ModbusItem]:
+        """Smart meter data comes through battery modbus items."""
+        return []  # Data is polled through master battery
+
+    def get_sax_items(self) -> list[SAXItem]:
+        """Get SAX items for smart meter."""
+        return []  # No calculated items specific to smart meter
+
+    @property
+    def total_power(self) -> float | None:
+        """Get total power from smart meter."""
+        value = self.get_value(SAX_SMARTMETER_TOTAL_POWER)
+        return float(value) if value is not None else None
+
+
+@dataclass
+class SystemModel(BaseModel):
+    """System-wide model for aggregated data."""
+
+    batteries: dict[str, BatteryModel] = field(default_factory=dict)
+    smart_meter: SmartMeterModel | None = None
+
+    def get_device_info(self) -> DeviceInfo:
+        """Get device info for system."""
+        return DeviceInfo(
+            identifiers={("sax_battery", "system")},
+            name="SAX Battery System",
+            manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
+            model="Battery System",
+        )
+
+    def get_modbus_items(self) -> list[ModbusItem]:
+        """System doesn't have direct modbus items."""
+        return []
+
+    def get_sax_items(self) -> list[SAXItem]:
+        """Get system-wide calculated items."""
+        return AGGREGATED_ITEMS + PILOT_ITEMS
+
+    def add_battery(self, battery: BatteryModel) -> None:
+        """Add a battery to the system."""
+        self.batteries[battery.device_id] = battery
+
+    def get_master_battery(self) -> BatteryModel | None:
+        """Get the master battery."""
+        return next((b for b in self.batteries.values() if b.is_master), None)
+
+    def get_slave_batteries(self) -> list[BatteryModel]:
+        """Get all slave batteries."""
+        return [b for b in self.batteries.values() if not b.is_master]
+
+    @property
+    def total_power(self) -> float | None:
+        """Get total power from all batteries."""
+        powers = [b.power for b in self.batteries.values() if b.power is not None]
+        return sum(powers) if powers else None
+
+    @property
+    def average_soc(self) -> float | None:
+        """Get average SOC from all batteries."""
+        socs = [b.soc for b in self.batteries.values() if b.soc is not None]
+        return sum(socs) / len(socs) if socs else None
+
+
+@dataclass
 class SAXBatteryData:
-    """Container for all SAX battery system data."""
+    """Main data structure for SAX Battery integration."""
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize SAX battery data."""
-        self.config_entry = config_entry
-        self.entry = config_entry  # For backward compatibility
-        self.batteries: dict[str, BatteryDevice] = {}
-        self.coordinators: dict[str, Any] = {}
-        self.coordinator: Any = None  # For backward compatibility
-        self.smart_meter_data = SmartMeterData()
-        self._master_battery_id: str | None = None
-        self.device_id: str = config_entry.entry_id
-        self.modbus_api: Any = None
-        self.pilot: Any = None
-        self.system_power_limits: dict[str, float] = {}
-        self.phase_balancing_enabled: bool = True
+    batteries: dict[str, BatteryModel] = field(default_factory=dict)
+    smart_meter_data: SmartMeterModel | None = None
+    coordinators: dict[str, Any] = field(default_factory=dict)
+    modbus_api: ModbusAPI | None = None
+    master_battery_id: str | None = None
 
-    @property
-    def config(self) -> dict[str, Any]:
-        """Get configuration data from config entry."""
-        return dict(self.config_entry.data)
+    async def async_initialize(self) -> None:
+        """Initialize the SAX Battery data."""
+        # Initialize modbus connections and data structures
 
-    @property
-    def options(self) -> dict[str, Any]:
-        """Get options data from config entry."""
-        return dict(self.config_entry.options)
-
-    @property
-    def master_battery_id(self) -> str | None:
-        """Get the master battery ID."""
-        if self._master_battery_id:
-            return self._master_battery_id
-
-        for battery_id, battery in self.batteries.items():
-            if battery.is_master:
-                self._master_battery_id = battery_id
-                return battery_id
-
-        if self.batteries:
-            first_battery_id = next(iter(self.batteries))
-            self._master_battery_id = first_battery_id
-            return first_battery_id
-
-        return None
-
-    @master_battery_id.setter
-    def master_battery_id(self, value: str | None) -> None:
-        """Set the master battery ID."""
-        self._master_battery_id = value
-
-    async def async_setup(self) -> bool:
-        """Set up the battery data."""
-        return True
+    def is_battery_connected(self, battery_id: str) -> bool:
+        """Check if a battery is connected."""
+        return battery_id in self.batteries
 
     def should_poll_smart_meter(self, battery_id: str) -> bool:
         """Check if this battery should poll smart meter data."""
-        return battery_id == self.master_battery_id
+        battery = self.batteries.get(battery_id)
+        return battery.is_master if battery else False
 
-    def get_modbus_items_for_battery(self, battery_id: str) -> list[ApiItem]:
-        """Get Modbus items for a specific battery."""
-        return []
+    def get_modbus_items_for_battery(self, battery_id: str) -> list[ModbusItem]:
+        """Get modbus items for a specific battery."""
+        battery = self.batteries.get(battery_id)
+        return battery.get_modbus_items() if battery else []
 
     def get_sax_items_for_battery(self, battery_id: str) -> list[SAXItem]:
         """Get SAX items for a specific battery."""
-        if not self.should_poll_smart_meter(battery_id):
-            return []
-
         battery = self.batteries.get(battery_id)
-        if not battery:
-            return []
+        return battery.get_sax_items() if battery else []
 
-        return [
-            item for item in PILOT_ITEMS if self._should_include_sax_item(item, battery)
-        ]
+    def get_smart_meter_items(self) -> list[ModbusItem]:
+        """Get smart meter modbus items."""
+        return MODBUS_SMARTMETER_ITEMS
 
-    def _should_include_sax_item(self, item: SAXItem, battery: BatteryDevice) -> bool:
-        """Check if SAX item should be included for this battery."""
-        if getattr(item, "master_only", False) and not battery.is_master:
-            return False
-
-        item_device = getattr(item, "device", None)
-        if item_device and item_device != DeviceConstants.SYS:
-            config_device = self.config.get("device_type")
-            if config_device and item_device.value != config_device:
-                return False
-
-        required_features = getattr(item, "required_features", None)
-        if required_features:
-            available_features = self.config.get("features", [])
-            if not all(feature in available_features for feature in required_features):
-                return False
-
-        return True
+    def get_modbus_api(self) -> ModbusAPI | None:
+        """Get the modbus API instance."""
+        return self.modbus_api
 
     def get_device_info(self, battery_id: str) -> DeviceInfo:
-        """Get device info for a battery."""
+        """Get device info for a specific battery."""
         battery = self.batteries.get(battery_id)
-        if not battery:
-            raise ValueError(f"Battery {battery_id} not found")
+        if battery:
+            return battery.get_device_info()
 
+        # Fallback device info
         return DeviceInfo(
-            identifiers={(DOMAIN, battery_id)},
-            name=f"SAX Battery {battery_id.upper()}",
-            manufacturer="SAX-power",
-            model="Energy Storage System",
-            sw_version="1.0.0",
-            configuration_url=f"http://{battery.host}:{battery.port}",
+            identifiers={("sax_battery", battery_id)},
+            name=f"SAX Battery {battery_id}",
+            manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
+            model=DEFAULT_DEVICE_INFO.model,
+            sw_version=DEFAULT_DEVICE_INFO.sw_version,
         )
-
-    def add_battery(
-        self,
-        battery_id: str,
-        host: str,
-        port: int = 502,
-        slave_id: int = 64,
-        role: str = "slave",
-        phase: str = "L1",
-    ) -> BatteryDevice:
-        """Add a battery to the system."""
-        battery = BatteryDevice(
-            battery_id=battery_id,
-            host=host,
-            port=port,
-            slave_id=slave_id,
-            role=role,
-            phase=phase,
-        )
-        self.batteries[battery_id] = battery
-
-        if role == "master":
-            self._master_battery_id = battery_id
-
-        return battery
-
-    def remove_battery(self, battery_id: str) -> None:
-        """Remove a battery from the system."""
-        if battery_id in self.batteries:
-            del self.batteries[battery_id]
-
-        if battery_id in self.coordinators:
-            del self.coordinators[battery_id]
-
-        if self._master_battery_id == battery_id:
-            self._master_battery_id = None
-
-    def get_battery_by_role(self, role: str) -> BatteryDevice | None:
-        """Get battery by role (master/slave)."""
-        for battery in self.batteries.values():
-            if battery.role == role:
-                return battery
-        return None
-
-    def get_master_battery(self) -> BatteryDevice | None:
-        """Get the master battery."""
-        return self.get_battery_by_role("master")
-
-    def get_slave_batteries(self) -> list[BatteryDevice]:
-        """Get all slave batteries."""
-        return [
-            battery for battery in self.batteries.values() if battery.role == "slave"
-        ]
-
-    def get_batteries_by_phase(self, phase: str) -> list[BatteryDevice]:
-        """Get all batteries connected to a specific phase."""
-        return [
-            battery for battery in self.batteries.values() if battery.phase == phase
-        ]
-
-    def get_polling_interval_for_battery(self, battery_id: str) -> int:
-        """Get polling interval for a specific battery."""
-        battery = self.batteries.get(battery_id)
-        if not battery:
-            return 10
-
-        # Master battery polls more frequently
-        if battery.is_master:
-            return 5
-        return 10
-
-    def get_total_system_power(self) -> float:
-        """Get total system power from all batteries."""
-        total_power = 0.0
-        for battery in self.batteries.values():
-            power = battery.data.get("power", 0.0)
-            if isinstance(power, (int, float)):
-                total_power += power
-        return total_power
-
-    def get_average_soc(self) -> float | None:
-        """Get average state of charge across all batteries."""
-        soc_values = []
-        for battery in self.batteries.values():
-            soc = battery.data.get("soc")
-            if isinstance(soc, (int, float)):
-                soc_values.append(soc)
-
-        if not soc_values:
-            return None
-
-        return sum(soc_values) / len(soc_values)
-
-    def is_battery_connected(self, battery_id: str) -> bool:
-        """Check if a specific battery is connected."""
-        modbus_api = self.get_modbus_api(battery_id)
-        if not modbus_api:
-            return False
-        return getattr(modbus_api, "_connected", False)
-
-    def get_system_status(self) -> dict[str, Any]:
-        """Get overall system status."""
-        return {
-            "total_batteries": len(self.batteries),
-            "master_battery": self.master_battery_id,
-            "smart_meter_fresh": self.smart_meter_data.is_data_fresh(),
-            "last_smart_meter_update": self.smart_meter_data.last_update,
-            "batteries": {
-                battery_id: {
-                    "role": battery.role,
-                    "phase": battery.phase,
-                    "host": battery.host,
-                    "last_update": battery.last_update,
-                    "connected": self.is_battery_connected(battery_id),
-                }
-                for battery_id, battery in self.batteries.items()
-            },
-        }
-
-    async def async_initialize(self) -> bool:
-        """Initialize connections to all battery units in the cluster.
-
-        Returns:
-            True if at least one battery connection succeeded, False otherwise
-
-        """
-        _LOGGER.debug("Initializing SAX battery cluster connections")
-
-        # Initialize connection tracking
-        connection_results: dict[str, bool] = {}
-
-        # Get battery configurations from config entry
-        batteries_config = self.entry.data.get("batteries", {})
-        if not batteries_config:
-            _LOGGER.error("No battery configurations found in config entry")
-            return False
-
-        # Initialize ModbusAPI for each configured battery
-        for battery_id in batteries_config:
-            try:
-                _LOGGER.debug("Initializing connection for battery %s", battery_id)
-
-                # Create ModbusAPI instance for this battery
-                modbus_api = SAXBatteryAPI(config_entry=self, battery_id=battery_id)
-
-                # Store the API instance
-                if not hasattr(self, "_modbus_apis"):
-                    self._modbus_apis: dict[str, SAXBatteryAPI] = {}
-                self._modbus_apis[battery_id] = modbus_api
-
-                # Attempt connection (startup=True for initial connection)
-                connection_success = await modbus_api.connect(startup=True)
-                connection_results[battery_id] = connection_success
-
-                if connection_success:
-                    _LOGGER.debug("Successfully connected to battery %s", battery_id)
-                else:
-                    _LOGGER.warning("Failed to connect to battery %s", battery_id)
-
-            except (OSError, ValueError, TypeError, AttributeError) as err:
-                _LOGGER.error("Error initializing battery %s: %s", battery_id, err)
-                connection_results[battery_id] = False
-
-        # Determine overall initialization success
-        successful_connections = sum(connection_results.values())
-        total_batteries = len(connection_results)
-
-        if successful_connections == 0:
-            _LOGGER.error("Failed to connect to any battery units")
-            return False
-
-        if successful_connections < total_batteries:
-            _LOGGER.warning(
-                "Connected to %d of %d battery units",
-                successful_connections,
-                total_batteries,
-            )
-        else:
-            _LOGGER.info(
-                "Successfully connected to all %d battery units", total_batteries
-            )
-
-        # Initialize master battery coordination if Battery A is connected
-        master_battery_id = self._get_master_battery_id()
-        if master_battery_id and connection_results.get(master_battery_id, False):
-            _LOGGER.debug(
-                "Master battery %s connected - enabling coordination", master_battery_id
-            )
-            self._master_battery_available = True
-        else:
-            _LOGGER.warning("Master battery not available - coordination disabled")
-            self._master_battery_available = False
-
-        return True
-
-    def _get_master_battery_id(self) -> str | None:
-        """Get the master battery ID from configuration.
-
-        Returns:
-            Battery ID of the master battery or None if not found
-
-        """
-        batteries_config = self.entry.data.get("batteries", {})
-
-        for battery_id, battery_config in batteries_config.items():
-            if battery_config.get("role") == "master":
-                return str(battery_id)
-
-        # Fallback: assume battery_a is master if no explicit role set
-        if "battery_a" in batteries_config:
-            return "battery_a"
-
-        return None
-
-    def get_modbus_api(self, battery_id: str) -> SAXBatteryAPI | None:
-        """Get SAXBatteryAPI instance for a specific battery.
-
-        Args:
-            battery_id: Battery identifier (e.g., "battery_a", "battery_b", "battery_c")
-
-        Returns:
-            ModbusAPI instance or None if not found
-
-        """
-        if not hasattr(self, "_modbus_apis"):
-            return None
-
-        return self._modbus_apis.get(battery_id)
-
-    async def async_close_connections(self) -> None:
-        """Close all battery connections gracefully."""
-        if not hasattr(self, "_modbus_apis"):
-            return
-
-        _LOGGER.debug("Closing SAX battery cluster connections")
-
-        for battery_id, modbus_api in self._modbus_apis.items():
-            try:
-                success = modbus_api.close()
-                if success:
-                    _LOGGER.debug("Closed connection to battery %s", battery_id)
-                else:
-                    _LOGGER.warning(
-                        "Failed to properly close connection to battery %s", battery_id
-                    )
-            except (OSError, ValueError, TypeError, AttributeError) as err:
-                _LOGGER.error(
-                    "Error closing connection to battery %s: %s", battery_id, err
-                )
-
-        # Clear the APIs dictionary
-        self._modbus_apis.clear()
-        self._master_battery_available = False
-
-
-# Type alias for backward compatibility
-SAXBatterySystem = SAXBatteryData

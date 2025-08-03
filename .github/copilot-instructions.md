@@ -52,6 +52,8 @@ Each battery unit is equipped with the following:
   - Basic smart meter data (total power, frequency, etc.): Standard interval (5-10 seconds)
   - Phase-specific data (L1/L2/L3 voltages/currents): Lower frequency (30-60 seconds)
   - Battery-specific data: Standard interval for all batteries
+  - every battery unit polls its own data at the same interval using an individual coordinator
+  - Redundant sensor values shall only be polled by the master battery
 - All communication coordination is based on **RS485 grid values** and shared logic via **Ethernet**
 
 ---
@@ -96,6 +98,13 @@ automation application.
   - Linting: PyLint and Ruff
   - Type checking: MyPy
   - Testing: pytest with plain functions and fixtures
+- **Follow linting rules from `pyproject.toml`** - All code generation must adhere to the configured ruff rules including:
+  - **Import sorting** (I001): Always sort imports alphabetically and group them properly
+  - **Exception handling** (BLE001): Never catch blind `Exception` - use specific exception types
+  - **Import cleanup** (F401): Remove unused imports immediately
+  - **Security** (S): Follow security best practices (avoid `eval`, sanitize inputs)
+  - **Complexity** (C901): Keep functions simple and readable
+  - All other rules defined in `pyproject.toml` under `[tool.ruff]` and `[tool.ruff.lint]`
 - Inline code documentation:
   - File headers should be short and concise:
     ```python
@@ -129,6 +138,12 @@ automation application.
   - For local network polling, the minimum interval is 5 seconds
   - For cloud polling, the minimum interval is 60 seconds
 - Error handling:
+  - **Never catch blind `Exception`** - always use specific exception types:
+    - `ModbusException` for Modbus communication errors
+    - `OSError` for network/connection errors
+    - `TimeoutError` for timeout situations
+    - `ValueError`, `TypeError`, `KeyError` for data processing errors
+    - `ConfigEntryNotReady`, `ConfigEntryError` for setup failures
   - Use specific exceptions from `homeassistant.exceptions`
   - Setup failures:
     - Temporary: Raise `ConfigEntryNotReady`
@@ -144,6 +159,35 @@ automation application.
     ```python
     _LOGGER.debug("This is a log message with %s", variable)
     ```
+- **Import Management**:
+
+  - Always sort imports alphabetically within their groups
+  - Group imports: standard library, third-party, local imports
+  - Remove unused imports immediately (F401 violations)
+  - Use specific imports rather than wildcard imports
+  - Import order example:
+
+    ```python
+    """Module docstring."""
+
+    from __future__ import annotations
+
+    import asyncio
+    import logging
+    from typing import Any
+
+    from pymodbus import ModbusException
+    from homeassistant.core import HomeAssistant
+
+    from .const import DOMAIN
+    from .items import ModbusItem
+    ```
+
+- **Security Considerations**:
+  - Avoid `eval()` function - use `ast.literal_eval()` or safe alternatives
+  - Validate and sanitize all user inputs
+  - Use parameterized queries for database operations
+  - Never log sensitive information
 - Entities:
   - Ensure unique IDs for state persistence:
     - Unique IDs should not contain values that are subject to user or network change.
@@ -200,6 +244,9 @@ automation application.
 2. **Recommend adding new fixtures to conftest.py** if mocks are repeated
 3. **Use pytest fixture dependency injection** pattern
 4. **Avoid creating Mock() objects directly in test methods** when fixtures exist
+5. **Follow all ruff linting rules** defined in `pyproject.toml`
+6. **Sort imports properly** and remove unused imports
+7. **Use specific exception handling** - never catch blind `Exception`
 
 ## Home Assistant Integration Patterns
 
@@ -227,3 +274,11 @@ automation application.
 
 - **Missing imports** - We use static analysis tooling to catch that
 - **Code formatting** - We have ruff as a formatting tool that will catch those if needed (unless specifically instructed otherwise in these instructions)
+
+**When reviewing code, DO comment on:**
+
+- **Blind exception catching** (BLE001) - Must use specific exceptions
+- **Unused imports** (F401) - Should be removed immediately
+- **Import sorting** (I001) - Must follow alphabetical grouping
+- **Security violations** (S) - Avoid unsafe patterns like `eval()`
+- **Complexity issues** (C901) - Functions should be simple and readable
