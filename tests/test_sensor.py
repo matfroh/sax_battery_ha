@@ -12,7 +12,7 @@ from custom_components.sax_battery.enums import (
     FormatConstants,
     TypeConstants,
 )
-from custom_components.sax_battery.items import ModbusItem
+from custom_components.sax_battery.items import ApiItem
 from custom_components.sax_battery.sensor import SAXBatteryCalcSensor, SAXBatterySensor
 
 
@@ -45,7 +45,7 @@ def mock_coordinator():
 @pytest.fixture
 def temperature_item():
     """Create temperature sensor item."""
-    return ModbusItem(
+    return ApiItem(
         address=100,
         name="sax_temperature",
         mformat=FormatConstants.TEMPERATURE,
@@ -57,7 +57,7 @@ def temperature_item():
 @pytest.fixture
 def percentage_item():
     """Create percentage sensor item."""
-    return ModbusItem(
+    return ApiItem(
         address=101,
         name="sax_soc",
         mformat=FormatConstants.PERCENTAGE,
@@ -127,11 +127,8 @@ class TestSAXBatterySensor:
 
     def test_sensor_state_class_determination(self, mock_coordinator) -> None:
         """Test state class determination."""
-        temperature_item = ModbusItem(
-            address=100,
+        temperature_item = ApiItem(
             name="sax_temperature",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
             device=DeviceConstants.UNKNOWN,
         )
 
@@ -169,11 +166,8 @@ class TestSAXBatteryCalcSensor:
 
     def test_calc_sensor_total_power(self, mock_coordinator) -> None:
         """Test calculated sensor for total power."""
-        calc_item = ModbusItem(
-            address=200,
+        calc_item = ApiItem(
             name="total_power",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.SENSOR_CALC,
             device=DeviceConstants.UNKNOWN,
         )
 
@@ -189,11 +183,8 @@ class TestSAXBatteryCalcSensor:
 
     def test_calc_sensor_name_includes_calculated(self, mock_coordinator) -> None:
         """Test calculated sensor name includes '(Calculated)'."""
-        calc_item = ModbusItem(
-            address=200,
+        calc_item = ApiItem(
             name="total_power",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.SENSOR_CALC,
             device=DeviceConstants.UNKNOWN,
         )
 

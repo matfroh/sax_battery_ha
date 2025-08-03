@@ -7,8 +7,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
-from custom_components.sax_battery.enums import FormatConstants, TypeConstants
-from custom_components.sax_battery.items import ModbusItem
+from custom_components.sax_battery.enums import (
+    DeviceConstants,
+    FormatConstants,
+    TypeConstants,
+)
+from custom_components.sax_battery.items import ApiItem
 from custom_components.sax_battery.number import SAXBatteryNumber, async_setup_entry
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.const import EntityCategory
@@ -45,7 +49,7 @@ def mock_coordinator():
 @pytest.fixture
 def power_number_item():
     """Create power number item."""
-    return ModbusItem(
+    return ApiItem(
         address=100,
         name="max_charge_power",
         mformat=FormatConstants.NUMBER,
@@ -64,7 +68,7 @@ def power_number_item():
 @pytest.fixture
 def percentage_number_item():
     """Create percentage number item."""
-    return ModbusItem(
+    return ApiItem(
         address=101,
         name="min_soc",
         mformat=FormatConstants.PERCENTAGE,
@@ -78,26 +82,6 @@ def percentage_number_item():
             native_unit_of_measurement="%",
         ),
     )
-
-
-@pytest.fixture
-def mock_sax_data():
-    """Create mock SAX battery data."""
-    sax_data = MagicMock()
-
-    # Create mock coordinators with sax_data attributes
-    mock_coordinator_a = MagicMock(spec=SAXBatteryCoordinator)
-    mock_coordinator_a.sax_data = sax_data
-
-    mock_coordinator_b = MagicMock(spec=SAXBatteryCoordinator)
-    mock_coordinator_b.sax_data = sax_data
-
-    sax_data.coordinators = {
-        "battery_a": mock_coordinator_a,
-        "battery_b": mock_coordinator_b,
-    }
-    sax_data.get_modbus_items_for_battery.return_value = []
-    return sax_data
 
 
 @pytest.fixture
@@ -151,11 +135,9 @@ class TestSAXBatteryNumber:
 
     def test_number_init_without_entity_description(self, mock_coordinator) -> None:
         """Test number entity initialization without entity description."""
-        item_without_desc = ModbusItem(
-            address=102,
+        item_without_desc = ApiItem(
             name="test_number",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
         )
 
         number = SAXBatteryNumber(
@@ -183,11 +165,9 @@ class TestSAXBatteryNumber:
 
     def test_number_native_value_with_divider(self, mock_coordinator) -> None:
         """Test number native value with divider."""
-        item_with_divider = ModbusItem(
-            address=103,
+        item_with_divider = ApiItem(
             name="test_number_divider",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
         )
         item_with_divider.divider = 10
 
@@ -318,11 +298,9 @@ class TestNumberPlatformSetup:
     ) -> None:
         """Test successful setup of number entries."""
         # Mock number items for each battery
-        mock_number_item = ModbusItem(
-            address=100,
+        mock_number_item = ApiItem(
             name="test_number",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
         )
         mock_sax_data.get_modbus_items_for_battery.return_value = [mock_number_item]
 
@@ -399,16 +377,9 @@ class TestNumberEntityConfiguration:
 
     def test_number_entity_category_config(self, mock_coordinator) -> None:
         """Test number entity category configuration."""
-        config_item = ModbusItem(
-            address=104,
+        config_item = ApiItem(
             name="config_number",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.NUMBER,
-            entitydescription=NumberEntityDescription(
-                key="config_number",
-                name="Configuration Number",
-                entity_category=EntityCategory.CONFIG,
-            ),
+            device=DeviceConstants.SYS,
         )
 
         number = SAXBatteryNumber(
@@ -422,16 +393,9 @@ class TestNumberEntityConfiguration:
 
     def test_number_entity_category_diagnostic(self, mock_coordinator) -> None:
         """Test number entity category diagnostic."""
-        diagnostic_item = ModbusItem(
-            address=105,
+        diagnostic_item = ApiItem(
             name="diagnostic_number",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.NUMBER,
-            entitydescription=NumberEntityDescription(
-                key="diagnostic_number",
-                name="Diagnostic Number",
-                entity_category=EntityCategory.DIAGNOSTIC,
-            ),
+            device=DeviceConstants.SYS,
         )
 
         number = SAXBatteryNumber(
@@ -467,11 +431,9 @@ class TestNumberEntityConfiguration:
 
     def test_number_name_formatting(self, mock_coordinator) -> None:
         """Test number name formatting."""
-        item_with_underscores = ModbusItem(
-            address=106,
+        item_with_underscores = ApiItem(
             name="test_underscore_name",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
         )
 
         number = SAXBatteryNumber(
@@ -485,11 +447,9 @@ class TestNumberEntityConfiguration:
 
     def test_number_without_unit(self, mock_coordinator) -> None:
         """Test number entity without unit."""
-        unitless_item = ModbusItem(
-            address=107,
+        unitless_item = ApiItem(
             name="unitless_number",
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
         )
 
         number = SAXBatteryNumber(

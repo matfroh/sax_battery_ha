@@ -96,15 +96,17 @@ class ModbusItem:
     master_only: bool = False
 
     def __init__(
-        self,
+        self: ModbusItem,
         address: int,
         name: str,
         mformat: FormatConstants,
         mtype: TypeConstants,
-        entitydescription: SwitchEntityDescription
-        | SensorEntityDescription
-        | NumberEntityDescription
-        | None = None,
+        entitydescription: (
+            SwitchEntityDescription
+            | SensorEntityDescription
+            | NumberEntityDescription
+            | None
+        ) = None,
         device: DeviceConstants = DeviceConstants.UNKNOWN,
         translation_key: str | None = None,
         resultlist: Any = None,
@@ -210,35 +212,49 @@ class ApiItem(ModbusItem):
     _state: Any = None
     _is_invalid: bool = False
     _translation_key: str = ""
-    _description: SensorEntityDescription | None = None
+    _description: (
+        SwitchEntityDescription
+        | SensorEntityDescription
+        | NumberEntityDescription
+        | None
+    ) = None
     _params: dict[Any, Any] | None = None
     _divider: int = 1
 
     def __init__(
-        self,
+        self: ApiItem,
         name: str,
-        device: DeviceConstants = DeviceConstants.UNKNOWN,
+        device: DeviceConstants,
+        address: int = 0,
+        divider: int = 1,
         translation_key: str | None = None,
-        resultlist: Any = None,
+        resultlist: list[StatusItem] | None = None,
         params: dict[Any, Any] | None = None,
+        entitydescription: (
+            SwitchEntityDescription
+            | SensorEntityDescription
+            | NumberEntityDescription
+            | None
+        ) = None,
+        mformat: FormatConstants | None = None,
+        mtype: TypeConstants | None = None,
     ) -> None:
-        """Initialise ModbusItem."""
+        """Initialize API item."""
         super().__init__(
             address=0,
             name=name,
-            mformat=FormatConstants.UNKNOWN,
-            mtype=TypeConstants.SENSOR,
-            entitydescription=None,
+            mformat=mformat or FormatConstants.UNKNOWN,
+            mtype=mtype or TypeConstants.SENSOR,
+            entitydescription=entitydescription or None,
         )
-        self._name: str = name
-        self._device: DeviceConstants = device
+        self.name = name
+        self.device = device
+        self.address = address
+        self.divider = divider
+        self.translation_key = translation_key or ""
         self._resultlist = resultlist
-        self._state = None
-        self._is_invalid = False
-        self._translation_key = translation_key or ""
-        self._description = None
-        self._params = params
-        self._divider = 1
+        self.params = params or {}
+        self.is_invalid = False
 
     @property
     def params(self) -> dict[Any, Any]:
@@ -250,12 +266,25 @@ class ApiItem(ModbusItem):
         self._params = val
 
     @property
-    def description(self) -> SensorEntityDescription | None:
+    def description(
+        self,
+    ) -> (
+        SensorEntityDescription
+        | SwitchEntityDescription
+        | NumberEntityDescription
+        | None
+    ):
         """Return description."""
         return self._description
 
     @description.setter
-    def description(self, val: SensorEntityDescription | None) -> None:
+    def description(
+        self,
+        val: SensorEntityDescription
+        | SwitchEntityDescription
+        | NumberEntityDescription
+        | None,
+    ) -> None:
         """Set description."""
         self._description = val
 

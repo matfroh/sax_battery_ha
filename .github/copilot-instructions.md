@@ -173,9 +173,57 @@ automation application.
   - The keys of all state attributes should always be present
   - If the value is unknown, use `None`
   - Provide descriptive state attributes
-- Testing:
-  - Test location: `tests/components/{domain}/`
-  - Use pytest fixtures from `tests.common`
-  - Mock external dependencies
-  - Use snapshots for complex data
-  - Follow existing test patterns
+
+### Testing:
+
+- Test location: `tests/components/{domain}/`
+- Use pytest fixtures from `tests.common`
+- Mock external dependencies
+- Use snapshots for complex data
+- Follow existing test patterns
+
+**When to Create New Fixtures**:
+
+- If a mock is used across 3+ test files, add it to `conftest.py`
+- Use descriptive fixture names with `mock_` prefix
+- Document fixtures with proper docstrings
+
+**Test File Structure**:
+
+- Import only what's needed for the specific module under test
+- Group related tests in classes with descriptive names
+- Use fixture parameters instead of creating mocks in test methods
+
+### Code Generation Rules
+
+1. **Always suggest using existing fixtures** when generating tests
+2. **Recommend adding new fixtures to conftest.py** if mocks are repeated
+3. **Use pytest fixture dependency injection** pattern
+4. **Avoid creating Mock() objects directly in test methods** when fixtures exist
+
+## Home Assistant Integration Patterns
+
+### Entity Testing
+
+- Use `mock_hass` and `mock_coordinator` fixtures
+- Test entity state updates and attribute changes
+- Mock device registry and entity registry interactions
+
+### Config Flow Testing
+
+- Use `mock_modbus_api` for connection testing
+- Test both successful and failed setup scenarios
+- Mock user input validation
+
+### Data Update Coordinator Testing
+
+- Use `mock_modbus_api` for data fetching
+- Test update intervals and error handling
+- Mock network timeouts and connection failures
+
+## Code Review Guidelines
+
+**When reviewing code, do NOT comment on:**
+
+- **Missing imports** - We use static analysis tooling to catch that
+- **Code formatting** - We have ruff as a formatting tool that will catch those if needed (unless specifically instructed otherwise in these instructions)

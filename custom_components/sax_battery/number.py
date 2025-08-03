@@ -84,7 +84,9 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
     @property
     def name(self) -> str:
         """Return the name of the number entity."""
-        return self._modbus_item.name.replace("_", " ").title()
+        battery_name = self._battery_id.replace("_", "_").title()
+        item_name = self._modbus_item.name.replace("_", " ").title()
+        return f"{battery_name} {item_name}"
 
     @property
     def native_value(self) -> float | None:
@@ -97,28 +99,56 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
             return None
 
         try:
-            return float(value)
+            float_value = float(value)
+            # Apply divider if present
+            if hasattr(self._modbus_item, "divider") and self._modbus_item.divider:
+                return float_value / self._modbus_item.divider
+            return float_value  # noqa: TRY300
         except (ValueError, TypeError):
             return None
 
     @property
     def native_min_value(self) -> float:
         """Return the minimum value."""
+        if (
+            hasattr(self._modbus_item, "entitydescription")
+            and self._modbus_item.entitydescription
+        ):
+            return getattr(self._modbus_item.entitydescription, "native_min_value", 0.0)
         return getattr(self._modbus_item, "min_value", 0.0)
 
     @property
     def native_max_value(self) -> float:
         """Return the maximum value."""
+        if (
+            hasattr(self._modbus_item, "entitydescription")
+            and self._modbus_item.entitydescription
+        ):
+            return getattr(
+                self._modbus_item.entitydescription, "native_max_value", 100.0
+            )
         return getattr(self._modbus_item, "max_value", 100.0)
 
     @property
     def native_step(self) -> float:
         """Return the step value."""
+        if (
+            hasattr(self._modbus_item, "entitydescription")
+            and self._modbus_item.entitydescription
+        ):
+            return getattr(self._modbus_item.entitydescription, "native_step", 1.0)
         return getattr(self._modbus_item, "step", 1.0)
 
     @property
     def native_unit_of_measurement(self) -> str | None:
         """Return the unit of measurement."""
+        if (
+            hasattr(self._modbus_item, "entitydescription")
+            and self._modbus_item.entitydescription
+        ):
+            return getattr(
+                self._modbus_item.entitydescription, "native_unit_of_measurement", None
+            )
         return getattr(self._modbus_item, "unit", None)
 
     @property
@@ -148,13 +178,17 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
         )
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
+        if not self.available:
+            return None
+
         return {
             "battery_id": self._battery_id,
             "modbus_address": getattr(self._modbus_item, "address", None),
-            "read_only": self._modbus_item.mtype == TypeConstants.NUMBER_RO,
-            "last_update": getattr(self.coordinator, "last_update_success_time", None),
+            "read_only": getattr(self._modbus_item, "mtype", None)
+            == TypeConstants.NUMBER_RO,
+            "last_updated": getattr(self.coordinator, "last_update_success_time", None),
             "min_value": self.native_min_value,
             "max_value": self.native_max_value,
             "step": self.native_step,
@@ -168,9 +202,14 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set the value of the number entity."""
         # Check if this is a read-only number
-        if self._modbus_item.mtype == TypeConstants.NUMBER_RO:
+        if getattr(self._modbus_item, "mtype", None) == TypeConstants.NUMBER_RO:
             msg = f"Cannot set value for read-only number entity {self.name}"
             raise HomeAssistantError(msg)
+
+        # Apply multiplier if divider is present (reverse the division)
+        actual_value = value
+        if hasattr(self._modbus_item, "divider") and self._modbus_item.divider:
+            actual_value = value * self._modbus_item.divider
 
         # Convert to appropriate type based on modbus item configuration
         try:
@@ -178,13 +217,13 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
                 hasattr(self._modbus_item, "value_type")
                 and self._modbus_item.value_type == "int"
             ):
-                converted_value = int(value)
+                converted_value = int(actual_value)
                 success = await self.coordinator.async_write_int_value(
                     self._modbus_item, converted_value
                 )
             else:
                 success = await self.coordinator.async_write_number_value(
-                    self._modbus_item, value
+                    self._modbus_item, actual_value
                 )
 
             if not success:

@@ -5,7 +5,7 @@ from custom_components.sax_battery.enums import (
     FormatConstants,
     TypeConstants,
 )
-from custom_components.sax_battery.items import ApiItem, ModbusItem, StatusItem
+from custom_components.sax_battery.items import ApiItem, StatusItem
 
 
 class TestStatusItem:
@@ -176,7 +176,7 @@ class TestApiItem:
         assert item.get_text_from_number(1) == "Status One"
         assert item.get_text_from_number(2) == "Status Two"
         assert item.get_text_from_number(3) == "Status Three"
-        assert item.get_text_from_number(999) == "unbekannt <999>"
+        assert item.get_text_from_number(999) == "unknown <999>"
         assert item.get_text_from_number(None) is None
 
     def test_get_number_from_text_no_resultlist(self) -> None:
@@ -234,7 +234,7 @@ class TestApiItem:
         assert item.get_translation_key_from_number(1) == "status_one"
         assert item.get_translation_key_from_number(2) == "status_two"
         assert item.get_translation_key_from_number(3) == "status_three"
-        assert item.get_translation_key_from_number(999) == "unbekannt <999>"
+        assert item.get_translation_key_from_number(999) == "unknown <999>"
         assert item.get_translation_key_from_number(None) is None
 
     def test_get_number_from_translation_key_no_resultlist(self) -> None:
@@ -272,12 +272,9 @@ class TestModbusItem:
     """Test ModbusItem class."""
 
     def test_modbus_item_init_defaults(self) -> None:
-        """Test ModbusItem initialization with defaults."""
-        item = ModbusItem(
-            address=100,
+        """Test ApiItem initialization with defaults."""
+        item = ApiItem(
             name="test_modbus",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
             device=DeviceConstants.UNKNOWN,
         )
 
@@ -291,19 +288,16 @@ class TestModbusItem:
         assert item.params == {}
 
     def test_modbus_item_init_with_optional_params(self) -> None:
-        """Test ModbusItem initialization with optional parameters."""
+        """Test ApiItem initialization with optional parameters."""
         result_list = [StatusItem(1, "Test")]
         params = {"param1": "value1"}
 
-        item = ModbusItem(
-            address=200,
+        item = ApiItem(
             name="test_modbus",
-            mformat=FormatConstants.PERCENTAGE,
-            mtype=TypeConstants.NUMBER,
             device=DeviceConstants.UNKNOWN,
             translation_key="test_translation",
             resultlist=result_list,
-            battery_slave_id=2,
+            # battery_slave_id=2,
             params=params,
         )
 
@@ -317,12 +311,9 @@ class TestModbusItem:
         assert item.params == params
 
     def test_modbus_item_address_setter(self) -> None:
-        """Test ModbusItem address setter."""
-        item = ModbusItem(
-            address=100,
+        """Test ApiItem address setter."""
+        item = ApiItem(
             name="test",
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
             device=DeviceConstants.UNKNOWN,
         )
 
@@ -330,17 +321,14 @@ class TestModbusItem:
         assert item.address == 300
 
     def test_modbus_item_inherits_from_api_item(self) -> None:
-        """Test that ModbusItem inherits all ApiItem functionality."""
+        """Test that ApiItem inherits all ApiItem functionality."""
         result_list = [
             StatusItem(1, "Status One", "status_one"),
             StatusItem(2, "Status Two", "status_two"),
         ]
 
-        item = ModbusItem(
-            address=100,
+        item = ApiItem(
             name="test_modbus",
-            mformat=FormatConstants.STATUS,
-            mtype=TypeConstants.SENSOR,
             device=DeviceConstants.UNKNOWN,
             resultlist=result_list,
         )

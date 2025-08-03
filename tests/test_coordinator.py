@@ -3,64 +3,17 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from pymodbus import ModbusException
 import pytest
 
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
-from custom_components.sax_battery.enums import (
-    DeviceConstants,
-    FormatConstants,
-    TypeConstants,
-)
-from custom_components.sax_battery.items import ModbusItem
+from custom_components.sax_battery.enums import DeviceConstants
+from custom_components.sax_battery.items import ApiItem
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import UpdateFailed
-
-
-@pytest.fixture
-def mock_modbus_api():
-    """Create mock ModbusAPI."""
-    api = MagicMock()
-    api.write_holding_register = AsyncMock(return_value=True)
-    api.read_holding_registers = AsyncMock(return_value=[100])
-
-    # Mock the modbus client that gets returned by get_device()
-    mock_client = MagicMock()
-    mock_client.connected = True
-    mock_client.write_register = AsyncMock(return_value=True)
-    api.get_device.return_value = mock_client
-
-    return api
-
-
-@pytest.fixture
-def mock_sax_data():
-    """Create mock SAX battery data."""
-    data = MagicMock()
-    data.batteries = {"battery_a": MagicMock()}
-    data.batteries["battery_a"].async_update = AsyncMock()
-    data.batteries["battery_a"].data = {"test_value": 42}
-    data.should_poll_smart_meter = MagicMock(return_value=False)
-    data.get_modbus_items_for_battery = MagicMock(return_value=[])
-    data.smart_meter_data = MagicMock()
-    return data
-
-
-@pytest.fixture
-def mock_modbus_item():
-    """Create mock ModbusItem."""
-    item = ModbusItem(
-        address=100,
-        name="test_item",
-        mformat=FormatConstants.PERCENTAGE,
-        mtype=TypeConstants.NUMBER,
-        device=DeviceConstants.UNKNOWN,
-    )
-    item.divider = 10
-    return item
 
 
 class TestSAXBatteryCoordinator:
@@ -269,11 +222,8 @@ class TestSAXBatteryCoordinator:
         )
 
         # Test percentage format (should clamp to 0-100)
-        percentage_item = ModbusItem(
-            address=100,
+        percentage_item = ApiItem(
             name="test_percentage",
-            mformat=FormatConstants.PERCENTAGE,
-            mtype=TypeConstants.NUMBER,
             device=DeviceConstants.UNKNOWN,
         )
 
