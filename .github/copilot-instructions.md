@@ -282,3 +282,41 @@ automation application.
 - **Import sorting** (I001) - Must follow alphabetical grouping
 - **Security violations** (S) - Avoid unsafe patterns like `eval()`
 - **Complexity issues** (C901) - Functions should be simple and readable
+
+### Test Generation Verification
+
+**Critical Rule: Always Verify Against Actual Implementation**
+
+When generating test files, you MUST:
+
+1. **Read the actual implementation file first** before writing any tests
+2. **Verify class constructors, method signatures, and return types** match the implementation
+3. **Check import paths and class names** exist in the actual codebase
+4. **Validate method parameters** - especially required vs optional parameters
+5. **Confirm exception types** used in the actual implementation
+
+**Before submitting test code:**
+
+- [ ] All imported classes/functions exist in the specified modules
+- [ ] Constructor calls match the actual required parameters (no defaults assumed)
+- [ ] Method signatures match the implementation (async/sync, parameters, return types)
+- [ ] Exception handling uses the same exception types as the implementation
+- [ ] Test assertions match actual method behavior and return values
+
+**Example Verification Process:**
+
+```python
+# ❌ WRONG - Assuming defaults exist
+api = ModbusAPI()  # Error: constructor requires host, port, battery_id
+
+# ✅ CORRECT - After checking actual implementation
+api = ModbusAPI(host="192.168.1.100", port=502, battery_id="battery_a")
+```
+
+**If implementation doesn't match expectations:**
+
+- Update tests to match actual implementation
+- Do NOT assume or suggest changes to the implementation
+- Use the actual method signatures, parameters, and behavior as-is
+
+This rule prevents generating invalid tests that fail due to incorrect assumptions about the codebase structure.

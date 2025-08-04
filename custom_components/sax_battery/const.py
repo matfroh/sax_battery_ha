@@ -694,6 +694,5 @@ AGGREGATED_ITEMS: list[SAXItem] = [
 PILOT_ITEMS: list[SAXItem] = [
     SAXItem(name=SOLAR_CHARGING_SWITCH, mformat=FormatConstants.STATUS, mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SOLAR_CHARGING_SWITCH),
     SAXItem(name=MANUAL_CONTROL_SWITCH, mformat=FormatConstants.STATUS, mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_MANUAL_CONTROL_SWITCH),
-
 ]
 # fmt: on

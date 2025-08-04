@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC
+from ast import literal_eval
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,7 +21,6 @@ class StatusItem:
     number: int = 0  # default value for status (we use value 1,3,4)
     text: str = ""
     name: str = ""  # translation_key
-    # description: str = ""
 
 
 @dataclass
@@ -59,10 +59,9 @@ class BaseItem(ABC):
         self._is_invalid = value
 
 
-# Keep ApiItem for backward compatibility with modbusobject.py
 @dataclass
 class ApiItem(BaseItem):
-    """API item for backward compatibility."""
+    """API item for backward compatibility - immutable for data integrity."""
 
     address: int = 0
     battery_slave_id: int = 1
@@ -92,9 +91,8 @@ class ApiItem(BaseItem):
         if self.mformat == FormatConstants.PERCENTAGE:
             raw_value = max(0, min(100, raw_value))
         elif self.mformat == FormatConstants.NUMBER:
+            # Handle signed 16-bit constraints
             raw_value = max(-32768, min(32767, raw_value))
-        else:  # UNSIGNED and others
-            raw_value = max(0, min(65535, raw_value))
 
         return raw_value
 
@@ -112,7 +110,7 @@ class ModbusItem(BaseItem):
         | NumberEntityDescription
         | None
     ) = None
-    resultlist: list[StatusItem] = []  # noqa: RUF008
+    resultlist: list[StatusItem] = field(default_factory=list)
 
     def convert_raw_value(self, raw_value: int) -> float:
         """Convert raw modbus value to real value."""
@@ -131,16 +129,15 @@ class ModbusItem(BaseItem):
         if self.mformat == FormatConstants.PERCENTAGE:
             raw_value = max(0, min(100, raw_value))
         elif self.mformat == FormatConstants.NUMBER:
+            # Handle signed 16-bit constraints
             raw_value = max(-32768, min(32767, raw_value))
-        else:  # UNSIGNED and others
-            raw_value = max(0, min(65535, raw_value))
 
         return raw_value
 
 
 @dataclass
 class SAXItem(BaseItem):
-    """SAX-specific item for calculated values and pilot controls."""
+    """SAX-specific item for calculated values and virtual entities."""
 
     entitydescription: (
         SensorEntityDescription
@@ -148,4 +145,15 @@ class SAXItem(BaseItem):
         | NumberEntityDescription
         | None
     ) = None
-    resultlist: list[StatusItem] | None = None
+
+    def calculate_value(self, variables: dict[str, float]) -> float | None:
+        """Calculate value based on parameters and variables."""
+        if not self.params or "calculation" not in self.params:
+            return None
+
+        calculation = self.params["calculation"]
+        try:
+            # Safe evaluation of mathematical expressions using ast.literal_eval
+            return literal_eval(calculation)
+        except (ValueError, SyntaxError, TypeError):
+            return None

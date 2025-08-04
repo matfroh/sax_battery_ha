@@ -19,9 +19,9 @@ class DeviceConstants(Enum):
 #
 # Primary tables	       | Access | Size                   | Features
 #------------------------|--------|------------------------|---------------------------------
-# Discrete input	       | R      | 1 bit (01)            | Read on/off value
+# Discrete input	     | R      | 1 bit (01)            | Read on/off value
 # Coil (discrete output) | R/W    | 1 bit (01)            | Read/Write on/off value
-# Input register	       | R      | 16 bit words (065,535)| Read measurements and statuses
+# Input register	     | R      | 16 bit words (065,535)| Read measurements and statuses
 # Holding register	     | R/W    | 16 bit words (065,535)| Read/Write configuration values
 # fmt: on
 
@@ -33,7 +33,7 @@ class FormatConstants(Enum):  # modbus format -> not home assistant formats
     TEMPERATURE = "temperature"
     NUMBER = "number"
     STATUS = "status"
-    UNKNOWN = "unknown"
+    UNKNOWN = "unknown"  # Used for error scenarios which should not happen e.g. uninitialized items
 
 
 class TypeConstants(Enum):  # item types -> not home assistant types

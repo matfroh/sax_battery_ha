@@ -83,19 +83,21 @@ class BatteryModel(BaseModel):
 
     def get_modbus_items(self) -> list[ModbusItem]:
         """Get modbus items based on battery role."""
+        # All batteries get basic battery items
+        items = MODBUS_BATTERY_ITEMS.copy()
+
+        # Master battery also gets smart meter items
         if self.is_master:
-            # Master battery gets all items including smart meter data
-            return MODBUS_BATTERY_ITEMS + MODBUS_SMARTMETER_ITEMS
-        else:  # noqa: RET505
-            # Slave batteries only get battery-specific items
-            return MODBUS_BATTERY_ITEMS
+            items.extend(MODBUS_SMARTMETER_ITEMS)
+
+        return items
 
     def get_sax_items(self) -> list[SAXItem]:
         """Get SAX items for battery."""
         items = []
 
+        # Only master battery gets aggregated and pilot items
         if self.is_master:
-            # Master battery gets aggregated and pilot items
             items.extend(AGGREGATED_ITEMS)
             items.extend(PILOT_ITEMS)
 
@@ -157,55 +159,6 @@ class SmartMeterModel(BaseModel):
 
 
 @dataclass
-class SystemModel(BaseModel):
-    """System-wide model for aggregated data."""
-
-    batteries: dict[str, BatteryModel] = field(default_factory=dict)
-    smart_meter: SmartMeterModel | None = None
-
-    def get_device_info(self) -> DeviceInfo:
-        """Get device info for system."""
-        return DeviceInfo(
-            identifiers={("sax_battery", "system")},
-            name="SAX Battery System",
-            manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
-            model="Battery System",
-        )
-
-    def get_modbus_items(self) -> list[ModbusItem]:
-        """System doesn't have direct modbus items."""
-        return []
-
-    def get_sax_items(self) -> list[SAXItem]:
-        """Get system-wide calculated items."""
-        return AGGREGATED_ITEMS + PILOT_ITEMS
-
-    def add_battery(self, battery: BatteryModel) -> None:
-        """Add a battery to the system."""
-        self.batteries[battery.device_id] = battery
-
-    def get_master_battery(self) -> BatteryModel | None:
-        """Get the master battery."""
-        return next((b for b in self.batteries.values() if b.is_master), None)
-
-    def get_slave_batteries(self) -> list[BatteryModel]:
-        """Get all slave batteries."""
-        return [b for b in self.batteries.values() if not b.is_master]
-
-    @property
-    def total_power(self) -> float | None:
-        """Get total power from all batteries."""
-        powers = [b.power for b in self.batteries.values() if b.power is not None]
-        return sum(powers) if powers else None
-
-    @property
-    def average_soc(self) -> float | None:
-        """Get average SOC from all batteries."""
-        socs = [b.soc for b in self.batteries.values() if b.soc is not None]
-        return sum(socs) / len(socs) if socs else None
-
-
-@dataclass
 class SAXBatteryData:
     """Main data structure for SAX Battery integration."""
 
@@ -218,6 +171,7 @@ class SAXBatteryData:
     async def async_initialize(self) -> None:
         """Initialize the SAX Battery data."""
         # Initialize modbus connections and data structures
+        pass  # noqa: PIE790
 
     def is_battery_connected(self, battery_id: str) -> bool:
         """Check if a battery is connected."""

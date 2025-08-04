@@ -135,22 +135,6 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             resultlist=modbus_item.resultlist,
         )
 
-    def _convert_api_to_modbus_item(self, api_item: ApiItem) -> ModbusItem:
-        """Convert ApiItem to ModbusItem for method compatibility."""
-        return ModbusItem(
-            name=api_item.name,
-            mformat=api_item.mformat,
-            mtype=api_item.mtype,
-            device=api_item.device,
-            translation_key=api_item.translation_key,
-            params=api_item.params,
-            address=api_item.address,
-            battery_slave_id=api_item.battery_slave_id,
-            divider=api_item.divider,
-            entitydescription=api_item.entitydescription,
-            resultlist=api_item.resultlist or [],
-        )
-
     async def _update_smart_meter_data(self, data: dict[str, Any]) -> None:
         """Update smart meter data (only for master battery)."""
         try:
@@ -253,7 +237,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> bool:
         """Write a number value to modbus register."""
         try:
-            # Convert ApiItem to ModbusItem if needed
+            # Convert to ModbusItem for consistent handling
             if isinstance(item, ApiItem):
                 modbus_item = self._convert_api_to_modbus_item(item)
             else:
@@ -261,7 +245,6 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Get or create ModbusObject for this item
             if modbus_item.name not in self._modbus_objects:
-                # Convert ModbusItem to ApiItem for compatibility
                 api_item = self._convert_modbus_to_api_item(modbus_item)
                 self._modbus_objects[modbus_item.name] = ModbusObject(
                     self.modbus_api, api_item
@@ -276,13 +259,29 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Update local data
                 if battery := self.sax_data.batteries.get(self.battery_id):
                     battery.set_value(modbus_item.name, value)
-                modbus_item.state = value
+                # Note: We don't set state on ApiItem since it shouldn't have setters
 
             return success  # noqa: TRY300
 
         except (ModbusException, OSError, TimeoutError, ValueError) as err:
             _LOGGER.debug("Failed to write %s: %s", item.name, err)
             return False
+
+    def _convert_api_to_modbus_item(self, api_item: ApiItem) -> ModbusItem:
+        """Convert ApiItem to ModbusItem for write operations."""
+        return ModbusItem(
+            name=api_item.name,
+            mformat=api_item.mformat,
+            mtype=api_item.mtype,
+            device=api_item.device,
+            translation_key=api_item.translation_key,
+            params=api_item.params,
+            address=api_item.address,
+            battery_slave_id=api_item.battery_slave_id,
+            divider=api_item.divider,
+            entitydescription=api_item.entitydescription,
+            resultlist=list(api_item.resultlist) if api_item.resultlist else [],
+        )
 
     async def async_write_switch_value(
         self, item: ModbusItem | ApiItem, value: bool
@@ -299,12 +298,11 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def update_sax_item_state(self, item: SAXItem | str, value: Any) -> None:
         """Update the state of a SAX item."""
         if isinstance(item, str):
-            # Handle string case - find the item by name
             item_name = item
         else:
             item.state = value
             item_name = item.name
 
-        # Also update in battery data if available
+        # Update in battery data
         if battery := self.sax_data.batteries.get(self.battery_id):
             battery.set_value(item_name, value)
