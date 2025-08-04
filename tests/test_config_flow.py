@@ -56,21 +56,27 @@ class TestSAXBatteryConfigFlow:
             result4 = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
                 {
-                    "battery_a_name": "Battery A",
                     "battery_a_host": "192.168.1.100",
                     "battery_a_port": 502,
                 },
             )
             assert result4.get("type") == FlowResultType.CREATE_ENTRY
-            assert result4.get("title") == "SAX Battery (1 battery)"
-            assert result4.get("data") == {
-                "battery_count": 1,
-                "pilot_from_ha": False,
-                "limit_power": False,
-                "battery_a_name": "Battery A",
-                "battery_a_host": "192.168.1.100",
-                "battery_a_port": 502,
-            }
+            assert result4.get("title") == "SAX Battery"
+            # Extract and verify data separately
+            data = result4.get("data")
+            assert data is not None
+            assert data["battery_count"] == 1
+            assert data["pilot_from_ha"] is False
+            assert data["limit_power"] is False
+            assert data["battery_a_host"] == "192.168.1.100"
+            assert data["battery_a_port"] == 502
+            assert data["master_battery"] == "battery_a"
+
+            # Verify device_id exists and is not empty (any valid UUID is acceptable)
+            assert "device_id" in data
+            assert data["device_id"] is not None
+            assert data["device_id"] != ""
+            assert len(data["device_id"]) > 0
 
             mock_setup_entry.assert_called_once()
 
