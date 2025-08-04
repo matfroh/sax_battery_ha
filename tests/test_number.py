@@ -138,6 +138,8 @@ class TestSAXBatteryNumber:
         item_without_desc = ApiItem(
             name="test_number",
             device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
         )
 
         number = SAXBatteryNumber(
@@ -168,6 +170,8 @@ class TestSAXBatteryNumber:
         item_with_divider = ApiItem(
             name="test_number_divider",
             device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
         )
         item_with_divider.divider = 10
 
@@ -301,6 +305,8 @@ class TestNumberPlatformSetup:
         mock_number_item = ApiItem(
             name="test_number",
             device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
         )
         mock_sax_data.get_modbus_items_for_battery.return_value = [mock_number_item]
 
@@ -380,6 +386,8 @@ class TestNumberEntityConfiguration:
         config_item = ApiItem(
             name="config_number",
             device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
         )
 
         number = SAXBatteryNumber(
@@ -396,6 +404,8 @@ class TestNumberEntityConfiguration:
         diagnostic_item = ApiItem(
             name="diagnostic_number",
             device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
         )
 
         number = SAXBatteryNumber(
@@ -434,6 +444,8 @@ class TestNumberEntityConfiguration:
         item_with_underscores = ApiItem(
             name="test_underscore_name",
             device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
         )
 
         number = SAXBatteryNumber(
@@ -450,6 +462,8 @@ class TestNumberEntityConfiguration:
         unitless_item = ApiItem(
             name="unitless_number",
             device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
         )
 
         number = SAXBatteryNumber(

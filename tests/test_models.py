@@ -3,419 +3,360 @@
 from unittest.mock import MagicMock
 
 from custom_components.sax_battery.models import (
-    BatteryDevice,
-    BatteryRole,
-    CommunicationInterface,
+    BatteryModel,
     SAXBatteryData,
-    SAXBatterySystem,
-    SmartMeterData,
+    SmartMeterModel,
 )
 
 
-class TestBatteryRole:
-    """Test BatteryRole enum."""
+class TestBatteryModel:
+    """Test BatteryModel dataclass."""
 
-    def test_battery_role_values(self) -> None:
-        """Test battery role enum values."""
-        assert BatteryRole.MASTER.value == "master"
-        assert BatteryRole.SLAVE.value == "slave"
-
-
-class TestCommunicationInterface:
-    """Test CommunicationInterface enum."""
-
-    def test_communication_interface_values(self) -> None:
-        """Test communication interface enum values."""
-        assert CommunicationInterface.MODBUS_TCP.value == "modbus_tcp"
-        assert CommunicationInterface.MODBUS_RTU.value == "modbus_rtu"
-
-
-class TestSmartMeterData:
-    """Test SmartMeterData dataclass."""
-
-    def test_smart_meter_data_init_defaults(self) -> None:
-        """Test SmartMeterData initialization with defaults."""
-        data = SmartMeterData()
-
-        # Total grid measurements
-        assert data.total_power is None
-        assert data.grid_frequency is None
-
-        # Phase-specific measurements
-        assert data.voltage_l1 is None
-        assert data.voltage_l2 is None
-        assert data.voltage_l3 is None
-
-        assert data.current_l1 is None
-        assert data.current_l2 is None
-        assert data.current_l3 is None
-
-        assert data.active_power_l1 is None
-        assert data.active_power_l2 is None
-        assert data.active_power_l3 is None
-
-        # Grid connection status
-        assert data.import_power is None
-        assert data.export_power is None
-        assert data.last_update is not None  # Should have a default time
-
-    def test_smart_meter_data_with_values(self) -> None:
-        """Test SmartMeterData with specific values."""
-        data = SmartMeterData(
-            total_power=1500.0,
-            grid_frequency=50.0,
-            voltage_l1=230.0,
-            voltage_l2=231.0,
-            voltage_l3=229.0,
-            import_power=100.0,
-            export_power=0.0,
-            last_update=1234567890.0,
+    def test_battery_model_init_defaults(self) -> None:
+        """Test BatteryModel initialization with defaults."""
+        battery = BatteryModel(
+            device_id="battery_a",
+            name="Battery A",
         )
 
-        assert data.total_power == 1500.0
-        assert data.grid_frequency == 50.0
-        assert data.voltage_l1 == 230.0
-        assert data.voltage_l2 == 231.0
-        assert data.voltage_l3 == 229.0
-        assert data.import_power == 100.0
-        assert data.export_power == 0.0
-        assert data.last_update == 1234567890.0
+        assert battery.device_id == "battery_a"
+        assert battery.name == "Battery A"
+        assert battery.slave_id == 1
+        assert battery.host == ""
+        assert battery.port == 502
+        assert battery.is_master is False
+        assert battery.data == {}
 
-
-class TestBatteryDevice:
-    """Test BatteryDevice dataclass."""
-
-    def test_battery_device_init_defaults(self) -> None:
-        """Test BatteryDevice initialization with defaults."""
-        device = BatteryDevice(
-            battery_id="battery_a",
-            host="192.168.1.100",
-        )
-
-        assert device.battery_id == "battery_a"
-        assert device.host == "192.168.1.100"
-        assert device.port == 502
-        assert device.slave_id == 64
-        assert device.role == "slave"
-        assert device.phase == "L1"
-        assert device.data == {}
-        assert device.last_update is not None
-
-    def test_battery_device_with_custom_values(self) -> None:
-        """Test BatteryDevice with custom values."""
-        device = BatteryDevice(
-            battery_id="battery_b",
+    def test_battery_model_with_custom_values(self) -> None:
+        """Test BatteryModel with custom values."""
+        battery = BatteryModel(
+            device_id="battery_b",
+            name="Battery B",
+            slave_id=2,
             host="192.168.1.101",
             port=503,
-            slave_id=65,
-            role="master",
-            phase="L2",
+            is_master=True,
         )
 
-        assert device.battery_id == "battery_b"
-        assert device.host == "192.168.1.101"
-        assert device.port == 503
-        assert device.slave_id == 65
-        assert device.role == "master"
-        assert device.phase == "L2"
+        assert battery.device_id == "battery_b"
+        assert battery.name == "Battery B"
+        assert battery.slave_id == 2
+        assert battery.host == "192.168.1.101"
+        assert battery.port == 503
+        assert battery.is_master is True
 
-    def test_battery_device_is_master(self) -> None:
-        """Test BatteryDevice is_master property."""
-        master_device = BatteryDevice(
-            battery_id="battery_a",
-            host="192.168.1.100",
-            role="master",
-        )
-        slave_device = BatteryDevice(
-            battery_id="battery_b",
-            host="192.168.1.101",
-            role="slave",
+    def test_battery_model_get_device_info(self) -> None:
+        """Test BatteryModel get_device_info method."""
+        battery = BatteryModel(
+            device_id="battery_a",
+            name="Battery A",
         )
 
-        assert master_device.is_master is True
-        assert slave_device.is_master is False
+        device_info = battery.get_device_info()
 
+        assert device_info["identifiers"] == {("sax_battery", "battery_a")}
+        assert device_info["name"] == "Battery A"
+        assert "manufacturer" in device_info
+        assert "model" in device_info
 
-class TestSAXBatterySystem:
-    """Test SAXBatterySystem dataclass."""
-
-    def test_sax_battery_system_init_defaults(self) -> None:
-        """Test SAXBatterySystem initialization with defaults."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        assert system.entry == mock_entry
-        assert system.config_entry == mock_entry
-        assert system.coordinator is None
-        assert system.device_id == mock_entry.entry_id
-        assert system.master_battery_id is None
-        assert system.modbus_api is None
-        assert isinstance(system.smart_meter_data, SmartMeterData)
-        assert system.batteries == {}
-        assert system.pilot is None
-        assert system.system_power_limits == {}
-        assert system.phase_balancing_enabled is True
-
-    def test_get_master_battery_no_master(self) -> None:
-        """Test get_master_battery when no master is set."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        assert system.get_master_battery() is None
-
-    def test_get_master_battery_with_master(self) -> None:
-        """Test get_master_battery when master is set."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        # Add a master battery
-        master_battery = system.add_battery(
-            battery_id="battery_a", host="192.168.1.100", role="master"
+    def test_battery_model_get_modbus_items_slave(self) -> None:
+        """Test BatteryModel get_modbus_items for slave battery."""
+        battery = BatteryModel(
+            device_id="battery_b",
+            name="Battery B",
+            is_master=False,
         )
 
-        assert system.get_master_battery() == master_battery
+        items = battery.get_modbus_items()
 
-    def test_get_slave_batteries_empty(self) -> None:
-        """Test get_slave_batteries when no batteries."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
+        # Slave battery should only get basic battery items
+        assert isinstance(items, list)
+        # Items should not include smart meter items for slave
 
-        assert system.get_slave_batteries() == []
-
-    def test_get_slave_batteries_with_master_and_slaves(self) -> None:
-        """Test get_slave_batteries with master and slave batteries."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        # Add batteries
-        master_battery = system.add_battery(
-            battery_id="battery_a", host="192.168.1.100", role="master"
-        )
-        slave_battery_1 = system.add_battery(
-            battery_id="battery_b", host="192.168.1.101", role="slave"
-        )
-        slave_battery_2 = system.add_battery(
-            battery_id="battery_c", host="192.168.1.102", role="slave"
+    def test_battery_model_get_modbus_items_master(self) -> None:
+        """Test BatteryModel get_modbus_items for master battery."""
+        battery = BatteryModel(
+            device_id="battery_a",
+            name="Battery A",
+            is_master=True,
         )
 
-        slaves = system.get_slave_batteries()
-        assert len(slaves) == 2
-        assert slave_battery_1 in slaves
-        assert slave_battery_2 in slaves
-        assert master_battery not in slaves
+        items = battery.get_modbus_items()
 
-    def test_should_poll_smart_meter_master(self) -> None:
-        """Test should_poll_smart_meter for master battery."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
+        # Master battery should get battery + smart meter items
+        assert isinstance(items, list)
+        # Should have more items than slave battery
 
-        # Add master battery
-        system.add_battery(battery_id="battery_a", host="192.168.1.100", role="master")
+    def test_battery_model_get_sax_items_slave(self) -> None:
+        """Test BatteryModel get_sax_items for slave battery."""
+        battery = BatteryModel(
+            device_id="battery_b",
+            name="Battery B",
+            is_master=False,
+        )
 
-        assert system.should_poll_smart_meter("battery_a") is True
+        items = battery.get_sax_items()
 
-    def test_should_poll_smart_meter_no_master(self) -> None:
-        """Test should_poll_smart_meter when no master is set."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
+        # Slave battery should have no SAX items
+        assert items == []
 
-        assert system.should_poll_smart_meter("battery_a") is False
+    def test_battery_model_get_sax_items_master(self) -> None:
+        """Test BatteryModel get_sax_items for master battery."""
+        battery = BatteryModel(
+            device_id="battery_a",
+            name="Battery A",
+            is_master=True,
+        )
 
-    def test_get_polling_interval_for_battery_master(self) -> None:
-        """Test get_polling_interval_for_battery for master battery."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
+        items = battery.get_sax_items()
 
-        # Add master battery
-        system.add_battery(battery_id="battery_a", host="192.168.1.100", role="master")
-
-        assert system.get_polling_interval_for_battery("battery_a") == 5
-
-    def test_get_polling_interval_for_battery_slave(self) -> None:
-        """Test get_polling_interval_for_battery for slave battery."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        # Add slave battery
-        system.add_battery(battery_id="battery_b", host="192.168.1.101", role="slave")
-
-        assert system.get_polling_interval_for_battery("battery_b") == 10
-
-    def test_get_polling_interval_for_battery_unknown(self) -> None:
-        """Test get_polling_interval_for_battery for unknown battery."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        assert system.get_polling_interval_for_battery("unknown_battery") == 10
-
-    def test_get_modbus_items_for_battery(self) -> None:
-        """Test get_modbus_items_for_battery method."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        items = system.get_modbus_items_for_battery("battery_a")
+        # Master battery should get aggregated and pilot items
         assert isinstance(items, list)
 
-    def test_get_total_system_power_no_batteries(self) -> None:
-        """Test get_total_system_power with no batteries."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        assert system.get_total_system_power() == 0.0
-
-    def test_get_total_system_power_with_batteries(self) -> None:
-        """Test get_total_system_power with batteries."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        # Add batteries with power data
-        battery_a = system.add_battery("battery_a", "192.168.1.100")
-        battery_b = system.add_battery("battery_b", "192.168.1.101")
-
-        battery_a.data["power"] = 1000.0
-        battery_b.data["power"] = 1500.0
-
-        assert system.get_total_system_power() == 2500.0
-
-    def test_get_total_system_power_invalid_data(self) -> None:
-        """Test get_total_system_power with invalid power data."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        # Add batteries with mixed data types
-        battery_a = system.add_battery("battery_a", "192.168.1.100")
-        battery_b = system.add_battery("battery_b", "192.168.1.101")
-        battery_c = system.add_battery("battery_c", "192.168.1.102")
-
-        battery_a.data["power"] = 1000.0  # Valid
-        battery_b.data["power"] = "invalid"  # Invalid - string
-        battery_c.data["power"] = None  # Invalid - None
-
-        # Should only count valid power values
-        assert system.get_total_system_power() == 1000.0
-
-    def test_get_average_soc_no_batteries(self) -> None:
-        """Test get_average_soc with no batteries."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        assert system.get_average_soc() is None
-
-    def test_get_average_soc_with_batteries(self) -> None:
-        """Test get_average_soc with batteries."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        # Add batteries with SOC data
-        battery_a = system.add_battery("battery_a", "192.168.1.100")
-        battery_b = system.add_battery("battery_b", "192.168.1.101")
-        battery_c = system.add_battery("battery_c", "192.168.1.102")
-
-        battery_a.data["soc"] = 80.0
-        battery_b.data["soc"] = 85.0
-        battery_c.data["soc"] = 90.0
-
-        assert system.get_average_soc() == 85.0
-
-    def test_get_average_soc_with_invalid_data(self) -> None:
-        """Test get_average_soc with invalid SOC data."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        # Add batteries with mixed data types
-        battery_a = system.add_battery("battery_a", "192.168.1.100")
-        battery_b = system.add_battery("battery_b", "192.168.1.101")
-        battery_c = system.add_battery("battery_c", "192.168.1.102")
-
-        battery_a.data["soc"] = 80.0  # Valid
-        battery_b.data["soc"] = "invalid"  # Invalid - string
-        battery_c.data["soc"] = None  # Invalid - None
-
-        # Should only count valid SOC values
-        assert system.get_average_soc() == 80.0
-
-    def test_get_average_soc_no_valid_data(self) -> None:
-        """Test get_average_soc with no valid SOC data."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        # Add batteries with invalid SOC data
-        battery_a = system.add_battery("battery_a", "192.168.1.100")
-        battery_b = system.add_battery("battery_b", "192.168.1.101")
-
-        battery_a.data["soc"] = "invalid"
-        battery_b.data["soc"] = None
-
-        assert system.get_average_soc() is None
-
-    def test_add_battery(self) -> None:
-        """Test add_battery method."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
-
-        battery = system.add_battery(
-            battery_id="battery_a",
-            host="192.168.1.100",
-            port=503,
-            slave_id=65,
-            role="master",
-            phase="L2",
+    def test_battery_model_convenience_properties(self) -> None:
+        """Test BatteryModel convenience properties."""
+        battery = BatteryModel(
+            device_id="battery_a",
+            name="Battery A",
         )
 
-        assert battery.battery_id == "battery_a"
-        assert battery.host == "192.168.1.100"
-        assert battery.port == 503
-        assert battery.slave_id == 65
-        assert battery.role == "master"
-        assert battery.phase == "L2"
-        assert system.batteries["battery_a"] == battery
-        assert system.master_battery_id == "battery_a"
+        # Test with no data
+        assert battery.soc is None
+        assert battery.power is None
+        assert battery.voltage_l1 is None
+        assert battery.current_l1 is None
 
-    def test_remove_battery(self) -> None:
-        """Test remove_battery method."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
+        # Set some data
+        battery.set_value("soc", 85.5)
+        battery.set_value("power", 1500.0)
+        battery.set_value("voltage_l1", 230.0)
+        battery.set_value("current_l1", 6.5)
+
+        assert battery.soc == 85.5
+        assert battery.power == 1500.0
+        assert battery.voltage_l1 == 230.0
+        assert battery.current_l1 == 6.5
+
+    def test_battery_model_data_operations(self) -> None:
+        """Test BatteryModel data operations."""
+        battery = BatteryModel(
+            device_id="battery_a",
+            name="Battery A",
+        )
+
+        # Test get_value with non-existent key
+        assert battery.get_value("non_existent") is None
+
+        # Test set_value
+        battery.set_value("test_key", "test_value")
+        assert battery.get_value("test_key") == "test_value"
+
+        # Test update_data
+        new_data = {"key1": "value1", "key2": "value2"}
+        battery.update_data(new_data)
+        assert battery.get_value("key1") == "value1"
+        assert battery.get_value("key2") == "value2"
+
+
+class TestSmartMeterModel:
+    """Test SmartMeterModel dataclass."""
+
+    def test_smart_meter_model_init(self) -> None:
+        """Test SmartMeterModel initialization."""
+        smart_meter = SmartMeterModel(
+            device_id="smartmeter_001",
+            name="Smart Meter",
+        )
+
+        assert smart_meter.device_id == "smartmeter_001"
+        assert smart_meter.name == "Smart Meter"
+        assert smart_meter.data == {}
+
+    def test_smart_meter_model_get_device_info(self) -> None:
+        """Test SmartMeterModel get_device_info method."""
+        smart_meter = SmartMeterModel(
+            device_id="battery_a_smartmeter",
+            name="Battery A Smart Meter",
+        )
+
+        device_info = smart_meter.get_device_info()
+
+        assert device_info["identifiers"] == {("sax_battery", "battery_a_smartmeter")}
+        assert device_info["name"] == "Battery A Smart Meter"
+        assert device_info["model"] == "Smart Meter"
+        assert "via_device" in device_info
+
+    def test_smart_meter_model_get_modbus_items(self) -> None:
+        """Test SmartMeterModel get_modbus_items method."""
+        smart_meter = SmartMeterModel(
+            device_id="smartmeter_001",
+            name="Smart Meter",
+        )
+
+        items = smart_meter.get_modbus_items()
+
+        # Smart meter has no direct modbus items (data comes through battery)
+        assert items == []
+
+    def test_smart_meter_model_get_sax_items(self) -> None:
+        """Test SmartMeterModel get_sax_items method."""
+        smart_meter = SmartMeterModel(
+            device_id="smartmeter_001",
+            name="Smart Meter",
+        )
+
+        items = smart_meter.get_sax_items()
+
+        # Smart meter has no SAX items
+        assert items == []
+
+    def test_smart_meter_model_total_power_property(self) -> None:
+        """Test SmartMeterModel total_power property."""
+        smart_meter = SmartMeterModel(
+            device_id="smartmeter_001",
+            name="Smart Meter",
+        )
+
+        # Test with no data
+        assert smart_meter.total_power is None
+
+        # Set total power data
+        smart_meter.set_value("smartmeter_total_power", 2500.0)
+        assert smart_meter.total_power == 2500.0
+
+
+class TestSAXBatteryData:
+    """Test SAXBatteryData dataclass."""
+
+    def test_sax_battery_data_init_defaults(self) -> None:
+        """Test SAXBatteryData initialization with defaults."""
+        sax_data = SAXBatteryData()
+
+        assert sax_data.batteries == {}
+        assert sax_data.smart_meter_data is None
+        assert sax_data.coordinators == {}
+        assert sax_data.modbus_api is None
+        assert sax_data.master_battery_id is None
+
+    async def test_sax_battery_data_async_initialize(self) -> None:
+        """Test SAXBatteryData async_initialize method."""
+        sax_data = SAXBatteryData()
+
+        # Should not raise any exceptions
+        await sax_data.async_initialize()
+
+    def test_sax_battery_data_is_battery_connected(self) -> None:
+        """Test SAXBatteryData is_battery_connected method."""
+        sax_data = SAXBatteryData()
+
+        # No batteries initially
+        assert sax_data.is_battery_connected("battery_a") is False
+
+        # Add a battery
+        battery = BatteryModel(device_id="battery_a", name="Battery A")
+        sax_data.batteries["battery_a"] = battery
+
+        assert sax_data.is_battery_connected("battery_a") is True
+        assert sax_data.is_battery_connected("battery_b") is False
+
+    def test_sax_battery_data_should_poll_smart_meter(self) -> None:
+        """Test SAXBatteryData should_poll_smart_meter method."""
+        sax_data = SAXBatteryData()
+
+        # No batteries
+        assert sax_data.should_poll_smart_meter("battery_a") is False
+
+        # Add slave battery
+        slave_battery = BatteryModel(
+            device_id="battery_b", name="Battery B", is_master=False
+        )
+        sax_data.batteries["battery_b"] = slave_battery
+
+        assert sax_data.should_poll_smart_meter("battery_b") is False
+
+        # Add master battery
+        master_battery = BatteryModel(
+            device_id="battery_a", name="Battery A", is_master=True
+        )
+        sax_data.batteries["battery_a"] = master_battery
+
+        assert sax_data.should_poll_smart_meter("battery_a") is True
+        assert sax_data.should_poll_smart_meter("battery_b") is False
+
+    def test_sax_battery_data_get_modbus_items_for_battery(self) -> None:
+        """Test SAXBatteryData get_modbus_items_for_battery method."""
+        sax_data = SAXBatteryData()
+
+        # No battery
+        items = sax_data.get_modbus_items_for_battery("battery_a")
+        assert items == []
 
         # Add battery
-        system.add_battery("battery_a", "192.168.1.100", role="master")
-        assert "battery_a" in system.batteries
-        assert system.master_battery_id == "battery_a"
+        battery = BatteryModel(device_id="battery_a", name="Battery A")
+        sax_data.batteries["battery_a"] = battery
 
-        # Remove battery
-        system.remove_battery("battery_a")
-        assert "battery_a" not in system.batteries
-        assert system.master_battery_id is None
+        items = sax_data.get_modbus_items_for_battery("battery_a")
+        assert isinstance(items, list)
 
-    def test_get_batteries_by_phase(self) -> None:
-        """Test get_batteries_by_phase method."""
-        mock_entry = MagicMock()
-        system = SAXBatterySystem(config_entry=mock_entry)
+    def test_sax_battery_data_get_sax_items_for_battery(self) -> None:
+        """Test SAXBatteryData get_sax_items_for_battery method."""
+        sax_data = SAXBatteryData()
 
-        # Add batteries on different phases
-        battery_l1 = system.add_battery("battery_a", "192.168.1.100", phase="L1")
-        battery_l2 = system.add_battery("battery_b", "192.168.1.101", phase="L2")
-        battery_l3 = system.add_battery("battery_c", "192.168.1.102", phase="L3")
+        # No battery
+        items = sax_data.get_sax_items_for_battery("battery_a")
+        assert items == []
 
-        l1_batteries = system.get_batteries_by_phase("L1")
-        l2_batteries = system.get_batteries_by_phase("L2")
-        l3_batteries = system.get_batteries_by_phase("L3")
+        # Add slave battery
+        slave_battery = BatteryModel(
+            device_id="battery_b", name="Battery B", is_master=False
+        )
+        sax_data.batteries["battery_b"] = slave_battery
 
-        assert len(l1_batteries) == 1
-        assert battery_l1 in l1_batteries
-        assert len(l2_batteries) == 1
-        assert battery_l2 in l2_batteries
-        assert len(l3_batteries) == 1
-        assert battery_l3 in l3_batteries
+        items = sax_data.get_sax_items_for_battery("battery_b")
+        assert items == []  # Slave has no SAX items
 
+        # Add master battery
+        master_battery = BatteryModel(
+            device_id="battery_a", name="Battery A", is_master=True
+        )
+        sax_data.batteries["battery_a"] = master_battery
 
-class TestSAXBatteryDataAlias:
-    """Test SAXBatteryData alias."""
+        items = sax_data.get_sax_items_for_battery("battery_a")
+        assert isinstance(items, list)  # Master has SAX items
 
-    def test_sax_battery_data_alias(self) -> None:
-        """Test that SAXBatteryData is an alias for SAXBatterySystem."""
-        mock_entry = MagicMock()
-        data = SAXBatteryData(config_entry=mock_entry)
+    def test_sax_battery_data_get_smart_meter_items(self) -> None:
+        """Test SAXBatteryData get_smart_meter_items method."""
+        sax_data = SAXBatteryData()
 
-        # Should be the same class
-        assert isinstance(data, SAXBatterySystem)
-        assert SAXBatteryData == SAXBatterySystem
+        items = sax_data.get_smart_meter_items()
+        assert isinstance(items, list)
+
+    def test_sax_battery_data_get_modbus_api(self) -> None:
+        """Test SAXBatteryData get_modbus_api method."""
+        sax_data = SAXBatteryData()
+
+        # No API initially
+        assert sax_data.get_modbus_api() is None
+
+        # Set API
+        mock_api = MagicMock()
+        sax_data.modbus_api = mock_api
+
+        assert sax_data.get_modbus_api() == mock_api
+
+    def test_sax_battery_data_get_device_info(self) -> None:
+        """Test SAXBatteryData get_device_info method."""
+        sax_data = SAXBatteryData()
+
+        # No battery - should return fallback
+        device_info = sax_data.get_device_info("battery_a")
+        assert device_info["identifiers"] == {("sax_battery", "battery_a")}
+        assert device_info["name"] == "SAX Battery battery_a"
+
+        # Add battery
+        battery = BatteryModel(device_id="battery_a", name="Battery A")
+        sax_data.batteries["battery_a"] = battery
+
+        device_info = sax_data.get_device_info("battery_a")
+        assert device_info["identifiers"] == {("sax_battery", "battery_a")}
+        assert device_info["name"] == "Battery A"

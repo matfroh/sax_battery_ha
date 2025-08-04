@@ -5,343 +5,483 @@ from custom_components.sax_battery.enums import (
     FormatConstants,
     TypeConstants,
 )
-from custom_components.sax_battery.items import ApiItem, StatusItem
+from custom_components.sax_battery.items import ApiItem, ModbusItem, SAXItem, StatusItem
+from homeassistant.components.sensor import SensorEntityDescription
 
 
 class TestStatusItem:
-    """Test StatusItem class."""
+    """Test StatusItem dataclass."""
 
     def test_status_item_init_defaults(self) -> None:
         """Test StatusItem initialization with defaults."""
-        item = StatusItem(1, "Test Status")
+        item = StatusItem()
+
+        assert item.number == 0
+        assert item.text == ""
+        assert item.name == ""
+
+    def test_status_item_init_with_params(self) -> None:
+        """Test StatusItem initialization with parameters."""
+        item = StatusItem(
+            number=1,
+            text="Test Status",
+            name="test_status",
+        )
 
         assert item.number == 1
         assert item.text == "Test Status"
-        assert item.description == ""
-        assert item.translation_key == ""
-
-    def test_status_item_init_with_optional_params(self) -> None:
-        """Test StatusItem initialization with optional parameters."""
-        item = StatusItem(
-            number=2,
-            text="Warning Status",
-            translation_key="warning_status",
-            description="This is a warning status",
-        )
-
-        assert item.number == 2
-        assert item.text == "Warning Status"
-        assert item.description == "This is a warning status"
-        assert item.translation_key == "warning_status"
-
-    def test_status_item_setters(self) -> None:
-        """Test StatusItem property setters."""
-        item = StatusItem(1, "Initial")
-
-        # Test number setter
-        item.number = 5
-        assert item.number == 5
-
-        # Test text setter
-        item.text = "Updated Text"
-        assert item.text == "Updated Text"
-
-        # Test description setter
-        item.description = "Updated Description"
-        assert item.description == "Updated Description"
-
-        # Test translation_key setter
-        item.translation_key = "updated_key"
-        assert item.translation_key == "updated_key"
-
-    def test_status_item_none_values(self) -> None:
-        """Test StatusItem with None values."""
-        item = StatusItem(1, "Test")
-        item._number = None
-        item._text = None
-        item._description = None
-
-        assert item.number == 0  # Should return 0 when None
-        assert item.text == ""  # Should return empty string when None
-        assert item.description == ""  # Should return empty string when None
+        assert item.name == "test_status"
 
 
-class TestApiItem:
-    """Test ApiItem class."""
+class TestBaseItem:
+    """Test BaseItem functionality through concrete implementations."""
 
-    def test_api_item_init_defaults(self) -> None:
-        """Test ApiItem initialization with defaults."""
+    def test_base_item_state_management(self) -> None:
+        """Test BaseItem state property management."""
         item = ApiItem(
             name="test_item",
-            device=DeviceConstants.UNKNOWN,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
         )
 
-        assert item.name == "test_item"
-        assert item.device == DeviceConstants.UNKNOWN
-        assert item.resultlist is None
+        # Test initial state
         assert item.state is None
         assert item.is_invalid is False
-        assert item.translation_key == ""
-        assert item.params == {}
-        assert item.divider == 1
 
-    def test_api_item_init_with_optional_params(self) -> None:
-        """Test ApiItem initialization with optional parameters."""
-        result_list = [StatusItem(1, "Test")]
-        params = {"param1": "value1"}
+        # Test state setter
+        item.state = 42.5
+        assert item.state == 42.5
 
-        item = ApiItem(
-            name="test_item",
-            device=DeviceConstants.UNKNOWN,
-            translation_key="test_translation",
-            resultlist=result_list,
-            params=params,
-        )
-
-        assert item.name == "test_item"
-        assert item.device == DeviceConstants.UNKNOWN
-        assert item.resultlist == result_list
-        assert item.translation_key == "test_translation"
-        assert item.params == params
-
-    def test_api_item_property_setters(self) -> None:
-        """Test ApiItem property setters."""
-        item = ApiItem(
-            name="test",
-            device=DeviceConstants.UNKNOWN,
-        )
-
-        # Test name setter
-        item.name = "updated_name"
-        assert item.name == "updated_name"
-
-        # Test device setter
-        item.device = DeviceConstants.UNKNOWN
-        assert item.device == DeviceConstants.UNKNOWN
-
-        # Test translation_key setter
-        item.translation_key = "updated_key"
-        assert item.translation_key == "updated_key"
-
-        # Test is_invalid setter
+        # Test invalid state
         item.is_invalid = True
         assert item.is_invalid is True
 
-        # Test state setter
-        item.state = 42
-        assert item.state == 42
 
-        # Test params setter
-        new_params = {"key": "value"}
-        item.params = new_params
-        assert item.params == new_params
+class TestApiItem:
+    """Test ApiItem dataclass."""
 
-        # Test divider setter
-        item.divider = 10
-        assert item.divider == 10
-
-    def test_api_item_params_none(self) -> None:
-        """Test ApiItem params property when None."""
+    def test_api_item_init_required_params(self) -> None:
+        """Test ApiItem initialization with required parameters."""
         item = ApiItem(
-            name="test",
-            device=DeviceConstants.UNKNOWN,
+            name="test_item",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
         )
-        item.params = {}
+
+        assert item.name == "test_item"
+        assert item.mformat == FormatConstants.NUMBER
+        assert item.mtype == TypeConstants.SENSOR
+        assert item.device == DeviceConstants.SYS
+        assert item.translation_key == ""
         assert item.params == {}
+        assert item.address == 0
+        assert item.battery_slave_id == 1
+        assert item.divider == 1.0
+        assert item.entitydescription is None
+        assert item.resultlist is None
 
-    def test_get_text_from_number_no_resultlist(self) -> None:
-        """Test get_text_from_number when resultlist is None."""
-        item = ApiItem(
-            name="test",
-            device=DeviceConstants.UNKNOWN,
-        )
-
-        assert item.get_text_from_number(1) is None
-        assert item.get_text_from_number(None) is None
-
-    def test_get_text_from_number_with_resultlist(self) -> None:
-        """Test get_text_from_number with resultlist."""
-        result_list = [
-            StatusItem(1, "Status One"),
-            StatusItem(2, "Status Two"),
-            StatusItem(3, "Status Three"),
-        ]
+    def test_api_item_init_with_optional_params(self) -> None:
+        """Test ApiItem initialization with optional parameters."""
+        status_list = [StatusItem(1, "Status One", "status_one")]
+        params = {"param1": "value1", "param2": 42}
+        entity_desc = SensorEntityDescription(key="test_sensor")
 
         item = ApiItem(
-            name="test",
-            device=DeviceConstants.UNKNOWN,
-            resultlist=result_list,
+            name="test_item",
+            mformat=FormatConstants.PERCENTAGE,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            translation_key="test_translation",
+            params=params,
+            address=100,
+            battery_slave_id=2,
+            divider=10.0,
+            entitydescription=entity_desc,
+            resultlist=status_list,
         )
 
-        assert item.get_text_from_number(1) == "Status One"
-        assert item.get_text_from_number(2) == "Status Two"
-        assert item.get_text_from_number(3) == "Status Three"
-        assert item.get_text_from_number(999) == "unknown <999>"
-        assert item.get_text_from_number(None) is None
+        assert item.name == "test_item"
+        assert item.translation_key == "test_translation"
+        assert item.params == params
+        assert item.address == 100
+        assert item.battery_slave_id == 2
+        assert item.divider == 10.0
+        assert item.entitydescription == entity_desc
+        assert item.resultlist == status_list
 
-    def test_get_number_from_text_no_resultlist(self) -> None:
-        """Test get_number_from_text when resultlist is None."""
+    def test_api_item_convert_raw_value_number(self) -> None:
+        """Test ApiItem convert_raw_value for number format."""
         item = ApiItem(
             name="test",
-            device=DeviceConstants.UNKNOWN,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            divider=10.0,
         )
 
-        assert item.get_number_from_text("Status One") is None
+        # Test positive number
+        assert item.convert_raw_value(1500) == 150.0
 
-    def test_get_number_from_text_with_resultlist(self) -> None:
-        """Test get_number_from_text with resultlist."""
-        result_list = [
-            StatusItem(1, "Status One"),
-            StatusItem(2, "Status Two"),
-            StatusItem(3, "Status Three"),
-        ]
+        # Test signed 16-bit conversion (value > 32767)
+        assert item.convert_raw_value(65000) == -53.6  # (65000 - 65536) / 10
 
+        # Test negative number (already negative)
+        assert item.convert_raw_value(500) == 50.0
+
+    def test_api_item_convert_raw_value_other_formats(self) -> None:
+        """Test ApiItem convert_raw_value for other formats."""
         item = ApiItem(
             name="test",
-            device=DeviceConstants.UNKNOWN,
-            resultlist=result_list,
+            mformat=FormatConstants.PERCENTAGE,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            divider=2.0,
         )
 
-        assert item.get_number_from_text("Status One") == 1
-        assert item.get_number_from_text("Status Two") == 2
-        assert item.get_number_from_text("Status Three") == 3
-        assert item.get_number_from_text("Unknown Status") == -1
+        # Test percentage format (no signed conversion)
+        assert item.convert_raw_value(200) == 100.0
 
-    def test_get_translation_key_from_number_no_resultlist(self) -> None:
-        """Test get_translation_key_from_number when resultlist is None."""
+    def test_api_item_convert_raw_value_zero_divider(self) -> None:
+        """Test ApiItem convert_raw_value with zero divider."""
         item = ApiItem(
             name="test",
-            device=DeviceConstants.UNKNOWN,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            divider=0.0,
         )
 
-        assert item.get_translation_key_from_number(1) is None
-        assert item.get_translation_key_from_number(None) is None
+        # Should return raw value when divider is 0
+        assert item.convert_raw_value(1500) == 1500
 
-    def test_get_translation_key_from_number_with_resultlist(self) -> None:
-        """Test get_translation_key_from_number with resultlist."""
-        result_list = [
-            StatusItem(1, "Status One", "status_one"),
-            StatusItem(2, "Status Two", "status_two"),
-            StatusItem(3, "Status Three", "status_three"),
-        ]
-
+    def test_api_item_convert_to_raw_value_number(self) -> None:
+        """Test ApiItem convert_to_raw_value for number format."""
         item = ApiItem(
             name="test",
-            device=DeviceConstants.UNKNOWN,
-            resultlist=result_list,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            divider=10.0,
         )
 
-        assert item.get_translation_key_from_number(1) == "status_one"
-        assert item.get_translation_key_from_number(2) == "status_two"
-        assert item.get_translation_key_from_number(3) == "status_three"
-        assert item.get_translation_key_from_number(999) == "unknown <999>"
-        assert item.get_translation_key_from_number(None) is None
+        # Test normal conversion
+        assert item.convert_to_raw_value(150.0) == 1500
 
-    def test_get_number_from_translation_key_no_resultlist(self) -> None:
-        """Test get_number_from_translation_key when resultlist is None."""
+        # Test constraint limits
+        assert item.convert_to_raw_value(5000.0) == 32767  # Clamped to max
+        assert item.convert_to_raw_value(-5000.0) == -32768  # Clamped to min
+
+    def test_api_item_convert_to_raw_value_percentage(self) -> None:
+        """Test ApiItem convert_to_raw_value for percentage format."""
         item = ApiItem(
             name="test",
-            device=DeviceConstants.UNKNOWN,
+            mformat=FormatConstants.PERCENTAGE,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            divider=1.0,
         )
 
-        assert item.get_number_from_translation_key("status_one") is None
-        assert item.get_number_from_translation_key(None) is None
+        # Test normal conversion
+        assert item.convert_to_raw_value(50.0) == 50
 
-    def test_get_number_from_translation_key_with_resultlist(self) -> None:
-        """Test get_number_from_translation_key with resultlist."""
-        result_list = [
-            StatusItem(1, "Status One", "status_one"),
-            StatusItem(2, "Status Two", "status_two"),
-            StatusItem(3, "Status Three", "status_three"),
-        ]
-
-        item = ApiItem(
-            name="test",
-            device=DeviceConstants.UNKNOWN,
-            resultlist=result_list,
-        )
-
-        assert item.get_number_from_translation_key("status_one") == 1
-        assert item.get_number_from_translation_key("status_two") == 2
-        assert item.get_number_from_translation_key("status_three") == 3
-        assert item.get_number_from_translation_key("unknown_key") == -1
-        assert item.get_number_from_translation_key(None) is None
+        # Test constraint limits
+        assert item.convert_to_raw_value(150.0) == 100  # Clamped to max
+        assert item.convert_to_raw_value(-10.0) == 0  # Clamped to min
 
 
 class TestModbusItem:
-    """Test ModbusItem class."""
+    """Test ModbusItem dataclass."""
 
-    def test_modbus_item_init_defaults(self) -> None:
-        """Test ApiItem initialization with defaults."""
-        item = ApiItem(
+    def test_modbus_item_init_required_params(self) -> None:
+        """Test ModbusItem initialization with required parameters."""
+        item = ModbusItem(
             name="test_modbus",
-            device=DeviceConstants.UNKNOWN,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
         )
 
-        assert item.address == 100
         assert item.name == "test_modbus"
-        assert item.mformat == FormatConstants.TEMPERATURE
+        assert item.mformat == FormatConstants.NUMBER
         assert item.mtype == TypeConstants.SENSOR
-        assert item.device == DeviceConstants.UNKNOWN
-        assert item.translation_key == ""
-        assert item.resultlist is None
-        assert item.params == {}
+        assert item.device == DeviceConstants.SYS
+        assert item.address == 0
+        assert item.battery_slave_id == 0
+        assert item.divider == 1.0
+        assert item.resultlist == []
 
     def test_modbus_item_init_with_optional_params(self) -> None:
-        """Test ApiItem initialization with optional parameters."""
-        result_list = [StatusItem(1, "Test")]
-        params = {"param1": "value1"}
+        """Test ModbusItem initialization with optional parameters."""
+        status_list = [StatusItem(1, "Status One", "status_one")]
+        params = {"modbus_param": "value"}
 
-        item = ApiItem(
+        item = ModbusItem(
             name="test_modbus",
-            device=DeviceConstants.UNKNOWN,
-            translation_key="test_translation",
-            resultlist=result_list,
-            # battery_slave_id=2,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
+            address=200,
+            battery_slave_id=3,
+            divider=100.0,
+            resultlist=status_list,
             params=params,
         )
 
         assert item.address == 200
-        assert item.name == "test_modbus"
-        assert item.mformat == FormatConstants.PERCENTAGE
-        assert item.mtype == TypeConstants.NUMBER
-        assert item.device == DeviceConstants.UNKNOWN
-        assert item.translation_key == "test_translation"
-        assert item.resultlist == result_list
+        assert item.battery_slave_id == 3
+        assert item.divider == 100.0
+        assert item.resultlist == status_list
         assert item.params == params
 
-    def test_modbus_item_address_setter(self) -> None:
-        """Test ApiItem address setter."""
-        item = ApiItem(
+    def test_modbus_item_convert_raw_value(self) -> None:
+        """Test ModbusItem convert_raw_value method."""
+        item = ModbusItem(
             name="test",
-            device=DeviceConstants.UNKNOWN,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            divider=100.0,
         )
 
-        item.address = 300
-        assert item.address == 300
+        # Test conversion
+        assert item.convert_raw_value(2300) == 23.0
 
-    def test_modbus_item_inherits_from_api_item(self) -> None:
-        """Test that ApiItem inherits all ApiItem functionality."""
-        result_list = [
-            StatusItem(1, "Status One", "status_one"),
-            StatusItem(2, "Status Two", "status_two"),
-        ]
+        # Test signed conversion for large values
+        assert item.convert_raw_value(65000) == -5.36  # (65000 - 65536) / 100
 
-        item = ApiItem(
-            name="test_modbus",
-            device=DeviceConstants.UNKNOWN,
-            resultlist=result_list,
+    def test_modbus_item_convert_to_raw_value(self) -> None:
+        """Test ModbusItem convert_to_raw_value method."""
+        item = ModbusItem(
+            name="test",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            divider=10.0,
         )
 
-        # Test inherited functionality
-        assert item.get_text_from_number(1) == "Status One"
-        assert item.get_number_from_text("Status Two") == 2
-        assert item.get_translation_key_from_number(1) == "status_one"
-        assert item.get_number_from_translation_key("status_two") == 2
+        # Test conversion
+        assert item.convert_to_raw_value(23.0) == 230
 
-        # Test property inheritance
-        item.state = 42
-        assert item.state == 42
+    def test_modbus_item_state_management(self) -> None:
+        """Test ModbusItem state management (inherited from BaseItem)."""
+        item = ModbusItem(
+            name="test",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+        )
 
+        # Test state setter/getter
+        item.state = 42.5
+        assert item.state == 42.5
+
+        # Test invalid flag
         item.is_invalid = True
         assert item.is_invalid is True
+
+
+class TestSAXItem:
+    """Test SAXItem dataclass."""
+
+    def test_sax_item_init_required_params(self) -> None:
+        """Test SAXItem initialization with required parameters."""
+        item = SAXItem(
+            name="test_sax",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+        )
+
+        assert item.name == "test_sax"
+        assert item.mformat == FormatConstants.NUMBER
+        assert item.mtype == TypeConstants.SENSOR_CALC
+        assert item.device == DeviceConstants.SYS
+        assert item.entitydescription is None
+
+    def test_sax_item_init_with_optional_params(self) -> None:
+        """Test SAXItem initialization with optional parameters."""
+        entity_desc = SensorEntityDescription(key="calculated_sensor")
+        params = {
+            "calculation": "val_0 + val_1",
+            "val_0": "power_l1",
+            "val_1": "power_l2",
+        }
+
+        item = SAXItem(
+            name="total_power",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+            entitydescription=entity_desc,
+            params=params,
+        )
+
+        assert item.name == "total_power"
+        assert item.entitydescription == entity_desc
+        assert item.params == params
+
+    def test_sax_item_calculate_value_no_calculation(self) -> None:
+        """Test SAXItem calculate_value with no calculation parameter."""
+        item = SAXItem(
+            name="test",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+        )
+
+        # No calculation parameter
+        result = item.calculate_value({"val_0": 10.0})
+        assert result is None
+
+        # Empty params
+        item.params = {}
+        result = item.calculate_value({"val_0": 10.0})
+        assert result is None
+
+    def test_sax_item_calculate_value_with_calculation(self) -> None:
+        """Test SAXItem calculate_value with valid calculation."""
+        item = SAXItem(
+            name="test",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+            params={"calculation": "val_0 + val_1 * 2"},
+        )
+
+        variables = {"val_0": 10.0, "val_1": 5.0}
+        result = item.calculate_value(variables)
+        assert result == 20.0  # 10 + 5 * 2
+
+    def test_sax_item_calculate_value_invalid_calculation(self) -> None:
+        """Test SAXItem calculate_value with invalid calculation."""
+        item = SAXItem(
+            name="test",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+            params={"calculation": "invalid_syntax +"},
+        )
+
+        variables = {"val_0": 10.0}
+        result = item.calculate_value(variables)
+        assert result is None
+
+    def test_sax_item_calculate_value_missing_variables(self) -> None:
+        """Test SAXItem calculate_value with missing variables."""
+        item = SAXItem(
+            name="test",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+            params={"calculation": "val_0 + missing_var"},
+        )
+
+        variables = {"val_0": 10.0}
+        result = item.calculate_value(variables)
+        assert result is None
+
+    def test_sax_item_calculate_value_division_by_zero(self) -> None:
+        """Test SAXItem calculate_value with division by zero."""
+        item = SAXItem(
+            name="test",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+            params={"calculation": "val_0 / val_1"},
+        )
+
+        variables = {"val_0": 10.0, "val_1": 0.0}
+        result = item.calculate_value(variables)
+        assert result is None
+
+    def test_sax_item_state_management(self) -> None:
+        """Test SAXItem state management (inherited from BaseItem)."""
+        item = SAXItem(
+            name="test",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+        )
+
+        # Test state setter/getter
+        item.state = 100.5
+        assert item.state == 100.5
+
+        # Test invalid flag
+        item.is_invalid = False
+        assert item.is_invalid is False
+
+
+class TestItemInteroperability:
+    """Test interoperability between different item types."""
+
+    def test_convert_api_to_modbus_item(self) -> None:
+        """Test conversion patterns between ApiItem and ModbusItem."""
+        api_item = ApiItem(
+            name="test_conversion",
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            address=300,
+            battery_slave_id=2,
+            divider=100.0,
+        )
+
+        # Test that both have compatible conversion methods
+        raw_value = 23000
+        api_converted = api_item.convert_raw_value(raw_value)
+
+        modbus_item = ModbusItem(
+            name=api_item.name,
+            mformat=api_item.mformat,
+            mtype=api_item.mtype,
+            device=api_item.device,
+            address=api_item.address,
+            battery_slave_id=api_item.battery_slave_id,
+            divider=api_item.divider,
+        )
+
+        modbus_converted = modbus_item.convert_raw_value(raw_value)
+
+        assert api_converted == modbus_converted
+
+    def test_all_items_share_common_interface(self) -> None:
+        """Test that all item types share common BaseItem interface."""
+        items = [
+            ApiItem(
+                name="api_test",
+                mformat=FormatConstants.NUMBER,
+                mtype=TypeConstants.SENSOR,
+                device=DeviceConstants.SYS,
+            ),
+            ModbusItem(
+                name="modbus_test",
+                mformat=FormatConstants.NUMBER,
+                mtype=TypeConstants.SENSOR,
+                device=DeviceConstants.SYS,
+            ),
+            SAXItem(
+                name="sax_test",
+                mformat=FormatConstants.NUMBER,
+                mtype=TypeConstants.SENSOR_CALC,
+                device=DeviceConstants.SYS,
+            ),
+        ]
+
+        for item in items:
+            # All should have common BaseItem properties
+            assert hasattr(item, "name")
+            assert hasattr(item, "state")
+            assert hasattr(item, "is_invalid")
+            assert hasattr(item, "mformat")
+            assert hasattr(item, "mtype")
+            assert hasattr(item, "device")
+
+            # Test state management
+            item.state = f"test_state_{item.name}"
+            assert item.state == f"test_state_{item.name}"
+
+            item.is_invalid = True
+            assert item.is_invalid is True

@@ -50,7 +50,7 @@ def temperature_item():
         name="sax_temperature",
         mformat=FormatConstants.TEMPERATURE,
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.UNKNOWN,
+        device=DeviceConstants.SYS,
     )
 
 
@@ -62,7 +62,7 @@ def percentage_item():
         name="sax_soc",
         mformat=FormatConstants.PERCENTAGE,
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.UNKNOWN,
+        device=DeviceConstants.SYS,
     )
 
 
@@ -129,7 +129,9 @@ class TestSAXBatterySensor:
         """Test state class determination."""
         temperature_item = ApiItem(
             name="sax_temperature",
-            device=DeviceConstants.UNKNOWN,
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.TEMPERATURE,
+            mtype=TypeConstants.SENSOR,
         )
 
         sensor = SAXBatterySensor(
@@ -168,7 +170,9 @@ class TestSAXBatteryCalcSensor:
         """Test calculated sensor for total power."""
         calc_item = ApiItem(
             name="total_power",
-            device=DeviceConstants.UNKNOWN,
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
         )
 
         sensor = SAXBatteryCalcSensor(
@@ -185,7 +189,9 @@ class TestSAXBatteryCalcSensor:
         """Test calculated sensor name includes '(Calculated)'."""
         calc_item = ApiItem(
             name="total_power",
-            device=DeviceConstants.UNKNOWN,
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
         )
 
         sensor = SAXBatteryCalcSensor(

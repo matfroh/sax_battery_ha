@@ -247,6 +247,7 @@ automation application.
 5. **Follow all ruff linting rules** defined in `pyproject.toml`
 6. **Sort imports properly** and remove unused imports
 7. **Use specific exception handling** - never catch blind `Exception`
+8. **import** statements should be at the top-level of a file
 
 ## Home Assistant Integration Patterns
 
