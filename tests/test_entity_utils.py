@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -49,7 +49,7 @@ class TestFilterItemsByType:
 
     def test_filter_sensor_items(self, mock_modbus_items, mock_config_entry):
         """Test filtering sensor items."""
-        with pytest.patch(
+        with patch(
             "custom_components.sax_battery.entity_utils.should_include_entity",
             return_value=True,
         ):
@@ -66,7 +66,7 @@ class TestFilterItemsByType:
 
     def test_filter_number_items(self, mock_modbus_items, mock_config_entry):
         """Test filtering number items."""
-        with pytest.patch(
+        with patch(
             "custom_components.sax_battery.entity_utils.should_include_entity",
             return_value=True,
         ):
@@ -83,7 +83,7 @@ class TestFilterItemsByType:
 
     def test_filter_switch_items(self, mock_modbus_items, mock_config_entry):
         """Test filtering switch items."""
-        with pytest.patch(
+        with patch(
             "custom_components.sax_battery.entity_utils.should_include_entity",
             return_value=True,
         ):
@@ -100,7 +100,7 @@ class TestFilterItemsByType:
 
     def test_filter_excludes_items(self, mock_modbus_items, mock_config_entry):
         """Test filtering excludes items based on should_include_entity."""
-        with pytest.patch(
+        with patch(
             "custom_components.sax_battery.entity_utils.should_include_entity",
             return_value=False,
         ):
@@ -115,7 +115,7 @@ class TestFilterItemsByType:
 
     def test_filter_no_matching_type(self, mock_modbus_items, mock_config_entry):
         """Test filtering with no matching type."""
-        with pytest.patch(
+        with patch(
             "custom_components.sax_battery.entity_utils.should_include_entity",
             return_value=True,
         ):
