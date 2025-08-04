@@ -147,6 +147,10 @@ class SAXItem(BaseItem):
 
     def __post_init__(self) -> None:
         """Initialize compiled calculation after object creation."""
+        if self.mtype == TypeConstants.SENSOR_CALC and not self.name.endswith(
+            "(Calculated)"
+        ):
+            self.name = f"{self.name} (Calculated)"
         if self.params and "calculation" in self.params:
             calculation_source = self.params["calculation"]
             if isinstance(calculation_source, str):

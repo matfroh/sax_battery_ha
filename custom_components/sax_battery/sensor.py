@@ -113,7 +113,12 @@ class SAXBatterySensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
         if not self.coordinator.data:
             return None
 
-        return self.coordinator.data.get(self._modbus_item.name)
+        raw_value = self.coordinator.data.get(self._modbus_item.name)
+        if raw_value is None:
+            return None
+
+        # Apply the item's conversion logic (including divider)
+        return self._modbus_item.convert_raw_value(raw_value)
 
     @property
     def native_unit_of_measurement(self) -> str | None:

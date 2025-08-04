@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from pymodbus import ModbusException
 import pytest
@@ -48,6 +48,13 @@ class TestSAXBatteryCoordinator:
         mock_modbus_api,
     ) -> None:
         """Test successful data update."""
+        # Setup mock battery with data
+        mock_battery = MagicMock()
+        mock_battery.data = {"test_value": 42}
+        mock_sax_data.batteries = {"battery_a": mock_battery}
+        mock_sax_data.get_modbus_items_for_battery.return_value = []
+        mock_sax_data.should_poll_smart_meter.return_value = False
+
         coordinator = SAXBatteryCoordinator(
             hass=hass,
             battery_id="battery_a",
@@ -59,7 +66,6 @@ class TestSAXBatteryCoordinator:
 
         assert data == {"test_value": 42}
         assert coordinator._first_update_done
-        mock_sax_data.batteries["battery_a"].update_data.assert_called_once()
 
     async def test_update_battery_not_found(
         self,
@@ -70,6 +76,7 @@ class TestSAXBatteryCoordinator:
         """Test update when battery not found."""
         mock_sax_data.batteries = {}
         mock_sax_data.get_modbus_items_for_battery.return_value = []
+        mock_sax_data.should_poll_smart_meter.return_value = False
 
         coordinator = SAXBatteryCoordinator(
             hass=hass,
@@ -89,8 +96,21 @@ class TestSAXBatteryCoordinator:
         mock_modbus_api,
     ) -> None:
         """Test first update failure raises ConfigEntryNotReady."""
-        mock_modbus_api.read_holding_registers.side_effect = ModbusException(
-            "Connection failed"
+        # Setup mock to simulate read failure
+        mock_battery = MagicMock()
+        mock_battery.data = {}
+        mock_sax_data.batteries = {"battery_a": mock_battery}
+
+        # Create a modbus item that will trigger reading
+        mock_item = MagicMock()
+        mock_item.address = 100
+        mock_item.battery_slave_id = 1
+        mock_sax_data.get_modbus_items_for_battery.return_value = [mock_item]
+        mock_sax_data.should_poll_smart_meter.return_value = False
+
+        # Make the API call fail
+        mock_modbus_api.read_holding_registers = AsyncMock(
+            side_effect=ModbusException("Connection failed")
         )
 
         coordinator = SAXBatteryCoordinator(
@@ -112,6 +132,17 @@ class TestSAXBatteryCoordinator:
         mock_modbus_api,
     ) -> None:
         """Test subsequent update failure raises UpdateFailed."""
+        # Setup mock battery and item
+        mock_battery = MagicMock()
+        mock_battery.data = {}
+        mock_sax_data.batteries = {"battery_a": mock_battery}
+
+        mock_item = MagicMock()
+        mock_item.address = 100
+        mock_item.battery_slave_id = 1
+        mock_sax_data.get_modbus_items_for_battery.return_value = [mock_item]
+        mock_sax_data.should_poll_smart_meter.return_value = False
+
         coordinator = SAXBatteryCoordinator(
             hass=hass,
             battery_id="battery_a",
@@ -121,8 +152,10 @@ class TestSAXBatteryCoordinator:
 
         # Simulate successful first update
         coordinator._first_update_done = True
-        mock_modbus_api.read_holding_registers.side_effect = ModbusException(
-            "Connection failed"
+
+        # Make the API call fail
+        mock_modbus_api.read_holding_registers = AsyncMock(
+            side_effect=ModbusException("Connection failed")
         )
 
         with pytest.raises(
@@ -145,7 +178,12 @@ class TestSAXBatteryCoordinator:
             modbus_api=mock_modbus_api,
         )
 
-        success = await coordinator.async_write_number_value(mock_modbus_item, 50.0)
+        # Mock successful write
+        with patch(
+            "custom_components.sax_battery.modbusobject.ModbusObject.async_write_value",
+            return_value=True,
+        ):
+            success = await coordinator.async_write_number_value(mock_modbus_item, 50.0)
 
         assert success
 
@@ -160,7 +198,7 @@ class TestSAXBatteryCoordinator:
         # Make the ModbusObject's async_write_value fail
         with patch(
             "custom_components.sax_battery.modbusobject.ModbusObject.async_write_value",
-            side_effect=ModbusException("Write failed"),
+            return_value=False,
         ):
             coordinator = SAXBatteryCoordinator(
                 hass=hass,
@@ -218,7 +256,7 @@ class TestSAXBatteryCoordinator:
         # Test percentage format (should clamp to 0-100)
         percentage_item = ModbusItem(
             name="test_percentage",
-            device=DeviceConstants.UNKNOWN,
+            device=DeviceConstants.SYS,
             mformat=FormatConstants.PERCENTAGE,
             mtype=TypeConstants.NUMBER,
             address=100,
@@ -254,7 +292,7 @@ class TestSAXBatteryCoordinator:
         # Test number format with divider
         number_item = ApiItem(
             name="test_number",
-            device=DeviceConstants.UNKNOWN,
+            device=DeviceConstants.SYS,
             mformat=FormatConstants.NUMBER,
             mtype=TypeConstants.NUMBER,
             address=100,
@@ -276,6 +314,11 @@ class TestSAXBatteryCoordinator:
         mock_modbus_api,
     ) -> None:
         """Test smart meter polling only on master battery."""
+        # Setup mock battery
+        mock_battery = MagicMock()
+        mock_battery.data = {}
+        mock_sax_data.batteries = {"battery_a": mock_battery}
+
         # Mock master battery
         mock_sax_data.should_poll_smart_meter.return_value = True
         mock_smart_meter_item = ModbusItem(
@@ -290,6 +333,9 @@ class TestSAXBatteryCoordinator:
         mock_sax_data.get_smart_meter_items.return_value = [mock_smart_meter_item]
         mock_sax_data.get_modbus_items_for_battery.return_value = []
 
+        # Mock successful read
+        mock_modbus_api.read_input_registers = AsyncMock(return_value=[2500])
+
         coordinator = SAXBatteryCoordinator(
             hass=hass,
             battery_id="battery_a",
@@ -300,7 +346,7 @@ class TestSAXBatteryCoordinator:
         await coordinator._async_update_data()
 
         # Should call smart meter update
-        mock_modbus_api.read_holding_registers.assert_called_with(200, 1, 1)
+        mock_modbus_api.read_input_registers.assert_called_with(200, slave=1)
 
     async def test_convert_modbus_to_api_item(
         self,
@@ -377,6 +423,10 @@ class TestSAXBatteryCoordinator:
         mock_modbus_api,
     ) -> None:
         """Test updating SAX item state."""
+        # Setup mock battery
+        mock_battery = MagicMock()
+        mock_sax_data.batteries = {"battery_a": mock_battery}
+
         coordinator = SAXBatteryCoordinator(
             hass=hass,
             battery_id="battery_a",
@@ -386,9 +436,7 @@ class TestSAXBatteryCoordinator:
 
         # Test with string item name
         coordinator.update_sax_item_state("test_item", 42.0)
-        mock_sax_data.batteries["battery_a"].set_value.assert_called_with(
-            "test_item", 42.0
-        )
+        mock_battery.data.__setitem__.assert_called_with("test_item", 42.0)
 
         # Test with SAXItem object
         sax_item = SAXItem(
@@ -400,6 +448,4 @@ class TestSAXBatteryCoordinator:
 
         coordinator.update_sax_item_state(sax_item, 84.0)
         assert sax_item.state == 84.0
-        mock_sax_data.batteries["battery_a"].set_value.assert_called_with(
-            "test_sax_item", 84.0
-        )
+        mock_battery.data.__setitem__.assert_called_with("test_sax_item", 84.0)

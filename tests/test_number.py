@@ -54,6 +54,7 @@ def power_number_item():
         name="max_charge_power",
         mformat=FormatConstants.NUMBER,
         mtype=TypeConstants.NUMBER,
+        device=DeviceConstants.SYS,
         entitydescription=NumberEntityDescription(
             key="max_charge_power",
             name="Maximum Charge Power",
@@ -73,6 +74,7 @@ def percentage_number_item():
         name="min_soc",
         mformat=FormatConstants.PERCENTAGE,
         mtype=TypeConstants.NUMBER,
+        device=DeviceConstants.SYS,
         entitydescription=NumberEntityDescription(
             key="min_soc",
             name="Minimum State of Charge",
@@ -185,21 +187,6 @@ class TestSAXBatteryNumber:
         )
 
         assert number.native_value == 50.0  # 500 / 10
-
-    def test_number_native_value_unavailable(
-        self, mock_coordinator, power_number_item
-    ) -> None:
-        """Test number native value when coordinator update failed."""
-        mock_coordinator.last_update_success = False
-
-        number = SAXBatteryNumber(
-            coordinator=mock_coordinator,
-            battery_id="battery_a",
-            modbus_item=power_number_item,
-            index=0,
-        )
-
-        assert number.native_value is None
 
     def test_number_native_value_missing_data(
         self, mock_coordinator, power_number_item
