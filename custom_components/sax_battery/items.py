@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC
-from ast import literal_eval
 from dataclasses import dataclass, field
+import logging
 from typing import Any
 
 from homeassistant.components.number import NumberEntityDescription
@@ -12,6 +12,8 @@ from homeassistant.components.sensor import SensorEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
 
 from .enums import DeviceConstants, FormatConstants, TypeConstants
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -137,23 +139,119 @@ class ModbusItem(BaseItem):
 
 @dataclass
 class SAXItem(BaseItem):
-    """SAX-specific item for calculated values and virtual entities."""
+    """SAX item for calculated sensors and pilot controls."""
 
-    entitydescription: (
-        SensorEntityDescription
-        | SwitchEntityDescription
-        | NumberEntityDescription
-        | None
-    ) = None
+    entitydescription: Any = None
+    _calculation_compiled: Any = field(default=None, init=False)
+    _calculation_source: str | None = field(default=None, init=False)
 
-    def calculate_value(self, variables: dict[str, float]) -> float | None:
-        """Calculate value based on parameters and variables."""
-        if not self.params or "calculation" not in self.params:
+    def __post_init__(self) -> None:
+        """Initialize compiled calculation after object creation."""
+        if self.params and "calculation" in self.params:
+            calculation_source = self.params["calculation"]
+            if isinstance(calculation_source, str):
+                self._calculation_source = calculation_source
+                try:
+                    # Use compile for calculation expressions
+                    self._calculation_compiled = compile(
+                        calculation_source, "calculation", "eval"
+                    )
+                except SyntaxError as exc:
+                    _LOGGER.warning(
+                        "Syntax error in calculation %s: %s", calculation_source, exc
+                    )
+                    self._calculation_compiled = None
+            else:
+                _LOGGER.warning(
+                    "Calculation parameter must be a string, got %s",
+                    type(calculation_source),
+                )
+                self._calculation_compiled = None
+
+    def calculate_value(
+        self, coordinator_values: dict[str, float | None], val_0: float | None = None
+    ) -> float | None:
+        """Calculate sensor value from other entity values.
+
+        Args:
+            coordinator_values: Dictionary mapping parameter keys to values from coordinator
+            val_0: Optional direct value (typically the modbus register value)
+
+        Returns:
+            Calculated value or None if calculation fails
+
+        """
+        if not self._calculation_source or not self._calculation_compiled:
             return None
 
-        calculation = self.params["calculation"]
+        if not self.params:
+            return None
+
+        # Build variables dictionary for calculation
+        calculation_vars: dict[str, float] = {}
+
+        # Add val_0 if provided
+        if val_0 is not None:
+            calculation_vars["val_0"] = val_0
+
+        # Process val_1 through val_8 from params
+        for i in range(1, 9):
+            param_key = f"val_{i}"
+            if param_key in self._calculation_source:
+                entity_key = self.params.get(param_key)
+                if entity_key and entity_key in coordinator_values:
+                    value = coordinator_values[entity_key]
+                    if value is not None:
+                        calculation_vars[param_key] = value
+                    else:
+                        # Missing required variable
+                        _LOGGER.debug(
+                            "Missing value for %s in calculation %s",
+                            entity_key,
+                            self.name,
+                        )
+                        return None
+
+        # Special handling for "power" variable if referenced
+        if "power" in self._calculation_source and "power" in coordinator_values:
+            power_value = coordinator_values["power"]
+            if power_value is not None:
+                calculation_vars["power"] = power_value
+
         try:
-            # Safe evaluation of mathematical expressions using ast.literal_eval
-            return literal_eval(calculation)
-        except (ValueError, SyntaxError, TypeError):
+            # Use eval with restricted globals for security
+            allowed_names = {"__builtins__": {}, **calculation_vars}
+            result = eval(self._calculation_compiled, allowed_names, calculation_vars)  # noqa: S307
+
+            if isinstance(result, (int, float)):
+                # Apply precision rounding if available
+                precision = getattr(
+                    self.entitydescription, "suggested_display_precision", None
+                )
+                if precision is not None:
+                    return float(round(float(result), precision))
+                return float(result)
+            else:  # noqa: RET505
+                _LOGGER.warning(
+                    "Calculation returned non-numeric result: %s for %s",
+                    type(result),
+                    self.name,
+                )
+                return None
+
+        except ZeroDivisionError:
+            _LOGGER.debug("Division by zero in calculation for %s", self.name)
+            return None
+        except NameError as exc:
+            _LOGGER.warning(
+                "Variable not defined in calculation %s: %s",
+                self._calculation_source,
+                exc,
+            )
+            return None
+        except (TypeError, ValueError) as exc:
+            _LOGGER.warning("Invalid calculation for %s: %s", self.name, exc)
+            return None
+        except Exception as exc:  # Catch any other calculation errors  # noqa: BLE001
+            _LOGGER.error("Unexpected error in calculation for %s: %s", self.name, exc)
             return None

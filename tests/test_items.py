@@ -8,6 +8,8 @@ from custom_components.sax_battery.enums import (
 from custom_components.sax_battery.items import ApiItem, ModbusItem, SAXItem, StatusItem
 from homeassistant.components.sensor import SensorEntityDescription
 
+# mypy: disable-error-code="arg-type"
+
 
 class TestStatusItem:
     """Test StatusItem dataclass."""
@@ -75,7 +77,7 @@ class TestApiItem:
         assert item.mtype == TypeConstants.SENSOR
         assert item.device == DeviceConstants.SYS
         assert item.translation_key == ""
-        assert item.params == {}
+        assert not item.params
         assert item.address == 0
         assert item.battery_slave_id == 1
         assert item.divider == 1.0
@@ -210,7 +212,7 @@ class TestModbusItem:
         assert item.address == 0
         assert item.battery_slave_id == 0
         assert item.divider == 1.0
-        assert item.resultlist == []
+        assert not item.resultlist
 
     def test_modbus_item_init_with_optional_params(self) -> None:
         """Test ModbusItem initialization with optional parameters."""
@@ -340,19 +342,56 @@ class TestSAXItem:
         result = item.calculate_value({"val_0": 10.0})
         assert result is None
 
-    def test_sax_item_calculate_value_with_calculation(self) -> None:
-        """Test SAXItem calculate_value with valid calculation."""
+    def test_sax_item_calculate_value_with_coordinator(self) -> None:
+        """Test SAXItem calculate_value with coordinator values."""
         item = SAXItem(
-            name="test",
+            name="combined_power",
             mformat=FormatConstants.NUMBER,
             mtype=TypeConstants.SENSOR_CALC,
             device=DeviceConstants.SYS,
-            params={"calculation": "val_0 + val_1 * 2"},
+            params={
+                "calculation": "val_1 + val_2 + val_3",
+                "val_1": "battery_a_power",
+                "val_2": "battery_b_power",
+                "val_3": "battery_c_power",
+            },
         )
 
-        variables = {"val_0": 10.0, "val_1": 5.0}
-        result = item.calculate_value(variables)
-        assert result == 20.0  # 10 + 5 * 2
+        coordinator_values: dict[str, float] | None = {
+            "battery_a_power": 1500.0,
+            "battery_b_power": 2000.0,
+            "battery_c_power": 1200.0,
+        }
+
+        result = item.calculate_value(coordinator_values)
+        assert result == 4700.0  # 1500 + 2000 + 1200
+
+    def test_sax_item_calculate_value_with_precision(self) -> None:
+        """Test SAXItem calculate_value with display precision."""
+        entity_desc = SensorEntityDescription(
+            key="test_calc", suggested_display_precision=2
+        )
+
+        item = SAXItem(
+            name="average_soc",
+            mformat=FormatConstants.PERCENTAGE,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+            entitydescription=entity_desc,
+            params={
+                "calculation": "(val_1 + val_2) / 2",
+                "val_1": "battery_a_soc",
+                "val_2": "battery_b_soc",
+            },
+        )
+
+        coordinator_values: dict[str, float] | None = {
+            "battery_a_soc": 85.333,
+            "battery_b_soc": 92.777,
+        }
+
+        result = item.calculate_value(coordinator_values)
+        assert result == 89.06  # Rounded to 2 decimal places
 
     def test_sax_item_calculate_value_invalid_calculation(self) -> None:
         """Test SAXItem calculate_value with invalid calculation."""
@@ -364,7 +403,7 @@ class TestSAXItem:
             params={"calculation": "invalid_syntax +"},
         )
 
-        variables = {"val_0": 10.0}
+        variables: dict[str, float] | None = {"val_0": 10.0}
         result = item.calculate_value(variables)
         assert result is None
 
@@ -378,7 +417,7 @@ class TestSAXItem:
             params={"calculation": "val_0 + missing_var"},
         )
 
-        variables = {"val_0": 10.0}
+        variables: dict[str, float] | None = {"val_0": 10.0}
         result = item.calculate_value(variables)
         assert result is None
 
@@ -392,7 +431,7 @@ class TestSAXItem:
             params={"calculation": "val_0 / val_1"},
         )
 
-        variables = {"val_0": 10.0, "val_1": 0.0}
+        variables: dict[str, float] | None = {"val_0": 10.0, "val_1": 0.0}
         result = item.calculate_value(variables)
         assert result is None
 
