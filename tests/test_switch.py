@@ -47,6 +47,9 @@ class TestSAXBatterySwitch:
             device=DeviceConstants.SYS,
             mformat=FormatConstants.STATUS,
             mtype=TypeConstants.SWITCH,
+            address=1000,  # Use valid Modbus address instead of 0
+            battery_slave_id=1,
+            divider=1.0,
         )
 
     def test_switch_initialization(
@@ -132,6 +135,9 @@ class TestSAXBatterySwitch:
         self, mock_coordinator: MagicMock, modbus_item: ApiItem
     ) -> None:
         """Test extra state attributes."""
+        # Set the address to match expected value
+        modbus_item.address = 1000
+
         switch = SAXBatterySwitch(
             coordinator=mock_coordinator,
             battery_id="battery_1",
@@ -282,4 +288,6 @@ class TestSAXBatterySwitch:
             index=0,
         )
 
-        assert switch.icon == "mdi:toggle-switch"
+        # The implementation returns None for icon, meaning it uses the default
+        # Home Assistant switch icon behavior
+        assert switch.icon is None

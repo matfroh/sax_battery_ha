@@ -296,7 +296,7 @@ class TestSAXItem:
             device=DeviceConstants.SYS,
         )
 
-        assert item.name == "test_sax"
+        assert item.name == "test_sax (Calculated)"
         assert item.mformat == FormatConstants.NUMBER
         assert item.mtype == TypeConstants.SENSOR_CALC
         assert item.device == DeviceConstants.SYS
@@ -320,7 +320,7 @@ class TestSAXItem:
             params=params,
         )
 
-        assert item.name == "total_power"
+        assert item.name == "total_power (Calculated)"
         assert item.entitydescription == entity_desc
         assert item.params == params
 

@@ -20,7 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import SAXBatteryCoordinator
-from .entity_utils import filter_items_by_type
+from .entity_utils import filter_items_by_type, filter_sax_items_by_type
 from .enums import TypeConstants
 from .items import ApiItem, SAXItem
 from .models import SAXBatteryData
@@ -38,7 +38,7 @@ async def async_setup_entry(
     entities: list[SAXBatterySensor | SAXBatteryCalcSensor] = []
 
     for battery_id, coordinator in sax_data.coordinators.items():
-        # Regular sensors
+        # Regular sensors from Modbus/API items
         sensor_items = filter_items_by_type(
             coordinator.api_items,
             TypeConstants.SENSOR,
@@ -56,9 +56,9 @@ async def async_setup_entry(
             for index, modbus_item in enumerate(sensor_items)
         )
 
-        # Calculated sensors
-        calc_sensor_items = filter_items_by_type(
-            coordinator.api_items,
+        # Calculated sensors from SAX items - use separate filter for SAXItem
+        calc_sensor_items = filter_sax_items_by_type(
+            sax_data.get_sax_items_for_battery(battery_id),  # Get SAXItem objects
             TypeConstants.SENSOR_CALC,
             config_entry,
             battery_id,
@@ -68,10 +68,10 @@ async def async_setup_entry(
             SAXBatteryCalcSensor(
                 coordinator=coordinator,
                 battery_id=battery_id,
-                modbus_item=modbus_item,
+                sax_item=sax_item,  # Now correctly typed as SAXItem
                 index=index,
             )
-            for index, modbus_item in enumerate(calc_sensor_items)
+            for index, sax_item in enumerate(calc_sensor_items)
         )
 
     async_add_entities(entities)
@@ -85,7 +85,7 @@ class SAXBatterySensorEntityDescription(SensorEntityDescription):
 
 
 class SAXBatterySensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
-    """Implementation of a SAX Battery sensor."""
+    """Implementation of a SAX Battery sensor for ModbusItem/ApiItem data."""
 
     def __init__(
         self,
@@ -161,8 +161,8 @@ class SAXBatterySensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
         return self.coordinator.sax_data.get_device_info(self._battery_id)
 
 
-class SAXBatteryCalcSensor(CoordinatorEntity, SensorEntity):
-    """SAX Battery calculated sensor - specifically for SAXItem."""
+class SAXBatteryCalcSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
+    """SAX Battery calculated sensor - specifically for SAXItem calculations."""
 
     def __init__(
         self,
@@ -174,13 +174,10 @@ class SAXBatteryCalcSensor(CoordinatorEntity, SensorEntity):
         """Initialize calculated sensor."""
         super().__init__(coordinator)
         self._battery_id = battery_id
-        self._sax_item = sax_item  # Renamed to be clear about type
-        self._index = index
-
-    @property
-    def unique_id(self) -> str:
-        """Return unique ID."""
-        return f"{self._battery_id}_{self._sax_item.name}_{self._index}"
+        self._sax_item = sax_item
+        self._attr_unique_id = create_entity_unique_id(battery_id, sax_item, index)
+        self._attr_entity_category = determine_entity_category(sax_item)
+        self._attr_has_entity_name = True
 
     @property
     def name(self) -> str:
@@ -190,25 +187,56 @@ class SAXBatteryCalcSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the calculated native value."""
-        if not self.coordinator.data or not self._sax_item._calculation_compiled:  # noqa: SLF001
+        if not self.coordinator.data:
             return None
 
+        # Get the calculated value from the SAXItem - ensure proper type conversion
+        state = self._sax_item.state
+        if state is None:
+            return None
+
+        # Convert to float if possible, otherwise return None
         try:
-            # Create namespace with coordinator data for calculation
-            namespace = dict(self.coordinator.data)
-
-            # Execute the compiled calculation
-            result = eval(  # noqa: S307
-                self._sax_item._calculation_compiled,  # noqa: SLF001
-                {"__builtins__": {}},
-                namespace,
-            )
-
-            # Apply divider if specified
-            if hasattr(self._sax_item, "divider") and self._sax_item.divider:
-                result = result / self._sax_item.divider
-
-            return float(result) if result is not None else None
-
-        except (NameError, TypeError, ZeroDivisionError, ValueError):
+            return float(state) if state is not None else None
+        except (ValueError, TypeError):
             return None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the unit of measurement."""
+        return getattr(self._sax_item, "unit", None)
+
+    @property
+    def device_class(self) -> SensorDeviceClass | None:
+        """Return the device class of the sensor."""
+        return getattr(self._sax_item, "device_class", None)
+
+    @property
+    def state_class(self) -> SensorStateClass | None:
+        """Return the state class of the sensor."""
+        return getattr(self._sax_item, "state_class", None)
+
+    @property
+    def icon(self) -> str | None:
+        """Return the icon of the sensor."""
+        return getattr(self._sax_item, "icon", None)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return super().available and self.coordinator.data is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        return {
+            "battery_id": self._battery_id,
+            "calculation": getattr(self._sax_item, "calculation", None),
+            "last_update": getattr(self.coordinator, "last_update_success_time", None),
+            "sensor_type": "calculated",
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return self.coordinator.sax_data.get_device_info(self._battery_id)
