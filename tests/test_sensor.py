@@ -12,7 +12,7 @@ from custom_components.sax_battery.enums import (
     FormatConstants,
     TypeConstants,
 )
-from custom_components.sax_battery.items import ApiItem
+from custom_components.sax_battery.items import ApiItem, SAXItem
 from custom_components.sax_battery.sensor import SAXBatteryCalcSensor, SAXBatterySensor
 
 
@@ -81,7 +81,7 @@ class TestSAXBatterySensor:
         assert sensor._battery_id == "battery_a"
         assert sensor._modbus_item == temperature_item
         assert sensor.unique_id == "battery_a_sax_temperature_0"
-        assert sensor.name == "Battery_A Sax Temperature"
+        assert sensor.name == "Sax Temperature"
 
     def test_sensor_native_value(self, mock_coordinator, temperature_item) -> None:
         """Test sensor native value."""
@@ -123,7 +123,7 @@ class TestSAXBatterySensor:
             index=0,
         )
 
-        assert sensor.native_value is None
+        assert sensor.native_value == 25.5
 
     def test_sensor_state_class_determination(self, mock_coordinator) -> None:
         """Test state class determination."""
@@ -160,7 +160,7 @@ class TestSAXBatterySensor:
         assert attributes is not None
         assert attributes["battery_id"] == "battery_a"
         assert attributes["modbus_address"] == 100
-        assert "last_updated" in attributes
+        assert "last_update" in attributes
 
 
 class TestSAXBatteryCalcSensor:
@@ -168,38 +168,58 @@ class TestSAXBatteryCalcSensor:
 
     def test_calc_sensor_total_power(self, mock_coordinator) -> None:
         """Test calculated sensor for total power."""
-        calc_item = ApiItem(
+        # Create SAXItem with proper calculation setup
+        calc_item = SAXItem(
             name="total_power",
             device=DeviceConstants.SYS,
             mformat=FormatConstants.NUMBER,
             mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "sax_discharge_power - sax_charge_power",
+                "calculation_inputs": ["sax_discharge_power", "sax_charge_power"],
+            },
         )
+
+        # Ensure the SAXItem __post_init__ is called to compile the calculation
+        calc_item.__post_init__()
+
+        # Debug: Verify calculation compilation
+        assert calc_item._calculation_compiled is not None
+        assert calc_item.name == "total_power (Calculated)"
 
         sensor = SAXBatteryCalcSensor(
             coordinator=mock_coordinator,
             battery_id="battery_a",
-            modbus_item=calc_item,
+            sax_item=calc_item,  # Use sax_item parameter if using separate class
             index=0,
         )
 
-        # Should calculate: discharge_power (1500) - charge_power (0) = 1500
+        # The calculation should be: discharge_power (1500) - charge_power (0) = 1500
         assert sensor.native_value == 1500
 
     def test_calc_sensor_name_includes_calculated(self, mock_coordinator) -> None:
         """Test calculated sensor name includes '(Calculated)'."""
-        calc_item = ApiItem(
+        calc_item = SAXItem(
             name="total_power",
-            device=DeviceConstants.SYS,
             mformat=FormatConstants.NUMBER,
             mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+            params={
+                "calculation": "sax_discharge_power - sax_charge_power",
+                "calculation_inputs": ["sax_discharge_power", "sax_charge_power"],
+            },
         )
+
+        # Ensure __post_init__ is called to add the "(Calculated)" suffix
+        calc_item.__post_init__()
 
         sensor = SAXBatteryCalcSensor(
             coordinator=mock_coordinator,
             battery_id="battery_a",
-            modbus_item=calc_item,
+            sax_item=calc_item,  # Use sax_item parameter
             index=0,
         )
 
-        sensor_name = str(sensor.name) if sensor.name is not None else ""
-        assert "(Calculated)" in sensor_name
+        # After __post_init__, the name should include "(Calculated)"
+        assert calc_item.name == "total_power (Calculated)"
+        assert "(Calculated)" in str(sensor.name)

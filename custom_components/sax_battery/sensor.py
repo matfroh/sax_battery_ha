@@ -22,7 +22,7 @@ from .const import DOMAIN
 from .coordinator import SAXBatteryCoordinator
 from .entity_utils import filter_items_by_type
 from .enums import TypeConstants
-from .items import ApiItem
+from .items import ApiItem, SAXItem
 from .models import SAXBatteryData
 from .utils import create_entity_unique_id, determine_entity_category
 
@@ -161,44 +161,54 @@ class SAXBatterySensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
         return self.coordinator.sax_data.get_device_info(self._battery_id)
 
 
-class SAXBatteryCalcSensor(SAXBatterySensor):
-    """Implementation of a SAX Battery calculated sensor."""
+class SAXBatteryCalcSensor(CoordinatorEntity, SensorEntity):
+    """SAX Battery calculated sensor - specifically for SAXItem."""
+
+    def __init__(
+        self,
+        coordinator: SAXBatteryCoordinator,
+        battery_id: str,
+        sax_item: SAXItem,  # Specifically SAXItem for calculated sensors
+        index: int,
+    ) -> None:
+        """Initialize calculated sensor."""
+        super().__init__(coordinator)
+        self._battery_id = battery_id
+        self._sax_item = sax_item  # Renamed to be clear about type
+        self._index = index
 
     @property
-    def native_value(self) -> Any:
-        """Return the calculated native value of the sensor."""
-        if not self.coordinator.data:
-            return None
-
-        # For calculated sensors, we might need to perform calculations
-        # based on multiple data points or apply formulas
-        raw_value = self.coordinator.data.get(self._modbus_item.name)
-
-        if raw_value is None:
-            return None
-
-        # Apply any calculation function if defined in the modbus item
-        if (
-            hasattr(self._modbus_item, "calculation_fn")
-            and self._modbus_item.calculation_fn
-        ):
-            try:
-                return self._modbus_item.calculation_fn(
-                    raw_value, self.coordinator.data
-                )
-            except (ValueError, TypeError, ZeroDivisionError):
-                return None
-
-        return raw_value
+    def unique_id(self) -> str:
+        """Return unique ID."""
+        return f"{self._battery_id}_{self._sax_item.name}_{self._index}"
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return extra state attributes for calculated sensors."""
-        attrs = super().extra_state_attributes
-        attrs["sensor_type"] = "calculated"
+    def name(self) -> str:
+        """Return sensor name."""
+        return self._sax_item.name.replace("_", " ").title()
 
-        # Add calculation-specific attributes
-        if hasattr(self._modbus_item, "calculation_method"):
-            attrs["calculation_method"] = self._modbus_item.calculation_method
+    @property
+    def native_value(self) -> float | None:
+        """Return the calculated native value."""
+        if not self.coordinator.data or not self._sax_item._calculation_compiled:  # noqa: SLF001
+            return None
 
-        return attrs
+        try:
+            # Create namespace with coordinator data for calculation
+            namespace = dict(self.coordinator.data)
+
+            # Execute the compiled calculation
+            result = eval(  # noqa: S307
+                self._sax_item._calculation_compiled,  # noqa: SLF001
+                {"__builtins__": {}},
+                namespace,
+            )
+
+            # Apply divider if specified
+            if hasattr(self._sax_item, "divider") and self._sax_item.divider:
+                result = result / self._sax_item.divider
+
+            return float(result) if result is not None else None
+
+        except (NameError, TypeError, ZeroDivisionError, ValueError):
+            return None
