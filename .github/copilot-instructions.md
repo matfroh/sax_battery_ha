@@ -99,7 +99,7 @@ automation application.
   - Type checking: MyPy
   - Testing: pytest with plain functions and fixtures
 - **Follow linting rules from `pyproject.toml`** - All code generation must adhere to the configured ruff rules including:
-  - **Import sorting** (I001): Always sort imports alphabetically and group them properly
+  - **Import sorting** (I001): Always sort imports alphabetically and group them properly (organize imports with `ruff format`)
   - **Exception handling** (BLE001): Never catch blind `Exception` - use specific exception types
   - **Import cleanup** (F401): Remove unused imports immediately
   - **Security** (S): Follow security best practices (avoid `eval`, sanitize inputs)

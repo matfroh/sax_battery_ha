@@ -165,13 +165,75 @@ class TestSAXBatteryCoordinator:
         # Should apply divider: 2300 / 10.0 = 230.0
         assert data["smartmeter_voltage"] == 230.0
 
+    async def test_update_smart_meter_data_oserror(
+        self, coordinator, mock_sax_data, mock_modbus_api, smart_meter_item
+    ):
+        """Test smart meter data update with OSError."""
+        mock_sax_data.get_smart_meter_items.return_value = [smart_meter_item]
+        mock_modbus_api.read_holding_registers.side_effect = OSError("Network error")
+
+        data = {}
+        await coordinator._update_smart_meter_data(data)
+
+        # Should set None value on error
+        assert data["smartmeter_power"] is None
+
+    async def test_update_smart_meter_data_timeout_error(
+        self, coordinator, mock_sax_data, mock_modbus_api, smart_meter_item
+    ):
+        """Test smart meter data update with TimeoutError."""
+        mock_sax_data.get_smart_meter_items.return_value = [smart_meter_item]
+        mock_modbus_api.read_holding_registers.side_effect = TimeoutError("Timeout")
+
+        data = {}
+        await coordinator._update_smart_meter_data(data)
+
+        # Should set None value on error
+        assert data["smartmeter_power"] is None
+
+    async def test_update_smart_meter_data_multiple_items(
+        self, coordinator, mock_sax_data, mock_modbus_api
+    ):
+        """Test smart meter data update with multiple items."""
+        item1 = ModbusItem(
+            name="smartmeter_power",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            address=1000,
+            battery_slave_id=1,
+            divider=1.0,
+        )
+        item2 = ModbusItem(
+            name="smartmeter_voltage",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            address=1001,
+            battery_slave_id=1,
+            divider=10.0,
+        )
+
+        mock_sax_data.get_smart_meter_items.return_value = [item1, item2]
+        mock_modbus_api.read_holding_registers.side_effect = [[1500], [2300]]
+
+        data = {}
+        await coordinator._update_smart_meter_data(data)
+
+        # Verify both items were processed
+        assert data["smartmeter_power"] == 1500.0
+        assert data["smartmeter_voltage"] == 230.0
+
+        # Verify both calls were made
+        assert mock_modbus_api.read_holding_registers.call_count == 2
+
 
 class TestSafeEvalExpression:
     """Test safe expression evaluation."""
 
     @pytest.fixture
     def coordinator(self) -> SAXBatteryCoordinator:
-        """Create minimal coordinator for testing safe_eval_expression."""
+        """Create minimal coordinator for testing _safe_eval_expression."""
         mock_hass = MagicMock(spec=HomeAssistant)
         mock_sax_data = MagicMock(spec=SAXBatteryData)
         mock_modbus_api = MagicMock(spec=ModbusAPI)
@@ -230,6 +292,21 @@ class TestSafeEvalExpression:
         result = coordinator._safe_eval_expression("val_0 + 5", {"val_0": 10})
         assert result == 15.0
 
+    def test_safe_eval_parentheses(self, coordinator):
+        """Test safe evaluation with parentheses."""
+        result = coordinator._safe_eval_expression(
+            "(val_0 + val_1) * val_2", {"val_0": 3, "val_1": 2, "val_2": 4}
+        )
+        assert result == 20.0  # (3 + 2) * 4 = 20
+
+    def test_safe_eval_nested_operations(self, coordinator):
+        """Test safe evaluation with nested operations."""
+        result = coordinator._safe_eval_expression(
+            "val_0 - (val_1 + val_2) / val_3",
+            {"val_0": 20, "val_1": 6, "val_2": 4, "val_3": 2},
+        )
+        assert result == 15.0  # 20 - (6 + 4) / 2 = 20 - 5 = 15
+
     def test_safe_eval_division_by_zero(self, coordinator):
         """Test safe evaluation handles division by zero."""
         result = coordinator._safe_eval_expression(
@@ -247,28 +324,35 @@ class TestSafeEvalExpression:
         result = coordinator._safe_eval_expression("val_0 + +", {"val_0": 10})
         assert result is None
 
-    def test_safe_eval_unsupported_operation(self, coordinator):
-        """Test safe evaluation rejects unsupported operations."""
-        # This would be rejected by AST parsing since we don't support ** operator
-        with patch("ast.parse") as mock_parse:
-            # Create a mock AST with unsupported operation
-            mock_node = MagicMock()
-            mock_node.body = MagicMock()
-            mock_node.body.op = MagicMock()
-            type(
-                mock_node.body.op
-            ).__name__ = "Pow"  # Power operator not in SAFE_OPERATIONS
-            mock_parse.return_value = mock_node
+    def test_safe_eval_empty_expression(self, coordinator):
+        """Test safe evaluation handles empty expressions."""
+        result = coordinator._safe_eval_expression("", {"val_0": 10})
+        assert result is None
 
-            result = coordinator._safe_eval_expression("val_0 ** 2", {"val_0": 3})
-            # Should return None due to unsupported operation
-            assert result is None
+    def test_safe_eval_non_numeric_constant(self, coordinator):
+        """Test safe evaluation rejects non-numeric constants."""
+        result = coordinator._safe_eval_expression("'string'", {})
+        assert result is None
 
     def test_safe_eval_float_conversion(self, coordinator):
         """Test safe evaluation converts integer results to float."""
         result = coordinator._safe_eval_expression("5", {})
         assert result == 5.0
         assert isinstance(result, float)
+
+    def test_safe_eval_float_variables(self, coordinator):
+        """Test safe evaluation with float variables."""
+        result = coordinator._safe_eval_expression(
+            "val_0 + val_1", {"val_0": 10.5, "val_1": 5.3}
+        )
+        assert result == 15.8
+
+    def test_safe_eval_type_error_handling(self, coordinator):
+        """Test safe evaluation handles type errors."""
+        # Mock ast.parse to raise TypeError for testing error handling
+        with patch("ast.parse", side_effect=TypeError("Type error")):
+            result = coordinator._safe_eval_expression("val_0 + val_1", {"val_0": 10})
+            assert result is None
 
     def test_safe_operations_mapping(self):
         """Test that SAFE_OPERATIONS contains expected operations."""
@@ -478,6 +562,23 @@ class TestCalculateSaxValue:
         result = coordinator_with_battery._calculate_sax_value(sax_item)
         assert result is None
 
+    def test_calculate_sax_value_consecutive_operators(self, coordinator_with_battery):
+        """Test SAX value calculation rejects consecutive operators."""
+        sax_item = SAXItem(
+            name="invalid_calc",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 ++ val_1",  # Consecutive operators
+                "val_0": "sax_voltage",
+                "val_1": "sax_current",
+            },
+        )
+
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result is None
+
     def test_calculate_sax_value_all_val_parameters(self, coordinator_with_battery):
         """Test SAX value calculation using all val_0 to val_8 parameters."""
         # Create comprehensive params using all possible val_ keys
@@ -523,3 +624,63 @@ class TestCalculateSaxValue:
 
         result = coordinator_with_battery._calculate_sax_value(sax_item)
         assert result is None  # Should return None on type conversion error
+
+    def test_calculate_sax_value_partial_parameters(self, coordinator_with_battery):
+        """Test SAX value calculation with only some val_ parameters defined."""
+        sax_item = SAXItem(
+            name="partial_calc",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 + val_2 + val_5",  # Skip val_1, val_3, val_4
+                "val_0": "sax_discharge_power",
+                "val_2": "sax_voltage",
+                "val_5": "sax_current",
+            },
+        )
+
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        # 1500 + 48.5 + 30.0 = 1578.5
+        assert result == 1578.5
+
+    def test_calculate_sax_value_mixed_data_sources(self, coordinator_with_battery):
+        """Test SAX value calculation mixing battery and smart meter data."""
+        sax_item = SAXItem(
+            name="mixed_calc",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 + val_1 - val_2",
+                "val_0": "smartmeter_total_power",  # Smart meter data
+                "val_1": "sax_discharge_power",  # Battery data
+                "val_2": "smartmeter_grid_frequency",  # Smart meter data
+            },
+        )
+
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        # 2000 + 1500 - 50.0 = 3450.0
+        assert result == 3450.0
+
+    def test_calculate_sax_value_zero_values(self, coordinator_with_battery):
+        """Test SAX value calculation with zero values."""
+        # Mock battery to return zero for some values
+        coordinator_with_battery.sax_data.batteries[
+            "battery_a"
+        ].get_value.side_effect = lambda key: 0 if key == "sax_charge_power" else 1500
+
+        sax_item = SAXItem(
+            name="zero_calc",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 - val_1",
+                "val_0": "sax_discharge_power",  # 1500
+                "val_1": "sax_charge_power",  # 0
+            },
+        )
+
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result == 1500.0  # 1500 - 0 = 1500
