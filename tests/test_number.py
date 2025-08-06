@@ -14,7 +14,7 @@ from custom_components.sax_battery.enums import (
 )
 from custom_components.sax_battery.items import ApiItem
 from custom_components.sax_battery.number import SAXBatteryNumber, async_setup_entry
-from homeassistant.components.number import NumberEntityDescription
+from homeassistant.components.number import NumberEntityDescription, NumberMode
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -461,3 +461,88 @@ class TestNumberEntityConfiguration:
         )
 
         assert number.native_unit_of_measurement is None
+
+    def test_number_mode_property(self, mock_coordinator) -> None:
+        """Test number mode property with different mode values."""
+        # Test BOX mode
+        box_item = ApiItem(
+            name="charge_limit",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.PERCENTAGE,
+            mtype=TypeConstants.NUMBER,
+            address=200,
+            battery_slave_id=1,
+            divider=1.0,
+        )
+        # Dynamically add mode attribute
+        setattr(box_item, "mode", "box")
+
+        box_number = SAXBatteryNumber(
+            coordinator=mock_coordinator,
+            battery_id="battery_a",
+            modbus_item=box_item,
+            index=0,
+        )
+        assert box_number.mode == NumberMode.BOX
+
+        # Test SLIDER mode
+        slider_item = ApiItem(
+            name="power_limit",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.NUMBER,
+            address=201,
+            battery_slave_id=1,
+            divider=1.0,
+        )
+        # Dynamically add mode attribute
+        setattr(slider_item, "mode", "slider")
+
+        slider_number = SAXBatteryNumber(
+            coordinator=mock_coordinator,
+            battery_id="battery_a",
+            modbus_item=slider_item,
+            index=1,
+        )
+        assert slider_number.mode == NumberMode.SLIDER
+
+        # Test AUTO mode (default case)
+        auto_item = ApiItem(
+            name="temperature_limit",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.TEMPERATURE,
+            mtype=TypeConstants.NUMBER,
+            address=202,
+            battery_slave_id=1,
+            divider=1.0,
+        )
+        # Dynamically add mode attribute with unknown value
+        setattr(auto_item, "mode", "unknown_mode")  # Should default to AUTO
+
+        auto_number = SAXBatteryNumber(
+            coordinator=mock_coordinator,
+            battery_id="battery_a",
+            modbus_item=auto_item,
+            index=2,
+        )
+        assert auto_number.mode == NumberMode.AUTO
+
+        # Test no mode attribute (should default to AUTO)
+        no_mode_item = ApiItem(
+            name="voltage_limit",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.NUMBER,
+            address=203,
+            battery_slave_id=1,
+            divider=1.0,
+        )
+        # No mode attribute set - getattr will return "auto" default
+
+        no_mode_number = SAXBatteryNumber(
+            coordinator=mock_coordinator,
+            battery_id="battery_a",
+            modbus_item=no_mode_item,
+            index=3,
+        )
+        assert no_mode_number.mode == NumberMode.AUTO

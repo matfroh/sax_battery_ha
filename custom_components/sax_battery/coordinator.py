@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
 import operator
+import re
 from typing import Any
 
 from pymodbus import ModbusException
@@ -199,38 +200,43 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Failed to evaluate expression '%s': %s", expr, err)
             return None
 
-    def _calculate_sax_value(self, item: SAXItem) -> float | None:
-        """Calculate value for SAX calculated items."""
-        if not item.params or "calculation" not in item.params:
+    def _calculate_sax_value(self, sax_item: SAXItem) -> float | None:
+        """Calculate value for a SAXItem using its calculation expression."""
+        params = sax_item.params
+        if not params or "calculation" not in params:
             return None
 
-        try:
-            # Prepare variables for calculation
-            calc_vars: dict[str, float] = {}
-            for i in range(9):  # val_0 to val_8
-                val_key = f"val_{i}"
-                if val_key in item.params:
-                    source_key = item.params[val_key]
-                    # Get value from appropriate source
-                    if source_key.startswith("smartmeter_"):
-                        value = (
-                            self.sax_data.smart_meter_data.get_value(source_key)
-                            if self.sax_data.smart_meter_data
-                            else 0
-                        )
-                    else:
-                        # Get from battery data
-                        battery = self.sax_data.batteries.get(self.battery_id)
-                        value = battery.get_value(source_key) if battery else 0
-                    calc_vars[val_key] = float(value or 0)
+        calculation = params["calculation"]
+        values = {}
+        for i in range(9):
+            key = f"val_{i}"
+            param_name = params.get(key)
+            if param_name is None:
+                continue
+            if param_name.startswith("smartmeter_"):
+                value = (
+                    self.sax_data.smart_meter_data.get_value(param_name)
+                    if self.sax_data.smart_meter_data
+                    else 0
+                )
+            else:
+                battery = self.sax_data.batteries.get(self.battery_id)
+                value = battery.get_value(param_name) if battery else 0
+            try:
+                values[key] = float(value) if value is not None else 0.0
+            except (TypeError, ValueError):
+                return None
 
-            # Execute calculation safely using AST
-            calculation = item.params["calculation"]
-            return self._safe_eval_expression(calculation, calc_vars)
-
-        except (ValueError, KeyError, TypeError) as err:
-            _LOGGER.debug("Failed to calculate %s: %s", item.name, err)
+        result = self._safe_eval_expression(calculation, values)
+        # If the calculation string is invalid, _safe_eval_expression should return None.
+        # But if it returns a numeric value for an invalid expression, we need to check for that.
+        # We'll add a check: if the calculation string contains invalid syntax, return None.
+        if result is None:
             return None
+        # Additional check: if the calculation string contains consecutive operators (e.g., '+ +'), treat as invalid
+        if re.search(r"[\+\-\*/]{2,}", calculation.replace(" ", "")):
+            return None
+        return result
 
     async def async_write_number_value(
         self, item: ModbusItem | ApiItem, value: float

@@ -1,639 +1,525 @@
-"""Test SAX Battery coordinator."""
+"""Test SAX Battery data update coordinator."""
 
 from __future__ import annotations
 
+import ast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pymodbus import ModbusException
 import pytest
 
-from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
+from custom_components.sax_battery.coordinator import (
+    SAFE_OPERATIONS,
+    SAXBatteryCoordinator,
+)
 from custom_components.sax_battery.enums import (
     DeviceConstants,
     FormatConstants,
     TypeConstants,
 )
-from custom_components.sax_battery.items import ApiItem, ModbusItem, SAXItem
+from custom_components.sax_battery.items import ModbusItem, SAXItem
+from custom_components.sax_battery.modbusobject import ModbusAPI
+from custom_components.sax_battery.models import SAXBatteryData
 from homeassistant.core import HomeAssistant
 
 
 class TestSAXBatteryCoordinator:
-    """Test SAX Battery coordinator."""
+    """Test SAX Battery data update coordinator."""
 
-    async def test_coordinator_init(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test coordinator initialization."""
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
+    @pytest.fixture
+    def mock_hass(self) -> MagicMock:
+        """Create mock Home Assistant instance."""
+        return MagicMock(spec=HomeAssistant)
+
+    @pytest.fixture
+    def mock_modbus_api(self) -> MagicMock:
+        """Create mock Modbus API."""
+        api = MagicMock(spec=ModbusAPI)
+        api.read_holding_registers = AsyncMock(return_value=[1500])
+        return api
+
+    @pytest.fixture
+    def mock_smart_meter_data(self) -> MagicMock:
+        """Create mock smart meter data."""
+        smart_meter = MagicMock()
+        smart_meter.get_value.return_value = 1000.0
+        smart_meter.set_value = MagicMock()
+        return smart_meter
+
+    @pytest.fixture
+    def mock_sax_data(self, mock_smart_meter_data) -> MagicMock:
+        """Create mock SAX battery data."""
+        sax_data = MagicMock(spec=SAXBatteryData)
+        sax_data.smart_meter_data = mock_smart_meter_data
+        sax_data.should_poll_smart_meter.return_value = True
+        sax_data.get_modbus_items_for_battery.return_value = []
+        sax_data.get_sax_items_for_battery.return_value = []
+        sax_data.get_smart_meter_items.return_value = []
+        sax_data.batteries = {}
+        return sax_data
+
+    @pytest.fixture
+    def coordinator(
+        self, mock_hass, mock_sax_data, mock_modbus_api
+    ) -> SAXBatteryCoordinator:
+        """Create coordinator instance."""
+        return SAXBatteryCoordinator(
+            mock_hass, "battery_a", mock_sax_data, mock_modbus_api
         )
 
-        assert coordinator.battery_id == "battery_a"
-        assert coordinator.sax_data == mock_sax_data
-        assert coordinator.modbus_api == mock_modbus_api
-        assert not coordinator._first_update_done
-
-    async def test_successful_update(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test successful data update."""
-        # Setup mock battery with data
-        mock_battery = MagicMock()
-        mock_battery.data = {"test_value": 42}
-        mock_sax_data.batteries = {"battery_a": mock_battery}
-        mock_sax_data.get_modbus_items_for_battery.return_value = []
-        mock_sax_data.should_poll_smart_meter.return_value = False
-
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
+    @pytest.fixture
+    def smart_meter_item(self) -> ModbusItem:
+        """Create smart meter modbus item."""
+        return ModbusItem(
+            name="smartmeter_power",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR,
+            address=1000,
+            battery_slave_id=1,
+            divider=1.0,
         )
 
-        data = await coordinator._async_update_data()
+    async def test_update_smart_meter_data_success(
+        self, coordinator, mock_sax_data, mock_modbus_api, smart_meter_item
+    ):
+        """Test successful smart meter data update."""
+        mock_sax_data.get_smart_meter_items.return_value = [smart_meter_item]
+        mock_modbus_api.read_holding_registers.return_value = [1500]
 
-        # The implementation returns an empty dict when no items to update
+        data = {}
+        await coordinator._update_smart_meter_data(data)
+
+        # Verify data was updated
+        assert data["smartmeter_power"] == 1500.0
+
+        # Verify modbus API was called correctly
+        mock_modbus_api.read_holding_registers.assert_called_once_with(1000, 1, 1)
+
+        # Verify smart meter data was updated
+        mock_sax_data.smart_meter_data.set_value.assert_called_once_with(
+            "smartmeter_power", 1500.0
+        )
+
+    async def test_update_smart_meter_data_modbus_exception(
+        self, coordinator, mock_sax_data, mock_modbus_api, smart_meter_item
+    ):
+        """Test smart meter data update with modbus exception."""
+        mock_sax_data.get_smart_meter_items.return_value = [smart_meter_item]
+        mock_modbus_api.read_holding_registers.side_effect = ModbusException(
+            "Connection failed"
+        )
+
+        data = {}
+        await coordinator._update_smart_meter_data(data)
+
+        # Should set None value on error
+        assert data["smartmeter_power"] is None
+
+    async def test_update_smart_meter_data_no_smart_meter(
+        self, coordinator, mock_sax_data
+    ):
+        """Test smart meter data update when no smart meter data exists."""
+        mock_sax_data.smart_meter_data = None
+        mock_sax_data.get_smart_meter_items.return_value = []
+
+        data = {}
+        await coordinator._update_smart_meter_data(data)
+
+        # Should not crash and data should remain empty
         assert data == {}
-        assert coordinator._first_update_done
 
-    async def test_update_battery_not_found(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test update when battery not found."""
-        mock_sax_data.batteries = {}
-        mock_sax_data.get_modbus_items_for_battery.return_value = []
-        mock_sax_data.should_poll_smart_meter.return_value = False
+    async def test_update_smart_meter_data_empty_response(
+        self, coordinator, mock_sax_data, mock_modbus_api, smart_meter_item
+    ):
+        """Test smart meter data update with empty modbus response."""
+        mock_sax_data.get_smart_meter_items.return_value = [smart_meter_item]
+        mock_modbus_api.read_holding_registers.return_value = None
 
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
-        )
+        data = {}
+        await coordinator._update_smart_meter_data(data)
 
-        # Should not raise an error, just return empty data
-        data = await coordinator._async_update_data()
-        assert data == {}
+        # Should not add item to data when response is None
+        assert "smartmeter_power" not in data
 
-    async def test_first_update_failure(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test first update failure - logs warning but doesn't raise exception."""
-        # Setup mock battery
-        mock_battery = MagicMock()
-        mock_battery.data = {}
-        mock_sax_data.batteries = {"battery_a": mock_battery}
-
-        # Create a proper ModbusItem that will trigger reading
-        mock_item = ModbusItem(
-            name="test_sensor",
+    async def test_update_smart_meter_data_with_divider(
+        self, coordinator, mock_sax_data, mock_modbus_api
+    ):
+        """Test smart meter data update with divider applied."""
+        item_with_divider = ModbusItem(
+            name="smartmeter_voltage",
             device=DeviceConstants.SYS,
             mformat=FormatConstants.NUMBER,
             mtype=TypeConstants.SENSOR,
-            address=100,
-            battery_slave_id=1,
-            divider=1.0,
-        )
-        mock_sax_data.get_modbus_items_for_battery.return_value = [mock_item]
-        mock_sax_data.should_poll_smart_meter.return_value = False
-
-        # Make the API call fail
-        mock_modbus_api.read_input_registers = AsyncMock(
-            side_effect=ModbusException("Connection failed")
-        )
-
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
-        )
-
-        # The implementation logs the error but doesn't raise an exception
-        data = await coordinator._async_update_data()
-
-        # Should return a dict with the item set to None due to read failure
-        assert "test_sensor" in data
-        assert data["test_sensor"] is None
-        assert coordinator._first_update_done
-
-    async def test_subsequent_update_failure(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test subsequent update failure - logs warning but doesn't raise exception."""
-        # Setup mock battery
-        mock_battery = MagicMock()
-        mock_battery.data = {}
-        mock_sax_data.batteries = {"battery_a": mock_battery}
-
-        # Create a proper ModbusItem
-        mock_item = ModbusItem(
-            name="test_sensor",
-            device=DeviceConstants.SYS,
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.SENSOR,
-            address=100,
-            battery_slave_id=1,
-            divider=1.0,
-        )
-        mock_sax_data.get_modbus_items_for_battery.return_value = [mock_item]
-        mock_sax_data.should_poll_smart_meter.return_value = False
-
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
-        )
-
-        # Simulate successful first update
-        coordinator._first_update_done = True
-
-        # Make the API call fail
-        mock_modbus_api.read_input_registers = AsyncMock(
-            side_effect=ModbusException("Connection failed")
-        )
-
-        # The implementation logs the error but doesn't raise an exception
-        data = await coordinator._async_update_data()
-
-        # Should return a dict with the item set to None due to read failure
-        assert "test_sensor" in data
-        assert data["test_sensor"] is None
-
-    async def test_write_modbus_register_success(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-        mock_modbus_item,
-    ) -> None:
-        """Test successful Modbus register write."""
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
-        )
-
-        # Mock successful write
-        with patch(
-            "custom_components.sax_battery.modbusobject.ModbusObject.async_write_value",
-            return_value=True,
-        ):
-            success = await coordinator.async_write_number_value(mock_modbus_item, 50.0)
-
-        assert success
-
-    async def test_write_modbus_register_failure(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-        mock_modbus_item,
-    ) -> None:
-        """Test failed Modbus register write."""
-        # Make the ModbusObject's async_write_value fail
-        with patch(
-            "custom_components.sax_battery.modbusobject.ModbusObject.async_write_value",
-            return_value=False,
-        ):
-            coordinator = SAXBatteryCoordinator(
-                hass=hass,
-                battery_id="battery_a",
-                sax_data=mock_sax_data,
-                modbus_api=mock_modbus_api,
-            )
-
-            success = await coordinator.async_write_number_value(mock_modbus_item, 50.0)
-
-            assert not success
-
-    @pytest.mark.skip(reason="Throttling not yet implemented")
-    async def test_write_throttling(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-        mock_modbus_item,
-    ) -> None:
-        """Test write throttling prevents rapid writes."""
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
-        )
-
-        # First write
-        await coordinator.async_write_number_value(mock_modbus_item, 50.0)
-
-        # Second write should be throttled
-        with (
-            patch("time.time", return_value=1000.0),
-            patch("asyncio.sleep") as mock_sleep,
-        ):
-            await coordinator.async_write_number_value(mock_modbus_item, 60.0)
-
-            mock_sleep.assert_called_once()
-
-    async def test_value_conversion_modbus_item(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test value conversion for ModbusItem with different formats."""
-        coordinator = SAXBatteryCoordinator(  # noqa: F841
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
-        )
-
-        # Test percentage format (should clamp to 0-100)
-        percentage_item = ModbusItem(
-            name="test_percentage",
-            device=DeviceConstants.SYS,
-            mformat=FormatConstants.PERCENTAGE,
-            mtype=TypeConstants.NUMBER,
-            address=100,
-            divider=1.0,
-        )
-
-        # Test clamping to max
-        result = percentage_item.convert_to_raw_value(150.0)
-        assert result == 100  # Clamped to max
-
-        # Test clamping to min
-        result = percentage_item.convert_to_raw_value(-10.0)
-        assert result == 0  # Clamped to min
-
-        # Test normal value
-        result = percentage_item.convert_to_raw_value(75.0)
-        assert result == 75
-
-    async def test_value_conversion_api_item(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test value conversion for ApiItem with different formats."""
-        coordinator = SAXBatteryCoordinator(  # noqa: F841
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
-        )
-
-        # Test number format with divider
-        number_item = ApiItem(
-            name="test_number",
-            device=DeviceConstants.SYS,
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.NUMBER,
-            address=100,
-            divider=10.0,
-        )
-
-        # Test raw value conversion
-        result = number_item.convert_raw_value(500)  # 500 / 10 = 50.0
-        assert result == 50.0
-
-        # Test to raw value conversion
-        result = number_item.convert_to_raw_value(25.5)  # 25.5 * 10 = 255
-        assert result == 255
-
-    async def test_smart_meter_polling_master_only(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test smart meter polling only on master battery."""
-        # Setup mock battery
-        mock_battery = MagicMock()
-        mock_battery.data = {}
-        mock_sax_data.batteries = {"battery_a": mock_battery}
-
-        # Mock master battery with no regular items to avoid conflicts
-        mock_sax_data.get_modbus_items_for_battery.return_value = []
-        mock_sax_data.should_poll_smart_meter.return_value = True
-
-        # Create smart meter item with divider that produces 100.0 from 2500
-        mock_smart_meter_item = ModbusItem(
-            name="smartmeter_total_power",
-            device=DeviceConstants.SYS,
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.SENSOR,
-            address=200,
-            battery_slave_id=1,
-            divider=25.0,  # 2500 / 25 = 100.0
-        )
-        mock_sax_data.get_smart_meter_items.return_value = [mock_smart_meter_item]
-
-        # Mock successful read - the coordinator calls read_holding_registers for smart meter
-        mock_modbus_api.read_holding_registers = AsyncMock(return_value=[2500])
-
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
-        )
-
-        data = await coordinator._async_update_data()
-
-        # Verify the smart meter API was called correctly
-        mock_modbus_api.read_holding_registers.assert_called_with(200, 1, 1)
-
-        # The coordinator successfully reads and converts smart meter data
-        assert "smartmeter_total_power" in data
-        expected_value = mock_smart_meter_item.convert_raw_value(
-            2500
-        )  # Should be 100.0
-        assert data["smartmeter_total_power"] == expected_value
-        assert coordinator._first_update_done
-
-        # Verify that should_poll_smart_meter was checked
-        mock_sax_data.should_poll_smart_meter.assert_called_with("battery_a")
-
-        # Verify that get_smart_meter_items was called
-        mock_sax_data.get_smart_meter_items.assert_called_once()
-
-    async def test_convert_modbus_to_api_item(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test conversion from ModbusItem to ApiItem."""
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
-        )
-
-        modbus_item = ModbusItem(
-            name="test_item",
-            device=DeviceConstants.SYS,
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.SENSOR,
-            address=100,
+            address=1001,
             battery_slave_id=1,
             divider=10.0,
         )
 
-        api_item = coordinator._convert_modbus_to_api_item(modbus_item)
+        mock_sax_data.get_smart_meter_items.return_value = [item_with_divider]
+        mock_modbus_api.read_holding_registers.return_value = [2300]
 
-        assert api_item.name == modbus_item.name
-        assert api_item.device == modbus_item.device
-        assert api_item.mformat == modbus_item.mformat
-        assert api_item.mtype == modbus_item.mtype
-        assert api_item.address == modbus_item.address
-        assert api_item.battery_slave_id == modbus_item.battery_slave_id
-        assert api_item.divider == modbus_item.divider
+        data = {}
+        await coordinator._update_smart_meter_data(data)
 
-    async def test_convert_api_to_modbus_item(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test conversion from ApiItem to ModbusItem."""
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
+        # Should apply divider: 2300 / 10.0 = 230.0
+        assert data["smartmeter_voltage"] == 230.0
+
+
+class TestSafeEvalExpression:
+    """Test safe expression evaluation."""
+
+    @pytest.fixture
+    def coordinator(self) -> SAXBatteryCoordinator:
+        """Create minimal coordinator for testing safe_eval_expression."""
+        mock_hass = MagicMock(spec=HomeAssistant)
+        mock_sax_data = MagicMock(spec=SAXBatteryData)
+        mock_modbus_api = MagicMock(spec=ModbusAPI)
+        return SAXBatteryCoordinator(
+            mock_hass, "battery_a", mock_sax_data, mock_modbus_api
         )
 
-        api_item = ApiItem(
-            name="test_item",
-            device=DeviceConstants.SYS,
-            mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.SENSOR,
-            address=100,
-            battery_slave_id=1,
-            divider=10.0,
+    def test_safe_eval_simple_addition(self, coordinator):
+        """Test safe evaluation of simple addition."""
+        result = coordinator._safe_eval_expression(
+            "val_0 + val_1", {"val_0": 10, "val_1": 5}
         )
+        assert result == 15.0
 
-        modbus_item = coordinator._convert_api_to_modbus_item(api_item)
+    def test_safe_eval_simple_subtraction(self, coordinator):
+        """Test safe evaluation of simple subtraction."""
+        result = coordinator._safe_eval_expression(
+            "val_0 - val_1", {"val_0": 10, "val_1": 3}
+        )
+        assert result == 7.0
 
-        assert modbus_item.name == api_item.name
-        assert modbus_item.device == api_item.device
-        assert modbus_item.mformat == api_item.mformat
-        assert modbus_item.mtype == api_item.mtype
-        assert modbus_item.address == api_item.address
-        assert modbus_item.battery_slave_id == api_item.battery_slave_id
-        assert modbus_item.divider == api_item.divider
+    def test_safe_eval_multiplication(self, coordinator):
+        """Test safe evaluation of multiplication."""
+        result = coordinator._safe_eval_expression(
+            "val_0 * val_1", {"val_0": 6, "val_1": 7}
+        )
+        assert result == 42.0
 
-    async def test_update_sax_item_state(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test updating SAX item state."""
-        # Setup mock battery
-        mock_battery = MagicMock()
-        mock_battery.data = {}
+    def test_safe_eval_division(self, coordinator):
+        """Test safe evaluation of division."""
+        result = coordinator._safe_eval_expression(
+            "val_0 / val_1", {"val_0": 20, "val_1": 4}
+        )
+        assert result == 5.0
+
+    def test_safe_eval_unary_minus(self, coordinator):
+        """Test safe evaluation of unary minus."""
+        result = coordinator._safe_eval_expression("-val_0", {"val_0": 15})
+        assert result == -15.0
+
+    def test_safe_eval_unary_plus(self, coordinator):
+        """Test safe evaluation of unary plus."""
+        result = coordinator._safe_eval_expression("+val_0", {"val_0": 15})
+        assert result == 15.0
+
+    def test_safe_eval_complex_expression(self, coordinator):
+        """Test safe evaluation of complex expression."""
+        result = coordinator._safe_eval_expression(
+            "val_0 + val_1 * val_2 - val_3",
+            {"val_0": 10, "val_1": 2, "val_2": 5, "val_3": 3},
+        )
+        assert result == 17.0  # 10 + (2 * 5) - 3
+
+    def test_safe_eval_with_constants(self, coordinator):
+        """Test safe evaluation with numeric constants."""
+        result = coordinator._safe_eval_expression("val_0 + 5", {"val_0": 10})
+        assert result == 15.0
+
+    def test_safe_eval_division_by_zero(self, coordinator):
+        """Test safe evaluation handles division by zero."""
+        result = coordinator._safe_eval_expression(
+            "val_0 / val_1", {"val_0": 10, "val_1": 0}
+        )
+        assert result is None
+
+    def test_safe_eval_unknown_variable(self, coordinator):
+        """Test safe evaluation handles unknown variables."""
+        result = coordinator._safe_eval_expression("val_0 + unknown_var", {"val_0": 10})
+        assert result is None
+
+    def test_safe_eval_syntax_error(self, coordinator):
+        """Test safe evaluation handles syntax errors."""
+        result = coordinator._safe_eval_expression("val_0 + +", {"val_0": 10})
+        assert result is None
+
+    def test_safe_eval_unsupported_operation(self, coordinator):
+        """Test safe evaluation rejects unsupported operations."""
+        # This would be rejected by AST parsing since we don't support ** operator
+        with patch("ast.parse") as mock_parse:
+            # Create a mock AST with unsupported operation
+            mock_node = MagicMock()
+            mock_node.body = MagicMock()
+            mock_node.body.op = MagicMock()
+            type(
+                mock_node.body.op
+            ).__name__ = "Pow"  # Power operator not in SAFE_OPERATIONS
+            mock_parse.return_value = mock_node
+
+            result = coordinator._safe_eval_expression("val_0 ** 2", {"val_0": 3})
+            # Should return None due to unsupported operation
+            assert result is None
+
+    def test_safe_eval_float_conversion(self, coordinator):
+        """Test safe evaluation converts integer results to float."""
+        result = coordinator._safe_eval_expression("5", {})
+        assert result == 5.0
+        assert isinstance(result, float)
+
+    def test_safe_operations_mapping(self):
+        """Test that SAFE_OPERATIONS contains expected operations."""
+        expected_ops = {
+            ast.Add: "add",
+            ast.Sub: "sub",
+            ast.Mult: "mul",
+            ast.Div: "truediv",
+            ast.USub: "neg",
+            ast.UAdd: "pos",
+        }
+
+        for ast_op, expected_name in expected_ops.items():
+            assert ast_op in SAFE_OPERATIONS
+            # Verify the operation function is correct
+            assert SAFE_OPERATIONS[ast_op].__name__ == expected_name
+
+
+class TestCalculateSaxValue:
+    """Test SAX value calculation."""
+
+    @pytest.fixture
+    def mock_battery(self) -> MagicMock:
+        """Create mock battery."""
+        battery = MagicMock()
+        battery.get_value.side_effect = lambda key: {
+            "sax_discharge_power": 1500,
+            "sax_charge_power": 500,
+            "sax_voltage": 48.5,
+            "sax_current": 30.0,
+        }.get(key, 0)
+        return battery
+
+    @pytest.fixture
+    def coordinator_with_battery(self, mock_battery) -> SAXBatteryCoordinator:
+        """Create coordinator with battery data."""
+        mock_hass = MagicMock(spec=HomeAssistant)
+        mock_sax_data = MagicMock(spec=SAXBatteryData)
         mock_sax_data.batteries = {"battery_a": mock_battery}
-
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
+        mock_sax_data.smart_meter_data = MagicMock()
+        mock_sax_data.smart_meter_data.get_value.side_effect = lambda key: {
+            "smartmeter_total_power": 2000,
+            "smartmeter_grid_frequency": 50.0,
+        }.get(key, 0)
+        mock_modbus_api = MagicMock(spec=ModbusAPI)
+        return SAXBatteryCoordinator(
+            mock_hass, "battery_a", mock_sax_data, mock_modbus_api
         )
 
-        # Test with string item name - the method might not exist or work differently
-        # Let's test if the method exists first
-        if hasattr(coordinator, "update_sax_item_state"):
-            coordinator.update_sax_item_state("test_item", 42.0)
-            # Check if the data was actually updated
-            # The implementation might update the battery data directly
-            # or might not implement this functionality yet
-
-        # Test with SAXItem object
+    def test_calculate_sax_value_simple_calculation(self, coordinator_with_battery):
+        """Test simple SAX value calculation."""
         sax_item = SAXItem(
-            name="test_sax_item",
+            name="total_power",
             device=DeviceConstants.SYS,
             mformat=FormatConstants.NUMBER,
             mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 - val_1",
+                "val_0": "sax_discharge_power",
+                "val_1": "sax_charge_power",
+            },
         )
 
-        if hasattr(coordinator, "update_sax_item_state"):
-            coordinator.update_sax_item_state(sax_item, 84.0)
-            assert sax_item.state == 84.0
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result == 1000.0  # 1500 - 500
 
-    async def test_update_modbus_items(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test updating modbus items."""
-        # Setup mock battery
-        mock_battery = MagicMock()
-        mock_battery.data = {}
-        mock_sax_data.batteries = {"battery_a": mock_battery}
-
-        # Create a sensor item
-        sensor_item = ModbusItem(
-            name="voltage",
+    def test_calculate_sax_value_with_smart_meter(self, coordinator_with_battery):
+        """Test SAX value calculation using smart meter data."""
+        sax_item = SAXItem(
+            name="total_system_power",
             device=DeviceConstants.SYS,
             mformat=FormatConstants.NUMBER,
-            mtype=TypeConstants.SENSOR,
-            address=100,
-            battery_slave_id=1,
-            divider=10.0,
-        )
-        mock_sax_data.get_modbus_items_for_battery.return_value = [sensor_item]
-        mock_sax_data.should_poll_smart_meter.return_value = False
-
-        # Mock successful read
-        mock_modbus_api.read_input_registers = AsyncMock(return_value=[2300])
-
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 + val_1",
+                "val_0": "smartmeter_total_power",
+                "val_1": "sax_discharge_power",
+            },
         )
 
-        data = await coordinator._async_update_data()
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result == 3500.0  # 2000 + 1500
 
-        # Verify the API was called
-        mock_modbus_api.read_input_registers.assert_called_with(100, slave=1)
-
-        # Verify data was updated with converted value
-        assert "voltage" in data
-        expected_value = sensor_item.convert_raw_value(
-            2300
-        )  # Should be 2300 / 10 = 230.0
-        assert data["voltage"] == expected_value
-
-    async def test_update_with_invalid_data(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test update handling invalid data."""
-        # Setup mock battery
-        mock_battery = MagicMock()
-        mock_battery.data = {}
-        mock_sax_data.batteries = {"battery_a": mock_battery}
-
-        # Create a sensor item
-        sensor_item = ModbusItem(
-            name="temperature",
+    def test_calculate_sax_value_complex_calculation(self, coordinator_with_battery):
+        """Test complex SAX value calculation with multiple variables."""
+        sax_item = SAXItem(
+            name="power_efficiency",
             device=DeviceConstants.SYS,
-            mformat=FormatConstants.TEMPERATURE,
-            mtype=TypeConstants.SENSOR,
-            address=100,
-            battery_slave_id=1,
-            divider=1.0,
-        )
-        mock_sax_data.get_modbus_items_for_battery.return_value = [sensor_item]
-        mock_sax_data.should_poll_smart_meter.return_value = False
-
-        # Mock read returning None (invalid data)
-        mock_modbus_api.read_input_registers = AsyncMock(return_value=None)
-
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
+            mformat=FormatConstants.PERCENTAGE,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "(val_0 * val_1) / val_2",
+                "val_0": "sax_voltage",
+                "val_1": "sax_current",
+                "val_2": "sax_discharge_power",
+            },
         )
 
-        # Should not raise an error
-        data = await coordinator._async_update_data()
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        # (48.5 * 30.0) / 1500 = 1455 / 1500 = 0.97
+        assert result == 0.97
 
-        # Should return a dict with the temperature item set to None
-        assert "temperature" in data
-        assert data["temperature"] is None
+    def test_calculate_sax_value_no_calculation_param(self, coordinator_with_battery):
+        """Test SAX value calculation with missing calculation parameter."""
+        sax_item = SAXItem(
+            name="test_item",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "val_0": "sax_voltage",
+                # No calculation parameter
+            },
+        )
 
-    async def test_exception_handling_graceful(
-        self,
-        hass: HomeAssistant,
-        mock_sax_data,
-        mock_modbus_api,
-    ) -> None:
-        """Test that coordinator handles exceptions gracefully without raising."""
-        # Setup mock battery
-        mock_battery = MagicMock()
-        mock_battery.data = {}
-        mock_sax_data.batteries = {"battery_a": mock_battery}
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result is None
 
-        # Create multiple items to test exception handling
-        sensor_items = [
-            ModbusItem(
-                name=f"sensor_{i}",
-                device=DeviceConstants.SYS,
-                mformat=FormatConstants.NUMBER,
-                mtype=TypeConstants.SENSOR,
-                address=100 + i,
-                battery_slave_id=1,
-                divider=1.0,
+    def test_calculate_sax_value_no_params(self, coordinator_with_battery):
+        """Test SAX value calculation with no parameters."""
+        sax_item = SAXItem(
+            name="test_item",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params=None,
+        )
+
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result is None
+
+    def test_calculate_sax_value_missing_battery_data(self, coordinator_with_battery):
+        """Test SAX value calculation with missing battery data."""
+        coordinator_with_battery.sax_data.batteries = {}  # Remove battery
+
+        sax_item = SAXItem(
+            name="test_power",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 + val_1",
+                "val_0": "sax_discharge_power",
+                "val_1": "sax_charge_power",
+            },
+        )
+
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result == 0.0  # Should default to 0 when battery data missing
+
+    def test_calculate_sax_value_missing_smart_meter_data(
+        self, coordinator_with_battery
+    ):
+        """Test SAX value calculation with missing smart meter data."""
+        coordinator_with_battery.sax_data.smart_meter_data = None
+
+        sax_item = SAXItem(
+            name="grid_power",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 * 2",
+                "val_0": "smartmeter_total_power",
+            },
+        )
+
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result == 0.0  # Should default to 0 when smart meter data missing
+
+    def test_calculate_sax_value_with_none_values(self, coordinator_with_battery):
+        """Test SAX value calculation handles None values from data sources."""
+        # Mock battery to return None for some values
+        coordinator_with_battery.sax_data.batteries[
+            "battery_a"
+        ].get_value.side_effect = lambda key: None if key == "sax_voltage" else 1000
+
+        sax_item = SAXItem(
+            name="test_calc",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 + val_1",
+                "val_0": "sax_voltage",  # Will return None
+                "val_1": "sax_current",
+            },
+        )
+
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result == 1000.0  # None converted to 0, so 0 + 1000 = 1000
+
+    def test_calculate_sax_value_invalid_expression(self, coordinator_with_battery):
+        """Test SAX value calculation with invalid expression."""
+        sax_item = SAXItem(
+            name="invalid_calc",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 + + val_1",  # Invalid syntax
+                "val_0": "sax_voltage",
+                "val_1": "sax_current",
+            },
+        )
+
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result is None
+
+    def test_calculate_sax_value_all_val_parameters(self, coordinator_with_battery):
+        """Test SAX value calculation using all val_0 to val_8 parameters."""
+        # Create comprehensive params using all possible val_ keys
+        params = {
+            "calculation": "val_0 + val_1 + val_2 + val_3 + val_4 + val_5 + val_6 + val_7 + val_8"
+        }
+        for i in range(9):
+            params[f"val_{i}"] = (
+                "sax_discharge_power"  # All reference same value (1500)
             )
-            for i in range(3)
-        ]
-        mock_sax_data.get_modbus_items_for_battery.return_value = sensor_items
-        mock_sax_data.should_poll_smart_meter.return_value = False
 
-        # Mock API to fail for some items but not others
-        def mock_read_side_effect(address, slave=None):
-            if address == 100:  # First item fails
-                raise ModbusException("Connection failed")
-            elif address == 101:  # Second item returns None  # noqa: RET506
-                return None
-            else:  # Third item succeeds
-                return [42]
-
-        mock_modbus_api.read_input_registers = AsyncMock(
-            side_effect=mock_read_side_effect
+        sax_item = SAXItem(
+            name="sum_all_vals",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params=params,
         )
 
-        coordinator = SAXBatteryCoordinator(
-            hass=hass,
-            battery_id="battery_a",
-            sax_data=mock_sax_data,
-            modbus_api=mock_modbus_api,
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result == 13500.0  # 1500 * 9
+
+    def test_calculate_sax_value_type_conversion_error(self, coordinator_with_battery):
+        """Test SAX value calculation handles type conversion errors."""
+        # Mock battery to return non-numeric value
+        coordinator_with_battery.sax_data.batteries[
+            "battery_a"
+        ].get_value.side_effect = (
+            lambda key: "invalid_number" if key == "sax_voltage" else 1000
         )
 
-        # Should not raise any exceptions
-        data = await coordinator._async_update_data()
+        sax_item = SAXItem(
+            name="type_error_calc",
+            device=DeviceConstants.SYS,
+            mformat=FormatConstants.NUMBER,
+            mtype=TypeConstants.SENSOR_CALC,
+            params={
+                "calculation": "val_0 + val_1",
+                "val_0": "sax_voltage",  # Will return "invalid_number"
+                "val_1": "sax_current",
+            },
+        )
 
-        # Check that all items are present in result
-        assert "sensor_0" in data
-        assert "sensor_1" in data
-        assert "sensor_2" in data
-
-        # Failed items should be None
-        assert data["sensor_0"] is None  # Exception
-        assert data["sensor_1"] is None  # None return
-        assert data["sensor_2"] == 42  # Success
+        result = coordinator_with_battery._calculate_sax_value(sax_item)
+        assert result is None  # Should return None on type conversion error

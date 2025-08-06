@@ -22,7 +22,9 @@ def create_entity_unique_id(
         Unique entity ID
 
     """
-    return f"{battery_id}_{modbus_item.name}_{index}"
+    # Remove semantic suffixes like "(Calculated)" from SAXItem names
+    clean_name = modbus_item.name.replace(" (Calculated)", "")
+    return f"{battery_id}_{clean_name}_{index}"
 
 
 def determine_entity_category(
