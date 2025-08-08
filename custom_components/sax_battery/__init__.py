@@ -102,6 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             battery_id=battery_id,
             sax_data=sax_data,
             modbus_api=battery_modbus_api,
+            config_entry=entry,
         )
 
         # Test connection and perform first data update

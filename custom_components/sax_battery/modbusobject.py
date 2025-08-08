@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING, Any
 
-from pymodbus import ModbusException
-from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.client import ModbusTcpClient
+from pymodbus.exceptions import ModbusException
 
 from homeassistant.components.sensor import SensorDeviceClass
 
 from .const import MANUAL_CONTROL_SWITCH, SOLAR_CHARGING_SWITCH
 from .enums import TypeConstants
-from .items import ApiItem
+
+if TYPE_CHECKING:
+    from .items import ApiItem
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,15 +39,20 @@ class ModbusAPI:
         self._connect_pending = False
         self._failed_reconnect_counter = 0
 
-        self._modbus_client = AsyncModbusTcpClient(
-            host=host, port=port, name=f"SAX_BATTERY_{battery_id.upper()}", retries=1
+        # Use sync client with proper timeout settings
+        self._modbus_client = ModbusTcpClient(
+            host=host,
+            port=port,
+            timeout=10,  # Increased timeout
+            retries=1,
+            name=f"SAX_BATTERY_{battery_id.upper()}",
         )
 
     async def connect(self, startup: bool = False) -> bool:
         """Open modbus connection."""
         if self._connect_pending:
             _LOGGER.warning("Connection to battery already pending")
-            return self._modbus_client.connected
+            return bool(self._modbus_client.connected)
 
         try:
             self._connect_pending = True
@@ -55,34 +63,55 @@ class ModbusAPI:
                 )
                 await asyncio.sleep(300)
 
-            await self._modbus_client.connect()
-            if self._modbus_client.connected:
+            # Use executor for sync connection with proper type handling
+            def _connect() -> bool:
+                result = self._modbus_client.connect()  # type: ignore[no-untyped-call]
+                # Handle both boolean and connection result types
+                return bool(result)
+
+            connected = await asyncio.get_event_loop().run_in_executor(None, _connect)
+
+            if connected:
                 self._failed_reconnect_counter = 0
                 self._connect_pending = False
+                _LOGGER.info(
+                    "Successfully connected to battery %s at %s:%d",
+                    self.battery_id,
+                    self._host,
+                    self._port,
+                )
                 return True
 
             self._failed_reconnect_counter += 1
             self._connect_pending = False
-            self._modbus_client.close()
+            self._close_connection()
             return False  # noqa: TRY300
 
-        except ModbusException:
-            _LOGGER.warning("Connection to battery failed")
+        except ModbusException as exc:
+            _LOGGER.warning("Connection to battery failed: %s", exc)
             self._failed_reconnect_counter += 1
             self._connect_pending = False
-            self._modbus_client.close()
+            self._close_connection()
             return False
 
     def close(self) -> bool:
         """Close modbus connection."""
+        return self._close_connection()
+
+    def _close_connection(self) -> bool:
+        """Close connection with proper error handling."""
         try:
-            self._modbus_client.close()
+            # Handle untyped close() call by wrapping in typed function
+            def _close() -> Any:
+                return self._modbus_client.close()  # type: ignore[no-untyped-call]
+
+            _close()
             return True  # noqa: TRY300
         except ModbusException:
             _LOGGER.warning("Closing connection to battery failed")
             return False
 
-    def get_device(self) -> AsyncModbusTcpClient:
+    def get_device(self) -> ModbusTcpClient:
         """Return modbus client."""
         return self._modbus_client
 
@@ -93,13 +122,20 @@ class ModbusAPI:
         if not self._modbus_client.connected:
             await self.connect()
             if not self._modbus_client.connected:
+                _LOGGER.error("Cannot write - not connected to modbus")
                 return False
 
         try:
-            result = await self._modbus_client.write_register(
-                address=address, value=value, slave=slave
-            )
-            return not result.isError() if result else False
+
+            def _write() -> bool:
+                # Use 'device_id' parameter which is the correct parameter name
+                result = self._modbus_client.write_register(
+                    address=address, value=value, device_id=slave
+                )
+                return not result.isError() if result else False
+
+            return await asyncio.get_event_loop().run_in_executor(None, _write)
+
         except ModbusException as exc:
             _LOGGER.warning("Failed to write holding register %d: %s", address, exc)
             return False
@@ -111,18 +147,25 @@ class ModbusAPI:
         if not self._modbus_client.connected:
             await self.connect()
             if not self._modbus_client.connected:
+                _LOGGER.error("Cannot read - not connected to modbus")
                 return None
 
         try:
-            result = await self._modbus_client.read_holding_registers(
-                address=address, count=count, slave=slave
-            )
-            if result.isError():
-                _LOGGER.warning(
-                    "Error reading holding registers at %d: %s", address, result
+
+            def _read() -> list[int] | None:
+                # Use 'device_id' parameter which is the correct parameter name
+                result = self._modbus_client.read_holding_registers(
+                    address=address, count=count, device_id=slave
                 )
-                return None
-            return result.registers  # noqa: TRY300
+                if result.isError():
+                    _LOGGER.warning(
+                        "Error reading holding registers at %d: %s", address, result
+                    )
+                    return None
+                return list(result.registers)
+
+            return await asyncio.get_event_loop().run_in_executor(None, _read)
+
         except ModbusException as exc:
             _LOGGER.warning("Failed to read holding registers at %d: %s", address, exc)
             return None
@@ -134,18 +177,25 @@ class ModbusAPI:
         if not self._modbus_client.connected:
             await self.connect()
             if not self._modbus_client.connected:
+                _LOGGER.error("Cannot read - not connected to modbus")
                 return None
 
         try:
-            result = await self._modbus_client.read_input_registers(
-                address=address, count=count, slave=slave
-            )
-            if result.isError():
-                _LOGGER.warning(
-                    "Error reading input registers at %d: %s", address, result
+
+            def _read() -> list[int] | None:
+                # Use 'device_id' parameter which is the correct parameter name
+                result = self._modbus_client.read_input_registers(
+                    address=address, count=count, device_id=slave
                 )
-                return None
-            return result.registers  # noqa: TRY300
+                if result.isError():
+                    _LOGGER.warning(
+                        "Error reading input registers at %d: %s", address, result
+                    )
+                    return None
+                return list(result.registers)
+
+            return await asyncio.get_event_loop().run_in_executor(None, _read)
+
         except ModbusException as exc:
             _LOGGER.warning("Failed to read input registers at %d: %s", address, exc)
             return None
@@ -192,7 +242,7 @@ class ModbusItemValidator:
             case _:
                 # Handle signed values
                 if val > 32768:
-                    val = val - 65536
+                    val -= 65536
                 return val
 
     @staticmethod
@@ -228,30 +278,25 @@ class ModbusObject:
             return None
 
         try:
-            match self._modbus_item.mtype:
-                case TypeConstants.SENSOR | TypeConstants.SENSOR_CALC:
-                    raw_values = await self._modbus_api.read_input_registers(
-                        self._modbus_item.address,
-                        slave=self._modbus_item.battery_slave_id,
-                    )
-                case (
-                    TypeConstants.SELECT
-                    | TypeConstants.NUMBER
-                    | TypeConstants.NUMBER_RO
-                ):
-                    raw_values = await self._modbus_api.read_holding_registers(
-                        self._modbus_item.address,
-                        slave=self._modbus_item.battery_slave_id,
-                    )
-                case _:
-                    _LOGGER.warning(
-                        "Unsupported modbus item type %s for %s",
-                        self._modbus_item.mtype,
-                        self._modbus_item.name,
+            # Ensure connection before reading
+            if not self._modbus_api.get_device().connected:
+                connected = await self._modbus_api.connect()
+                if not connected:
+                    _LOGGER.debug(
+                        "Failed to connect for reading %s", self._modbus_item.name
                     )
                     return None
 
+            # Use holding registers for all register types in this implementation
+            # This matches the working implementation pattern
+            raw_values = await self._modbus_api.read_holding_registers(
+                self._modbus_item.address,
+                count=1,
+                slave=self._modbus_item.battery_slave_id,
+            )
+
             if not raw_values:
+                _LOGGER.debug("No data received for %s", self._modbus_item.name)
                 return None
 
             validated_value = self._validator.validate_value(
@@ -262,16 +307,19 @@ class ModbusObject:
             if validated_value is None:
                 self._modbus_item.is_invalid = True
             else:
+                self._modbus_item.state = validated_value
                 self._modbus_item.is_invalid = False
 
             return validated_value  # noqa: TRY300
 
         except ModbusException as exc:
             _LOGGER.warning(
-                "ModbusException: Reading %s failed: %s",
+                "Error reading %s at address %d: %s",
                 self._modbus_item.name,
+                self._modbus_item.address,
                 exc,
             )
+            # Don't close connection on every error to avoid reconnection overhead
             return None
 
     async def async_write_value(self, value: int) -> bool:
@@ -289,15 +337,14 @@ class ModbusObject:
                     )
                     return False
                 case _:
-                    success = await self._modbus_api.write_holding_register(
+                    return await self._modbus_api.write_holding_register(
                         self._modbus_item.address,
                         self._prepare_write_value(value),
                         slave=self._modbus_item.battery_slave_id,
                     )
-                    return success  # noqa: RET504
         except ModbusException as exc:
             _LOGGER.warning(
-                "ModbusException: Writing %d to %s failed: %s",
+                "Error writing %d to %s: %s",
                 value,
                 self._modbus_item.name,
                 exc,
@@ -323,7 +370,7 @@ class ModbusObject:
 
         if self._modbus_item.resultlist:
             for status_item in self._modbus_item.resultlist:
-                if status_item.text.lower() in ["connected", "on", "enabled"]:
+                if status_item.text.lower() in ("on", "connected"):
                     return status_item.number
         return 1
 
@@ -334,7 +381,7 @@ class ModbusObject:
 
         if self._modbus_item.resultlist:
             for status_item in self._modbus_item.resultlist:
-                if status_item.text.lower() in ["off", "disconnected", "disabled"]:
+                if status_item.text.lower() in ("off", "standby"):
                     return status_item.number
         return 0
 

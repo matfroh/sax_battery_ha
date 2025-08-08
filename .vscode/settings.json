@@ -36,8 +36,10 @@
     "entitydescription",
     "mformat",
     "mtype",
+    "Mult",
     "mypy",
-    "pymodbus"
+    "pymodbus",
+    "STATUSANZEIGE"
   ],
   "workbench.editor.restoreViewState": false,
   "workbench.editor.enablePreview": false,

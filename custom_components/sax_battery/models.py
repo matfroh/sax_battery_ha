@@ -11,14 +11,18 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from .const import (
     AGGREGATED_ITEMS,
     DEFAULT_DEVICE_INFO,
-    MODBUS_BATTERY_ITEMS,
-    MODBUS_SMARTMETER_ITEMS,
+    MODBUS_BATTERY_SMARTMETER_ITEMS,
+    MODBUS_BATTERY_STATIC_ITEMS,
+    MODBUS_SMARTMETER_BASIC_ITEMS,
+    MODBUS_SMARTMETER_PHASE_ITEMS,
     PILOT_ITEMS,
     SAX_CURRENT_L1,
     SAX_POWER,
     SAX_SMARTMETER_TOTAL_POWER,
     SAX_SOC,
     SAX_VOLTAGE_L1,
+    create_register_access_config,
+    get_battery_realtime_items,
 )
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
@@ -70,6 +74,7 @@ class BatteryModel(BaseModel):
     host: str = ""
     port: int = 502
     is_master: bool = False
+    config_data: dict[str, Any] = field(default_factory=dict)
 
     def get_device_info(self) -> DeviceInfo:
         """Get device info for battery."""
@@ -83,12 +88,16 @@ class BatteryModel(BaseModel):
 
     def get_modbus_items(self) -> list[ModbusItem]:
         """Get modbus items based on battery role."""
-        # All batteries get basic battery items
-        items = MODBUS_BATTERY_ITEMS.copy()
+        # Create access config to determine appropriate entity types
+        access_config = create_register_access_config(self.config_data, self.is_master)
+
+        # All batteries get realtime and static items
+        items = list(get_battery_realtime_items(access_config))
+        items.extend(MODBUS_BATTERY_STATIC_ITEMS)
 
         # Master battery also gets smart meter items
         if self.is_master:
-            items.extend(MODBUS_SMARTMETER_ITEMS)
+            items.extend(MODBUS_BATTERY_SMARTMETER_ITEMS)
 
         return items
 
@@ -151,6 +160,10 @@ class SmartMeterModel(BaseModel):
         """Get SAX items for smart meter."""
         return []  # No calculated items specific to smart meter
 
+    def get_smart_meter_items(self) -> list[ModbusItem]:
+        """Get smart meter modbus items."""
+        return list(MODBUS_SMARTMETER_BASIC_ITEMS) + list(MODBUS_SMARTMETER_PHASE_ITEMS)
+
     @property
     def total_power(self) -> float | None:
         """Get total power from smart meter."""
@@ -194,7 +207,7 @@ class SAXBatteryData:
 
     def get_smart_meter_items(self) -> list[ModbusItem]:
         """Get smart meter modbus items."""
-        return MODBUS_SMARTMETER_ITEMS
+        return list(MODBUS_SMARTMETER_BASIC_ITEMS) + list(MODBUS_SMARTMETER_PHASE_ITEMS)
 
     def get_modbus_api(self) -> ModbusAPI | None:
         """Get the modbus API instance."""

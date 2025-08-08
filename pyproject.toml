@@ -2,7 +2,7 @@
 name = "sax_battery"
 version = "0.2.2.4.2"
 license = "Apache-2.0"
-license-files = ["LICENSE", "LICENSE"]
+license-files = ["LICENSE"]
 description = "SAX battery pilot for HomeAssistant"
 readme = "README.md"
 authors = [
@@ -20,7 +20,7 @@ classifiers = [
 ]
 requires-python = ">=3.13.2"
 dependencies = [
-  "pymodbus==3.8.3",
+  "pymodbus==3.11.0",
   "voluptuous==0.15.2",
 
 ]

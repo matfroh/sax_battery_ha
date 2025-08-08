@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
@@ -12,6 +13,7 @@ from typing import Any
 
 from pymodbus import ModbusException
 
+from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -43,6 +45,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         battery_id: str,
         sax_data: SAXBatteryData,
         modbus_api: ModbusAPI,
+        config_entry: config_entries.ConfigEntry,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -50,6 +53,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER,
             name=f"{DOMAIN}_{battery_id}",
             update_interval=timedelta(seconds=BATTERY_POLL_INTERVAL),
+            config_entry=config_entry,
         )
 
         self.battery_id = battery_id
@@ -76,6 +80,9 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Read data from modbus
             data: dict[str, Any] = {}
+            failed_reads = 0
+            total_items = len(self._modbus_objects)
+
             for item_name, modbus_obj in self._modbus_objects.items():
                 try:
                     raw_value = await modbus_obj.async_read_value()
@@ -84,9 +91,30 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         data[item_name] = converted_value
                     else:
                         data[item_name] = None
-                except (ModbusException, OSError, TimeoutError) as err:
+                        failed_reads += 1
+                except (
+                    ModbusException,
+                    OSError,
+                    TimeoutError,
+                    asyncio.CancelledError,
+                ) as err:
                     _LOGGER.debug("Failed to read %s: %s", item_name, err)
                     data[item_name] = None
+                    failed_reads += 1
+
+            # If too many reads failed, consider it a connection issue
+            if failed_reads > total_items * 0.5:  # More than 50% failed
+                if not self._first_update_done:
+                    raise ConfigEntryNotReady(
+                        f"Too many failed reads ({failed_reads}/{total_items}) for battery {self.battery_id}"
+                    )
+                else:  # noqa: RET506
+                    _LOGGER.warning(
+                        "High failure rate (%d/%d) for battery %s, continuing with partial data",
+                        failed_reads,
+                        total_items,
+                        self.battery_id,
+                    )
 
             # Handle smart meter data if this is the master battery
             if self.sax_data.should_poll_smart_meter(self.battery_id):

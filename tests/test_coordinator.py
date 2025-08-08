@@ -20,6 +20,7 @@ from custom_components.sax_battery.enums import (
 from custom_components.sax_battery.items import ModbusItem, SAXItem
 from custom_components.sax_battery.modbusobject import ModbusAPI
 from custom_components.sax_battery.models import SAXBatteryData
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 
@@ -64,7 +65,11 @@ class TestSAXBatteryCoordinator:
     ) -> SAXBatteryCoordinator:
         """Create coordinator instance."""
         return SAXBatteryCoordinator(
-            mock_hass, "battery_a", mock_sax_data, mock_modbus_api
+            mock_hass,
+            "battery_a",
+            mock_sax_data,
+            mock_modbus_api,
+            config_entry=MagicMock(),
         )
 
     @pytest.fixture
@@ -79,6 +84,25 @@ class TestSAXBatteryCoordinator:
             battery_slave_id=1,
             divider=1.0,
         )
+
+    @pytest.fixture
+    def mock_config_entry(self) -> MagicMock:
+        """Create mock config entry."""
+        entry = MagicMock(spec=ConfigEntry)
+        entry.entry_id = "test_entry_id"
+        entry.data = {
+            "host": "192.168.1.100",
+            "port": 502,
+            "battery_id": "battery_a",
+            "device_type": DeviceConstants.SYS,
+            "batteries": {
+                "battery_a": {"role": "master"},
+                "battery_b": {"role": "slave"},
+            },
+            "features": ["smart_meter", "power_control"],
+        }
+        entry.options = {}
+        return entry
 
     async def test_update_smart_meter_data_success(
         self, coordinator, mock_sax_data, mock_modbus_api, smart_meter_item
@@ -238,7 +262,11 @@ class TestSafeEvalExpression:
         mock_sax_data = MagicMock(spec=SAXBatteryData)
         mock_modbus_api = MagicMock(spec=ModbusAPI)
         return SAXBatteryCoordinator(
-            mock_hass, "battery_a", mock_sax_data, mock_modbus_api
+            mock_hass,
+            "battery_a",
+            mock_sax_data,
+            mock_modbus_api,
+            config_entry=MagicMock(),
         )
 
     def test_safe_eval_simple_addition(self, coordinator):
@@ -387,7 +415,9 @@ class TestCalculateSaxValue:
         return battery
 
     @pytest.fixture
-    def coordinator_with_battery(self, mock_battery) -> SAXBatteryCoordinator:
+    def coordinator_with_battery(
+        self, mock_battery, mock_config_entry
+    ) -> SAXBatteryCoordinator:
         """Create coordinator with battery data."""
         mock_hass = MagicMock(spec=HomeAssistant)
         mock_sax_data = MagicMock(spec=SAXBatteryData)
@@ -399,7 +429,11 @@ class TestCalculateSaxValue:
         }.get(key, 0)
         mock_modbus_api = MagicMock(spec=ModbusAPI)
         return SAXBatteryCoordinator(
-            mock_hass, "battery_a", mock_sax_data, mock_modbus_api
+            hass=mock_hass,
+            config_entry=mock_config_entry,
+            battery_id="battery_a",
+            sax_data=mock_sax_data,
+            modbus_api=mock_modbus_api,
         )
 
     def test_calculate_sax_value_simple_calculation(self, coordinator_with_battery):
