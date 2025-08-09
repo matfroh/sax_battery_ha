@@ -321,3 +321,33 @@ api = ModbusAPI(host="192.168.1.100", port=502, battery_id="battery_a")
 - Use the actual method signatures, parameters, and behavior as-is
 
 This rule prevents generating invalid tests that fail due to incorrect assumptions about the codebase structure.
+
+## Additional Rule: Unique Fixture Naming
+
+- **Fixture Naming:**
+  - All pytest fixture names must be unique within the test suite.
+  - Do not reuse fixture names across different scopes (module, class, function) to avoid PyLint `redefined-outer-name (W0621)` errors.
+  - If a fixture is reused or shared, use a descriptive and unique name (e.g., `mock_modbus_api_obj`, `mock_modbus_client_instance`).
+  - When overriding a fixture for a specific test or class, always use a new name rather than shadowing an outer fixture.
+  - If a fixture is defined in `conftest.py`, do not redefine it in a test file with the same name—use a different name or import it directly.
+
+**Example:**
+
+```python
+# conftest.py
+@pytest.fixture
+def mock_modbus_api():
+    ...
+
+# test_modbusobject.py
+@pytest.fixture
+def mock_modbus_api_obj(mock_modbus_api):
+    ...
+```
+
+- Always update references in test functions to use the unique fixture name.
+
+**Summary:**
+
+- Unique fixture names prevent scope shadowing and PyLint errors.
+- Prefer descriptive names for clarity and maintainability.
