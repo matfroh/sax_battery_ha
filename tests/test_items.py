@@ -2,7 +2,6 @@
 
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem, StatusItem
-from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.sensor import SensorEntityDescription
 
 # mypy: disable-error-code="arg-type"
@@ -72,7 +71,7 @@ class TestModbusItem:
         assert item.device == DeviceConstants.SYS
         assert item.address == 0
         assert item.battery_slave_id == 0
-        assert item.divider == 1.0
+        assert item.factor == 1.0
         assert not item.resultlist
 
     def test_modbus_item_init_with_optional_params(self) -> None:
@@ -86,47 +85,16 @@ class TestModbusItem:
             device=DeviceConstants.SYS,
             address=200,
             battery_slave_id=3,
-            divider=100.0,
+            factor=100.0,
             resultlist=status_list,
             params=params,
         )
 
         assert item.address == 200
         assert item.battery_slave_id == 3
-        assert item.divider == 100.0
+        assert item.factor == 100.0
         assert item.resultlist == status_list
         assert item.params == params
-
-    def test_modbus_item_convert_raw_value(self) -> None:
-        """Test ModbusItem convert_raw_value method."""
-        entity_desc = SensorEntityDescription(key="test_sensor")
-        item = ModbusItem(
-            name="test",
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
-            divider=100.0,
-            entitydescription=entity_desc,
-        )
-
-        # Test conversion
-        assert item.convert_raw_value(2300) == 23.0
-
-        # Test signed conversion for large values
-        assert item.convert_raw_value(65000) == -5.36  # (65000 - 65536) / 100
-
-    def test_modbus_item_convert_to_raw_value(self) -> None:
-        """Test ModbusItem convert_to_raw_value method."""
-        entity_desc = NumberEntityDescription(key="test_number")
-        item = ModbusItem(
-            name="test",
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
-            divider=10.0,
-            entitydescription=entity_desc,
-        )
-
-        # Test conversion
-        assert item.convert_to_raw_value(23.0) == 230
 
     def test_modbus_item_state_management(self) -> None:
         """Test ModbusItem state management (inherited from BaseItem)."""

@@ -158,26 +158,26 @@ class TestSAXBatteryNumber:
 
         assert number.native_value == 5000
 
-    def test_number_native_value_with_divider(self, mock_coordinator) -> None:
-        """Test number native value with divider."""
-        item_with_divider = ModbusItem(
-            name="test_number_divider",
+    def test_number_native_value_with_factor(self, mock_coordinator) -> None:
+        """Test number native value with factor."""
+        item_with_factor = ModbusItem(
+            name="test_number_factor",
             device=DeviceConstants.SYS,
             mtype=TypeConstants.SENSOR,
         )
-        item_with_divider.divider = 10
+        item_with_factor.factor = 10
 
-        mock_coordinator.data["test_number_divider"] = 500
+        mock_coordinator.data["test_number_factor"] = 500
 
         number = SAXBatteryNumber(
             coordinator=mock_coordinator,
             battery_id="battery_a",
-            modbus_item=item_with_divider,
+            modbus_item=item_with_factor,
             index=0,
         )
 
-        # Updated expectation - implementation doesn't apply divider for numbers
-        assert number.native_value == 500.0  # Raw value, no divider applied
+        # Updated expectation - implementation doesn't apply factor for numbers
+        assert number.native_value == 500.0  # Raw value, no factor applied
 
     def test_number_native_value_missing_data(
         self, mock_coordinator, power_number_item
@@ -382,7 +382,7 @@ class TestNumberEntityConfiguration:
             mtype=TypeConstants.NUMBER,
             address=200,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
 
         box_number = SAXBatteryNumber(

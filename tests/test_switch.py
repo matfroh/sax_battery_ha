@@ -45,7 +45,7 @@ class TestSAXBatterySwitch:
             mtype=TypeConstants.SWITCH,
             address=1000,  # Use valid Modbus address instead of 0
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
 
     def test_switch_initialization(

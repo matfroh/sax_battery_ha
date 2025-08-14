@@ -28,7 +28,7 @@ class TestCreateEntityUniqueId:
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
-            divider=10.0,
+            factor=10.0,
         )
 
         result = create_entity_unique_id("battery_a", api_item, 0)
@@ -53,7 +53,7 @@ class TestCreateEntityUniqueId:
             mtype=TypeConstants.SENSOR,
             address=200,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
 
         result_0 = create_entity_unique_id("battery_c", api_item, 0)
@@ -70,7 +70,7 @@ class TestCreateEntityUniqueId:
             mtype=TypeConstants.NUMBER,
             address=300,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
 
         result = create_entity_unique_id("battery_a", api_item, 2)
@@ -102,7 +102,7 @@ class TestDetermineEntityCategory:
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         api_item.entitydescription = mock_entity_desc
 
@@ -120,7 +120,7 @@ class TestDetermineEntityCategory:
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         api_item.entitydescription = mock_entity_desc
 
@@ -138,7 +138,7 @@ class TestDetermineEntityCategory:
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         api_item.entitydescription = mock_entity_desc
 
@@ -162,7 +162,7 @@ class TestDetermineEntityCategory:
                 mtype=TypeConstants.SENSOR,
                 address=100,
                 battery_slave_id=1,
-                divider=1.0,
+                factor=1.0,
             )
 
             category = determine_entity_category(item)
@@ -188,7 +188,7 @@ class TestDetermineEntityCategory:
                 mtype=TypeConstants.SENSOR,
                 address=100,
                 battery_slave_id=1,
-                divider=1.0,
+                factor=1.0,
             )
 
             category = determine_entity_category(item)
@@ -213,7 +213,7 @@ class TestDetermineEntityCategory:
                 mtype=TypeConstants.SENSOR,
                 address=100,
                 battery_slave_id=1,
-                divider=1.0,
+                factor=1.0,
             )
 
             category = determine_entity_category(item)
@@ -238,7 +238,7 @@ class TestDetermineEntityCategory:
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         # entitydescription is None by default
 
@@ -265,7 +265,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
-            divider=10.0,
+            factor=10.0,
         )
 
     def test_include_entity_basic_case(self, basic_api_item, mock_config_entry) -> None:
@@ -283,7 +283,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
-            divider=10.0,
+            factor=10.0,
         )
 
         result = should_include_entity(api_item, mock_config_entry, "battery_a")
@@ -299,7 +299,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
-            divider=10.0,
+            factor=10.0,
         )
 
         result = should_include_entity(api_item, mock_config_entry, "battery_a")
@@ -322,7 +322,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         # Dynamically add attribute - ModbusItem supports this
         setattr(api_item, "master_only", True)
@@ -347,7 +347,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         # Dynamically add attribute
         setattr(api_item, "master_only", True)
@@ -367,7 +367,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         # Dynamically add attribute
         setattr(api_item, "master_only", True)
@@ -389,7 +389,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         # Dynamically add attribute
         setattr(api_item, "required_features", ["smart_meter", "power_control"])
@@ -407,7 +407,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         # Dynamically add attribute
         setattr(api_item, "required_features", ["smart_meter", "power_control"])
@@ -427,7 +427,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         # Dynamically add attribute
         setattr(api_item, "required_features", ["power_control"])
@@ -460,7 +460,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         # Dynamically add attributes
         setattr(api_item, "master_only", True)
@@ -485,7 +485,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
         # Dynamically add attributes
         setattr(api_item, "master_only", True)
@@ -503,7 +503,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.SYS,
             address=100,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
 
         result = should_include_entity(api_item, mock_config_entry, "battery_a")

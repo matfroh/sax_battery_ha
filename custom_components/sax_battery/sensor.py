@@ -153,12 +153,11 @@ class SAXBatterySensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
         if not self.coordinator.data:
             return None
 
-        raw_value = self.coordinator.data.get(self._modbus_item.name)
-        if raw_value is None:
+        value = self.coordinator.data.get(self._modbus_item.name)
+        if value is None:
             return None
 
-        # Apply the item's conversion logic (including divider)
-        return self._modbus_item.convert_raw_value(raw_value)
+        return value
 
     @property
     def available(self) -> bool:

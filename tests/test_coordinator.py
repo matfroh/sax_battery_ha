@@ -77,7 +77,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.SENSOR,
             address=1000,
             battery_slave_id=1,
-            divider=1.0,
+            factor=1.0,
         )
 
     @pytest.fixture
@@ -161,26 +161,26 @@ class TestSAXBatteryCoordinator:
         # Should not add item to data when response is None
         assert "smartmeter_power" not in data
 
-    async def test_update_smart_meter_data_with_divider(
+    async def test_update_smart_meter_data_with_factor(
         self, coordinator, mock_sax_data, mock_modbus_api
     ):
-        """Test smart meter data update with divider applied."""
-        item_with_divider = ModbusItem(
+        """Test smart meter data update with factor applied."""
+        item_with_factor = ModbusItem(
             name="smartmeter_voltage",
             device=DeviceConstants.SYS,
             mtype=TypeConstants.SENSOR,
             address=1001,
             battery_slave_id=1,
-            divider=10.0,
+            factor=10.0,
         )
 
-        mock_sax_data.get_smart_meter_items.return_value = [item_with_divider]
+        mock_sax_data.get_smart_meter_items.return_value = [item_with_factor]
         mock_modbus_api.read_holding_registers.return_value = 2300
 
         data = {}
         await coordinator._update_smart_meter_data(data)
 
-        # Should apply divider: 2300 / 10.0 = 230.0
+        # Should apply factor: 2300 / 10.0 = 230.0
         assert data["smartmeter_voltage"] == 230.0
 
     async def test_update_smart_meter_data_oserror(

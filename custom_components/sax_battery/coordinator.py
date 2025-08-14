@@ -87,10 +87,9 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     data[item_name] = None
                     continue
                 try:
-                    raw_value = await modbus_obj.async_read_value()
-                    if raw_value is not None:
-                        converted_value = modbus_obj.item.convert_raw_value(raw_value)
-                        data[item_name] = converted_value
+                    value = await modbus_obj.async_read_value()
+                    if value is not None:
+                        data[item_name] = value
                     else:
                         data[item_name] = None
                         failed_reads += 1
@@ -156,17 +155,14 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             smart_meter_items = self.sax_data.get_smart_meter_items()
             for item in smart_meter_items:
                 try:
-                    raw_values = await self.modbus_api.read_holding_registers(
-                        item.address, 1, item.battery_slave_id
+                    value = await self.modbus_api.read_holding_registers(
+                        count=1, slave=item.battery_slave_id, modbus_item=item
                     )
-                    if raw_values:
-                        converted_value = item.convert_raw_value(raw_values)
-                        data[item.name] = converted_value
+                    if value:
+                        data[item.name] = value
                         # Update smart meter data in sax_data
                         if self.sax_data.smart_meter_data:
-                            self.sax_data.smart_meter_data.set_value(
-                                item.name, converted_value
-                            )
+                            self.sax_data.smart_meter_data.set_value(item.name, value)
                 except (ModbusException, OSError, TimeoutError) as err:
                     _LOGGER.debug("Failed to read smart meter %s: %s", item.name, err)
                     data[item.name] = None
@@ -260,9 +256,8 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._modbus_objects[item.name] = ModbusObject(self.modbus_api, item)
 
             modbus_obj = self._modbus_objects[item.name]
-            raw_value = item.convert_to_raw_value(value)
 
-            success = await modbus_obj.async_write_value(raw_value)
+            success = await modbus_obj.async_write_value(value)
 
             if success:
                 # Update local data
