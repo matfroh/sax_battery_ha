@@ -9,11 +9,12 @@
         "switch"
     ],
     "documentation": "https://github.com/matfroh/sax_battery_ha",
-    "iot_class": "local_polling",
     "issue_tracker": "https://github.com/matfroh/sax_battery_ha/issues",
+    "iot_class": "local_polling",
     "requirements": [
-        "pymodbus==3.7.4",
+        "pymodbus",
         "voluptuous"
     ],
+    "loggers": ["sax_battery","pymodbus"],
     "version": "0.2.2.4.2"
 }

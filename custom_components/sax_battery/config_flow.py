@@ -223,8 +223,14 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Coerce(int), vol.Range(min=1, max=65535)
             )
 
-        # Add master battery selection
-        schema[vol.Required(CONF_MASTER_BATTERY)] = vol.In(battery_choices)
+        # Add master battery selection only if more than 1 battery
+        if battery_count > 1:
+            schema[vol.Required(CONF_MASTER_BATTERY, default="battery_a")] = vol.In(
+                battery_choices
+            )
+        else:
+            # For single battery, automatically set battery_a as master
+            self._data[CONF_MASTER_BATTERY] = "battery_a"
 
         return self.async_show_form(
             step_id="battery_config",
