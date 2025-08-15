@@ -160,8 +160,8 @@ class TestSAXBatteryCoordinator:
         data = {}
         await coordinator_for_testing._update_smart_meter_data(data)
 
-        # Should not add item to data when response is None
-        assert "smartmeter_power" not in data
+        # When response is None, the item is added to data with None value
+        assert data["smartmeter_power"] is None
 
     async def test_update_smart_meter_data_with_factor(
         self,
