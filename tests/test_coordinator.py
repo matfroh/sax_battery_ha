@@ -102,7 +102,7 @@ class TestSAXBatteryCoordinator:
 
         # Verify modbus API was called correctly with new signature
         mock_modbus_api_for_coordinator.read_holding_registers.assert_called_once_with(
-            count=1, slave=1, modbus_item=smart_meter_item_for_coordinator
+            count=1, modbus_item=smart_meter_item_for_coordinator
         )
 
         # Verify smart meter data was updated

@@ -701,62 +701,16 @@ PARAMS_SAX_COMBINED_SOC: dict = {
 def get_battery_realtime_items(access_config: RegisterAccessConfig) -> list[ModbusItem]:
     """Get battery realtime items based on access configuration."""
     items = [
-        ModbusItem(
-            name=SAX_SOC,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
-            address=46,
-            battery_slave_id=1,
-            data_type=ModbusClientMixin.DATATYPE.INT16,
-            factor=1.0,
-            entitydescription=DESCRIPTION_SAX_SOC,
-        ),
-        ModbusItem(
-            name=SAX_POWER,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
-            address=47,
-            battery_slave_id=1,
-            data_type=ModbusClientMixin.DATATYPE.INT16,
-            factor=1.0,
-            entitydescription=DESCRIPTION_SAX_POWER,
-        ),
-        ModbusItem(
-            name=SAX_TEMP,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
-            address=117,
-            battery_slave_id=1,
-            data_type=ModbusClientMixin.DATATYPE.INT16,
-            factor=10.0,
-            entitydescription=DESCRIPTION_SAX_TEMP,
-        ),
+        ModbusItem(battery_slave_id=64, address=46, name=SAX_SOC, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_SOC,),
+        ModbusItem(battery_slave_id=64, address=47, name=SAX_POWER, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_POWER,),
     ]
 
     # Add writable items based on configuration
     if access_config.pilot_from_ha:
         items.extend(
             [
-                ModbusItem(
-                    name=SAX_MAX_CHARGE,
-                    mtype=TypeConstants.NUMBER,
-                    device=DeviceConstants.SYS,
-                    address=43,
-                    battery_slave_id=1,
-                    data_type=ModbusClientMixin.DATATYPE.INT16,
-                    factor=1.0,
-                    entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
-                ),
-                ModbusItem(
-                    name=SAX_MAX_DISCHARGE,
-                    mtype=TypeConstants.NUMBER,
-                    device=DeviceConstants.SYS,
-                    address=44,
-                    battery_slave_id=1,
-                    data_type=ModbusClientMixin.DATATYPE.INT16,
-                    factor=1.0,
-                    entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE,
-                ),
+        ModbusItem(battery_slave_id=64, address=43, name=SAX_MAX_CHARGE, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_CHARGE,),
+        ModbusItem(battery_slave_id=64, address=44, name=SAX_MAX_DISCHARGE, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE,),
             ]
         )
 
@@ -764,6 +718,7 @@ def get_battery_realtime_items(access_config: RegisterAccessConfig) -> list[Modb
 
 # Battery items - static/accumulated data (polled at lower frequency)
 MODBUS_BATTERY_STATIC_ITEMS: list[ModbusItem] = [
+    ModbusItem(battery_slave_id=40, address=40117, name=SAX_TEMP, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=10.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_TEMP,),
     ModbusItem(battery_slave_id=40, address=40115, name=SAX_CAPACITY, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=10.0 ,device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CAPACITY),
     ModbusItem(battery_slave_id=40, address=40116, name=SAX_CYCLES,  mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CYCLES),
     ModbusItem(battery_slave_id=40, address=40117, name=SAX_TEMP, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16 , device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_TEMP),

@@ -122,14 +122,13 @@ class TestModbusAPI:
             device=DeviceConstants.SYS,
             address=123,
             factor=1.0,
+            battery_slave_id=1,  # Ensure slave ID is set
         )
 
         api = ModbusAPI(host="127.0.0.1", port=502, battery_id="bat")
         # Set the client manually since we're not calling connect
         api._modbus_client = mock_client
-        result = await api.write_holding_register(
-            value=10, slave=1, modbus_item=modbus_item
-        )
+        result = await api.write_holding_register(value=10, modbus_item=modbus_item)
         assert result is True
         mock_client.write_register.assert_called_once()
 
@@ -155,9 +154,7 @@ class TestModbusAPI:
         api = ModbusAPI(host="127.0.0.1", port=502, battery_id="bat")
         # Set the client manually since we're not calling connect
         api._modbus_client = mock_client
-        result = await api.write_holding_register(
-            value=10, slave=1, modbus_item=modbus_item
-        )
+        result = await api.write_holding_register(value=10, modbus_item=modbus_item)
         assert result is False
 
     @patch("custom_components.sax_battery.modbusobject.ModbusTcpClient")
@@ -180,9 +177,7 @@ class TestModbusAPI:
         api = ModbusAPI(host="127.0.0.1", port=502, battery_id="bat")
         # Set the client manually since we're not calling connect
         api._modbus_client = mock_client
-        result = await api.write_holding_register(
-            value=10, slave=1, modbus_item=modbus_item
-        )
+        result = await api.write_holding_register(value=10, modbus_item=modbus_item)
         assert result is False
 
     @patch("custom_components.sax_battery.modbusobject.ModbusTcpClient")
@@ -209,9 +204,7 @@ class TestModbusAPI:
         api = ModbusAPI(host="127.0.0.1", port=502, battery_id="bat")
         # Set the client manually since we're not calling connect
         api._modbus_client = mock_client
-        result = await api.read_holding_registers(
-            count=1, slave=1, modbus_item=modbus_item
-        )
+        result = await api.read_holding_registers(count=1, modbus_item=modbus_item)
         assert result == 1500
 
     @patch("custom_components.sax_battery.modbusobject.ModbusTcpClient")
@@ -235,9 +228,7 @@ class TestModbusAPI:
         api = ModbusAPI(host="127.0.0.1", port=502, battery_id="bat")
         # Set the client manually since we're not calling connect
         api._modbus_client = mock_client
-        result = await api.read_holding_registers(
-            count=1, slave=1, modbus_item=modbus_item
-        )
+        result = await api.read_holding_registers(count=1, modbus_item=modbus_item)
         assert result is None
 
     @patch("custom_components.sax_battery.modbusobject.ModbusTcpClient")
@@ -259,7 +250,5 @@ class TestModbusAPI:
         api = ModbusAPI(host="127.0.0.1", port=502, battery_id="bat")
         # Set the client manually since we're not calling connect
         api._modbus_client = mock_client
-        result = await api.read_holding_registers(
-            count=1, slave=1, modbus_item=modbus_item
-        )
+        result = await api.read_holding_registers(count=1, modbus_item=modbus_item)
         assert result is None

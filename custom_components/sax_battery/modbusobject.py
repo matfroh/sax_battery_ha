@@ -43,7 +43,7 @@ class ModbusObject:
 
         try:
             result = await self._modbus_api.read_holding_registers(
-                count=1, slave=1, modbus_item=self._modbus_item
+                count=1, modbus_item=self._modbus_item
             )
             # Ensure we return a proper numeric type
             if isinstance(result, (int, float)):
@@ -69,7 +69,7 @@ class ModbusObject:
                     return False
                 case _:
                     return await self._modbus_api.write_holding_register(
-                        value=value, slave=1, modbus_item=self._modbus_item
+                        value=value, modbus_item=self._modbus_item
                     )
         except ModbusException:
             _LOGGER.exception("Failed to write value for %s", self._modbus_item.name)
@@ -158,7 +158,7 @@ class ModbusAPI:
         return self._modbus_client
 
     async def write_holding_register(
-        self, value: float, slave: int = 1, modbus_item: ModbusItem | None = None
+        self, value: float, modbus_item: ModbusItem | None = None
     ) -> bool:
         """Write to holding register."""
         if self._modbus_client is None or not self._modbus_client.connected:
@@ -170,16 +170,18 @@ class ModbusAPI:
                 if modbus_item:
                     raw_value = int((value - modbus_item.offset) * modbus_item.factor)
                     address = modbus_item.address
+                    device_id = modbus_item.battery_slave_id
                 else:
                     raw_value = int(value)
                     address = 0
+                    device_id = 1
 
                 # Type guard to ensure _modbus_client is not None
                 if self._modbus_client is None:
                     return False
 
                 result = self._modbus_client.write_register(
-                    address=address, value=raw_value, device_id=slave
+                    address=address, value=raw_value, device_id=device_id
                 )
                 return not result.isError()
             except Exception as exc:  # noqa: BLE001
@@ -191,7 +193,6 @@ class ModbusAPI:
     async def read_holding_registers(
         self,
         count: int,
-        slave: int,
         modbus_item: ModbusItem,
     ) -> int | float | None:
         """Read holding registers asynchronously."""
@@ -204,7 +205,7 @@ class ModbusAPI:
                     "Reading holding registers - Address: %s, Count: %s, Slave: %s",
                     modbus_item.address,
                     count,
-                    slave,
+                    modbus_item.battery_slave_id,
                 )
 
                 # Type guard to ensure _modbus_client is not None
@@ -214,14 +215,14 @@ class ModbusAPI:
                 result = self._modbus_client.read_holding_registers(
                     address=modbus_item.address,
                     count=count,
-                    device_id=slave,
+                    device_id=modbus_item.battery_slave_id,
                 )
                 if result.isError():
                     _LOGGER.warning(
                         "Failed to read holding registers - Address: %s, Count: %s, Slave: %s",
                         modbus_item.address,
                         count,
-                        slave,
+                        modbus_item.battery_slave_id,
                     )
                     return None
 
@@ -254,7 +255,7 @@ class ModbusAPI:
                     "ModbusException reading holding registers - Address: %s, Count: %s, Slave: %s: %s",
                     modbus_item.address,
                     count,
-                    slave,
+                    modbus_item.battery_slave_id,
                     exc,
                 )
                 return None
@@ -263,7 +264,7 @@ class ModbusAPI:
                     "Unexpected error reading holding registers - Address: %s, Count: %s, Slave: %s: %s",
                     modbus_item.address,
                     count,
-                    slave,
+                    modbus_item.battery_slave_id,
                     exc,
                 )
                 return None
@@ -275,7 +276,7 @@ class ModbusAPI:
                 "Error in executor for reading holding registers - Address: %s, Count: %s, Slave: %s: %s",
                 modbus_item.address,
                 count,
-                slave,
+                modbus_item.battery_slave_id,
                 exc,
             )
             return None

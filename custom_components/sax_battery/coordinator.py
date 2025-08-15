@@ -104,7 +104,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for item in self.sax_data.get_smart_meter_items():
                 try:
                     value = await self.modbus_api.read_holding_registers(
-                        count=1, slave=item.battery_slave_id, modbus_item=item
+                        count=1, modbus_item=item
                     )
                     if value is not None:
                         data[item.name] = float(value)
