@@ -100,7 +100,7 @@ def mock_modbus_item():
         battery_slave_id=1,
         mtype=TypeConstants.NUMBER,
         device=DeviceConstants.SYS,  # Fixed: Use SYS instead of BATTERY
-        divider=10,
+        factor=10,
     )
     return item  # noqa: RET504
 

@@ -30,7 +30,10 @@ def mock_modbus_api_instance(mock_modbus_client):
         "custom_components.sax_battery.modbusobject.ModbusTcpClient",
         return_value=mock_modbus_client,
     ):
-        yield ModbusAPI(host="127.0.0.1", port=502, battery_id="test_battery")
+        api = ModbusAPI(host="127.0.0.1", port=502, battery_id="test_battery")
+        # Set up the client manually for testing
+        api._modbus_client = mock_modbus_client
+        yield api
 
 
 @pytest.fixture
@@ -60,7 +63,6 @@ class TestModbusObject:
         self, mock_modbus_object, mock_modbus_api_instance
     ):
         """Test successful async_read_value."""
-        mock_modbus_api_instance.get_device().connected = True
         mock_modbus_api_instance.read_holding_registers = AsyncMock(return_value=1500)
         result = await mock_modbus_object.async_read_value()
         assert result == 1500
@@ -70,7 +72,6 @@ class TestModbusObject:
         self, mock_modbus_object, mock_modbus_api_instance
     ):
         """Test async_read_value with no data returned."""
-        mock_modbus_api_instance.get_device().connected = True
         mock_modbus_api_instance.read_holding_registers = AsyncMock(return_value=None)
         result = await mock_modbus_object.async_read_value()
         assert result is None
@@ -80,14 +81,8 @@ class TestModbusObject:
         self, mock_modbus_object, mock_modbus_api_instance
     ):
         """Test async_read_value when validation returns None."""
-        mock_modbus_api_instance.get_device().connected = True
-        mock_modbus_api_instance.read_holding_registers = AsyncMock(return_value=None)
-
-        # Create a mock entity description that will cause validation to fail
-        mock_entity_desc = MagicMock()
-        mock_entity_desc.device_class = "battery"
-        mock_modbus_object._modbus_item.entitydescription = mock_entity_desc
-
+        # Mark the item as invalid
+        mock_modbus_object._modbus_item.is_invalid = True
         result = await mock_modbus_object.async_read_value()
         assert result is None
 
@@ -96,7 +91,6 @@ class TestModbusObject:
         self, mock_modbus_object, mock_modbus_api_instance
     ):
         """Test async_read_value with ModbusException."""
-        mock_modbus_api_instance.get_device().connected = True
         mock_modbus_api_instance.read_holding_registers = AsyncMock(
             side_effect=ModbusException("fail")
         )

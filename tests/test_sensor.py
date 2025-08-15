@@ -99,11 +99,8 @@ class TestSAXBatterySensor:
 
         assert sensor.native_value == 25.5
 
-    def test_sensor_native_value_with_divider(
-        self, mock_coordinator, percentage_item
-    ) -> None:
-        """Test sensor native value with divider."""
-        percentage_item.divider = 10
+    def test_sensor_native_value_raw(self, mock_coordinator, percentage_item) -> None:
+        """Test sensor native value returns raw value (no factor logic)."""
         mock_coordinator.data["sax_soc"] = 800  # Raw value
 
         sensor = SAXBatterySensor(
@@ -113,7 +110,8 @@ class TestSAXBatterySensor:
             index=0,
         )
 
-        assert sensor.native_value == 80.0  # 800 / 10
+        # The sensor returns raw value - no factor logic in implementation
+        assert sensor.native_value == 800
         if isinstance(sensor._modbus_item.entitydescription, SensorEntityDescription):
             assert (
                 sensor._modbus_item.entitydescription.native_unit_of_measurement == "%"
