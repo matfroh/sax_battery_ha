@@ -1,7 +1,6 @@
 """Constants for the SAX Battery integration."""
 
 from dataclasses import dataclass
-from typing import Any
 
 from pymodbus.client.mixin import ModbusClientMixin  # For DATATYPE
 
@@ -33,6 +32,17 @@ CONF_LIMIT_POWER = "limit_power"
 CONF_MAX_CHARGE = "max_charge"
 CONF_MAX_DISCHARGE = "max_discharge"
 
+# Battery limits per individual battery unit
+LIMIT_MAX_CHARGE_PER_BATTERY = 3500  # Watts per battery
+LIMIT_MAX_DISCHARGE_PER_BATTERY = 4600  # Watts per battery
+
+# Legacy constants for backward compatibility
+LIMIT_MAX_CHARGE = LIMIT_MAX_CHARGE_PER_BATTERY  # Single battery default
+LIMIT_MAX_DISCHARGE = LIMIT_MAX_DISCHARGE_PER_BATTERY  # Single battery default
+
+# Maximum supported batteries in a system
+MAX_SUPPORTED_BATTERIES = 3
+
 
 @dataclass(frozen=True)
 class SAXDeviceInfo:
@@ -52,20 +62,6 @@ CONF_POWER_SENSOR = "power_sensor_entity_id"
 CONF_PF_SENSOR = "pf_sensor_entity_id"
 CONF_MASTER_BATTERY = "master_battery"
 CONF_DEVICE_ID = "device_id"
-
-# Communication constants
-CONF_BATTERY_ROLE = "battery_role"
-CONF_SMART_METER_HOST = "smart_meter_host"
-CONF_SMART_METER_PORT = "smart_meter_port"
-CONF_COMMUNICATION_TYPE = "communication_type"
-
-# Battery roles
-BATTERY_ROLE_MASTER = "master"
-BATTERY_ROLE_SLAVE = "slave"
-
-# Communication types
-COMM_MODBUS_TCP = "modbus_tcp"
-COMM_MODBUS_RTU = "modbus_rtu"
 
 # Polling intervals (in seconds)
 BATTERY_POLL_INTERVAL = 10  # Standard battery data polling (SOC, Power, Status)
@@ -143,66 +139,6 @@ REGISTER_ACCESS_CONTROL = {
 }
 
 
-@dataclass(frozen=True)
-class RegisterAccessConfig:
-    """Configuration for register access control."""
-
-    pilot_from_ha: bool = False
-    limit_power: bool = False
-    max_charge: int = 3500
-    max_discharge: int = 4600
-    is_master_battery: bool = False
-
-    def can_write_register(self, address: int) -> bool:
-        """Check if register can be written based on configuration.
-
-        Args:
-            address: Register address to check
-
-        Returns:
-            True if write access is allowed, False otherwise
-
-        """
-        # Only master battery can write to any register
-        if not self.is_master_battery:
-            return False
-
-        # Check if register requires specific configuration
-        if address not in WRITE_ONLY_REGISTERS:
-            return True
-
-        required_config = REGISTER_ACCESS_CONTROL.get(address)
-        if required_config == CONF_PILOT_FROM_HA:
-            return self.pilot_from_ha
-        elif required_config == CONF_LIMIT_POWER:  # noqa: RET505
-            return self.limit_power
-
-        return False
-
-    def get_entity_type(
-        self, address: int, default_type: TypeConstants
-    ) -> TypeConstants:
-        """Get appropriate entity type based on register access."""
-        # Write-only holding registers: only expose as config entities if supported
-        if address in {41, 42, 43, 44}:
-            return TypeConstants.NUMBER_WO  # Or a custom type for write-only config
-
-        # Switch register: read/write
-        if address == 45:
-            return TypeConstants.SWITCH
-
-        # All others: read-only sensors
-        return TypeConstants.SENSOR
-
-    def should_load_pilot_module(self) -> bool:
-        """Determine if pilot.py module should be loaded."""
-        return self.pilot_from_ha and self.is_master_battery
-
-    def get_writable_registers(self) -> set[int]:
-        """Get set of registers that are writable based on current configuration."""
-        return {addr for addr in WRITE_ONLY_REGISTERS if self.can_write_register(addr)}
-
-
 # fmt: off
 
 SYS_STATUSANZEIGE: list[StatusItem] = [
@@ -218,7 +154,7 @@ DESCRIPTION_SAX_MAX_CHARGE = NumberEntityDescription(
     mode=NumberMode.SLIDER,
     native_unit_of_measurement=UnitOfPower.WATT,
     native_min_value=0,
-    native_max_value=10000,
+    native_max_value=LIMIT_MAX_CHARGE_PER_BATTERY,
     native_step=100,
 )
 
@@ -228,7 +164,7 @@ DESCRIPTION_SAX_MAX_DISCHARGE = NumberEntityDescription(
     mode=NumberMode.SLIDER,
     native_unit_of_measurement=UnitOfPower.WATT,
     native_min_value=0,
-    native_max_value=10000,
+    native_max_value=LIMIT_MAX_DISCHARGE_PER_BATTERY,
     native_step=100,
 )
 DESCRIPTION_SAX_NOMINAL_POWER = SensorEntityDescription(
@@ -282,6 +218,7 @@ DESCRIPTION_SAX_CYCLES = SensorEntityDescription(
     key=SAX_CYCLES,
     name="Sax Cycles",
     state_class=SensorStateClass.MEASUREMENT,
+    native_unit_of_measurement="",
 )
 
 DESCRIPTION_SAX_TEMP = SensorEntityDescription(
@@ -292,6 +229,8 @@ DESCRIPTION_SAX_TEMP = SensorEntityDescription(
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfTemperature.CELSIUS,
 )
+
+# Battery switches
 
 DESCRIPTION_SAX_BATTERY_SWITCH = SwitchEntityDescription(
     key=SAX_BATTERY_SWITCH,
@@ -535,82 +474,6 @@ DESCRIPTION_SAX_COMBINED_SOC = SensorEntityDescription(
     native_unit_of_measurement=PERCENTAGE,
 )
 
-# fmt: on
-# Simple implementations of the missing functions
-def create_register_access_config(
-    config_data: dict[str, Any], is_master: bool = False
-) -> RegisterAccessConfig:
-    """Create register access configuration."""
-    return RegisterAccessConfig(
-        pilot_from_ha=config_data.get(CONF_PILOT_FROM_HA, False),
-        limit_power=config_data.get(CONF_LIMIT_POWER, False),
-        max_charge=config_data.get(CONF_MAX_CHARGE, 3500),
-        max_discharge=config_data.get(CONF_MAX_DISCHARGE, 4600),
-    )
-
-
-def should_load_pilot_module(
-    config_data: dict[str, Any], is_master: bool = False
-) -> bool:
-    """Determine if pilot.py module should be loaded based on configuration."""
-    access_config = create_register_access_config(config_data, is_master)
-    return access_config.should_load_pilot_module()
-
-
-def get_writable_registers(
-    config_data: dict[str, Any], is_master: bool = False
-) -> set[int]:
-    """Get set of registers that are writable based on current configuration."""
-    access_config = create_register_access_config(config_data, is_master)
-    return access_config.get_writable_registers()
-
-
-def validate_write_access(
-    address: int, config_data: dict[str, Any], is_master: bool = False
-) -> bool:
-    """Validate if a write operation to a register is allowed."""
-    access_config = create_register_access_config(config_data, is_master)
-    return access_config.can_write_register(address)
-
-
-def get_modbus_battery_items(
-    config_data: dict[str, Any], is_master: bool = False
-) -> list[ModbusItem]:
-    """Get all battery modbus items with proper configuration."""
-    access_config = create_register_access_config(config_data, is_master)
-
-    return (
-        get_battery_realtime_items(access_config)
-        + MODBUS_BATTERY_STATIC_ITEMS
-        + MODBUS_BATTERY_SMARTMETER_ITEMS
-    )
-
-
-# Configuration validation helpers
-def validate_configuration(config_data: dict[str, Any]) -> list[str]:
-    """Validate configuration and return list of warnings/errors."""
-    warnings = []
-
-    pilot_from_ha = config_data.get(CONF_PILOT_FROM_HA, False)
-    limit_power = config_data.get(CONF_LIMIT_POWER, False)
-
-    if not pilot_from_ha:
-        warnings.append(
-            "Pilot control disabled: Registers 41 (Nominal Power) and 42 (Nominal Factor) not writeable"
-        )
-
-    if not limit_power:
-        warnings.append(
-            "Power limiting disabled: Registers 43 (Max Discharge) and 44 (Max Charge) not writeable"
-        )
-
-    if not pilot_from_ha and not limit_power:
-        warnings.append(
-            "All write operations disabled: System is in monitoring-only mode"
-        )
-
-    return warnings
-
 
 # fmt: off
 ##############################################################################################################################
@@ -697,31 +560,28 @@ PARAMS_SAX_COMBINED_SOC: dict = {
 #                  language specific files in the subfolder "translations" have to be up-to-date
 ##############################################################################################################################
 
-# Entity descriptions for read-only versions
-def get_battery_realtime_items(access_config: RegisterAccessConfig) -> list[ModbusItem]:
-    """Get battery realtime items based on access configuration."""
-    items = [
+# Battery items read-only versions
+MODBUS_BATTERY_REALTIME_ITEMS: list[ModbusItem] = [
         ModbusItem(battery_slave_id=64, address=46, name=SAX_SOC, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_SOC,),
         ModbusItem(battery_slave_id=64, address=47, name=SAX_POWER, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_POWER,),
-    ]
+]
 
-    # Add writable items based on configuration
-    if access_config.pilot_from_ha:
-        items.extend(
-            [
+# Battery items read-only versions
+MODBUS_BATTERY_PILOT_ITEMS: list[ModbusItem] = [
         ModbusItem(battery_slave_id=64, address=43, name=SAX_MAX_CHARGE, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_CHARGE,),
         ModbusItem(battery_slave_id=64, address=44, name=SAX_MAX_DISCHARGE, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE,),
-            ]
-        )
+]
 
-    return items
+# Battery items - switch
+MODBUS_BATTERY_SWITCH_ITEMS: list[ModbusItem] = [
+    ModbusItem(battery_slave_id=64, address=45, name=SAX_STATUS, mtype=TypeConstants.SWITCH, data_type=ModbusClientMixin.DATATYPE.INT16, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_BATTERY_SWITCH,),
+]
 
 # Battery items - static/accumulated data (polled at lower frequency)
 MODBUS_BATTERY_STATIC_ITEMS: list[ModbusItem] = [
     ModbusItem(battery_slave_id=40, address=40117, name=SAX_TEMP, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=10.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_TEMP,),
     ModbusItem(battery_slave_id=40, address=40115, name=SAX_CAPACITY, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=10.0 ,device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CAPACITY),
     ModbusItem(battery_slave_id=40, address=40116, name=SAX_CYCLES,  mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_CYCLES),
-    ModbusItem(battery_slave_id=40, address=40117, name=SAX_TEMP, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16 , device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_TEMP),
     ModbusItem(battery_slave_id=40, address=40096, name=SAX_ENERGY_PRODUCED, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_ENERGY_PRODUCED),
     ModbusItem(battery_slave_id=40, address=40097, name=SAX_ENERGY_CONSUMED, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_ENERGY_CONSUMED),
 ]

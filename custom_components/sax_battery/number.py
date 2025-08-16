@@ -15,13 +15,25 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    CONF_BATTERY_COUNT,
+    DOMAIN,
+    LIMIT_MAX_CHARGE_PER_BATTERY,
+    LIMIT_MAX_DISCHARGE_PER_BATTERY,
+    SAX_MAX_CHARGE,
+    SAX_MAX_DISCHARGE,
+)
 from .coordinator import SAXBatteryCoordinator
 from .entity_utils import filter_items_by_type
 from .enums import TypeConstants
 from .items import ModbusItem
 from .models import SAXBatteryData
-from .utils import create_entity_unique_id, determine_entity_category
+from .utils import (
+    calculate_system_max_charge,
+    calculate_system_max_discharge,
+    create_entity_unique_id,
+    determine_entity_category,
+)
 
 
 async def async_setup_entry(
@@ -34,6 +46,9 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][config_entry.entry_id]
     coordinators: dict[str, SAXBatteryCoordinator] = data["coordinators"]
     sax_data: SAXBatteryData = data["sax_data"]
+
+    # Get battery count from config
+    battery_count = config_entry.data.get(CONF_BATTERY_COUNT, 1)
 
     entities: list[SAXBatteryNumber] = []
 
@@ -53,6 +68,7 @@ async def async_setup_entry(
                 battery_id=battery_id,
                 modbus_item=modbus_item,
                 index=index,
+                battery_count=battery_count,
             )
             for index, modbus_item in enumerate(number_items)
         )
@@ -72,6 +88,7 @@ async def async_setup_entry(
                 modbus_item=modbus_item,
                 index=index + len(number_items),  # Offset index
                 read_only=True,
+                battery_count=battery_count,
             )
             for index, modbus_item in enumerate(number_ro_items)
         )
@@ -88,12 +105,14 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
         battery_id: str,
         modbus_item: ModbusItem,
         index: int,
+        battery_count: int = 1,
         read_only: bool = False,
     ) -> None:
         """Initialize the number entity."""
         super().__init__(coordinator)
         self._modbus_item = modbus_item
         self._battery_id = battery_id
+        self._battery_count = battery_count
         self._read_only = read_only
         self._attr_unique_id = create_entity_unique_id(battery_id, modbus_item, index)
         self._attr_entity_category = determine_entity_category(modbus_item)
@@ -134,6 +153,9 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
                 if isinstance(desc.translation_key, str):
                     self._attr_translation_key = desc.translation_key
 
+        # Apply dynamic limits based on battery count for charge/discharge entities
+        self._apply_dynamic_limits()
+
         # Set read-only mode for NUMBER_RO items
         if self._read_only:
             self._attr_mode = NumberMode.BOX
@@ -141,6 +163,24 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
         # Set device info
         self._attr_device_info = coordinator.sax_data.get_device_info(battery_id)
         self._attr_has_entity_name = True
+
+    def _apply_dynamic_limits(self) -> None:
+        """Apply dynamic limits based on battery count for specific entities."""
+        # Only update max limits for charge and discharge entities
+        if self._modbus_item.name == SAX_MAX_CHARGE:
+            try:
+                max_charge = calculate_system_max_charge(self._battery_count)
+                self._attr_native_max_value = float(max_charge)
+            except ValueError:
+                # Keep original limit if battery count is invalid
+                pass
+        elif self._modbus_item.name == SAX_MAX_DISCHARGE:
+            try:
+                max_discharge = calculate_system_max_discharge(self._battery_count)
+                self._attr_native_max_value = float(max_discharge)
+            except ValueError:
+                # Keep original limit if battery count is invalid
+                pass
 
     @property
     def name(self) -> str:
@@ -194,13 +234,24 @@ class SAXBatteryNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
             else None
         )
 
-        return {
+        attributes = {
             "battery_id": self._battery_id,
             "modbus_address": getattr(self._modbus_item, "address", None),
             "last_update": getattr(self.coordinator, "last_update_success_time", None),
             "raw_value": raw_value,
             "read_only": self._read_only,
+            "battery_count": self._battery_count,
         }
+
+        # Add dynamic limit information for charge/discharge entities
+        if self._modbus_item.name in [SAX_MAX_CHARGE, SAX_MAX_DISCHARGE]:
+            attributes["dynamic_limit_applied"] = True
+            if self._modbus_item.name == SAX_MAX_CHARGE:
+                attributes["per_battery_limit"] = LIMIT_MAX_CHARGE_PER_BATTERY
+            elif self._modbus_item.name == SAX_MAX_DISCHARGE:
+                attributes["per_battery_limit"] = LIMIT_MAX_DISCHARGE_PER_BATTERY
+
+        return attributes
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new value."""

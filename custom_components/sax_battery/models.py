@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_DEVICE_INFO,
     MODBUS_BATTERY_SMARTMETER_ITEMS,
     MODBUS_BATTERY_STATIC_ITEMS,
+    MODBUS_BATTERY_SWITCH_ITEMS,
     MODBUS_SMARTMETER_BASIC_ITEMS,
     MODBUS_SMARTMETER_PHASE_ITEMS,
     PILOT_ITEMS,
@@ -23,11 +24,10 @@ from .const import (
     SAX_SMARTMETER_TOTAL_POWER,
     SAX_SOC,
     SAX_VOLTAGE_L1,
-    create_register_access_config,
-    get_battery_realtime_items,
 )
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
+from .utils import create_register_access_config, get_battery_realtime_items
 
 
 @dataclass
@@ -96,6 +96,7 @@ class BatteryModel(BaseModel):
         # All batteries get realtime and static items
         items = list(get_battery_realtime_items(access_config))
         items.extend(MODBUS_BATTERY_STATIC_ITEMS)
+        items.extend(MODBUS_BATTERY_SWITCH_ITEMS)
 
         # Master battery also gets smart meter items
         if self.is_master:

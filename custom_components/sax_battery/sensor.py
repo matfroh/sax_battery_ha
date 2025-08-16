@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
@@ -75,13 +73,6 @@ async def async_setup_entry(
         )
 
     async_add_entities(entities)
-
-
-@dataclass(frozen=True, kw_only=True)
-class SAXBatterySensorEntityDescription(SensorEntityDescription):
-    """Describes SAX Battery sensor entity."""
-
-    value_fn: Callable[[dict[str, Any]], Any] = lambda data: data
 
 
 class SAXBatterySensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
