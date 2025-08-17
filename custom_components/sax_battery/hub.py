@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 from typing import Any
 
 from homeassistant.const import CONF_HOST, CONF_PORT
@@ -62,18 +63,46 @@ class SAXBatteryHub:
 
                 if self._client is None:
                     _LOGGER.debug("Creating new AsyncModbusTcpClient")
-                    # Use parameters that worked in original version
+                    # Use parameters that worked in original version - try different compatibility settings
                     self._client = AsyncModbusTcpClient(
                         host=self._host,
                         port=self._port,
                         timeout=30,  # Increased timeout like original
-                        # Remove any new parameters that might cause issues
+                        retries=3,  # Explicit retry count
+                        # Try with explicit framer (some devices are picky)
+                        # framer=ModbusSocketFramer,
                     )
 
                 if not self._client.connected:
                     _LOGGER.debug("Client not connected, attempting connection...")
+
+                    # Add network diagnostics
+                    _LOGGER.info(
+                        "Testing network connectivity to %s:%s", self._host, self._port
+                    )
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(5)
+                        result = sock.connect_ex((self._host, self._port))
+                        sock.close()
+                        if result == 0:
+                            _LOGGER.info(
+                                "TCP connection to %s:%s successful",
+                                self._host,
+                                self._port,
+                            )
+                        else:
+                            _LOGGER.error(
+                                "TCP connection to %s:%s failed (error %s)",
+                                self._host,
+                                self._port,
+                                result,
+                            )
+                    except OSError as e:
+                        _LOGGER.error("Network test failed: %s", e)
+
                     result = await self._client.connect()
-                    _LOGGER.debug("Connection result: %s", result)
+                    _LOGGER.debug("Modbus connection result: %s", result)
 
                     if not result:
                         _LOGGER.error(
@@ -121,13 +150,15 @@ class SAXBatteryHub:
             "Reading %d registers from address %d (slave %d)", count, address, slave
         )
 
+        # Try to reconnect if not connected
         if not self._connected or not self._client:
-            _LOGGER.error(
-                "Cannot read registers: not connected (connected=%s, client=%s)",
+            _LOGGER.warning(
+                "Not connected (connected=%s, client=%s), attempting to reconnect",
                 self._connected,
                 self._client is not None,
             )
-            raise HubConnectionError("Not connected to device")
+            if not await self.connect():
+                raise HubConnectionError("Failed to connect to device")
 
         try:
             # Use the same pattern as the working original code
@@ -141,11 +172,17 @@ class SAXBatteryHub:
 
             if result.isError():
                 _LOGGER.error("Modbus error response: %s", result)
+                # Don't disconnect on single read errors - might be temporary
                 raise HubException(f"Modbus error: {result}")
 
         except (ConnectionException, ModbusIOException) as e:
             _LOGGER.error("Modbus communication error: %s", e)
-            self._connected = False
+            # Only disconnect after multiple failures or specific connection issues
+            if "No response received" in str(e) or "Connection" in str(e):
+                _LOGGER.warning(
+                    "Connection issue detected, will try to reconnect on next read"
+                )
+                self._connected = False
             raise HubConnectionError(f"Modbus communication error: {e}") from e
         else:
             _LOGGER.debug("Successfully read registers: %s", result.registers)
@@ -178,247 +215,157 @@ class SAXBattery:
         self._register_map = self._get_register_map()
 
     def _get_register_map(self) -> dict[str, dict[str, Any]]:
-        """Get the register map for SAX Battery."""
-        # This is the register configuration from the original code
+        """Get the register map for SAX Battery from original working version."""
+        # Use the exact register configuration that was working with pymodbus 3.7.3
         return {
-            "soc": {
-                "address": 13030,
-                "count": 1,
-                "scale": 0.1,
-                "unit": "%",
-                "name": "State of Charge",
-            },
             "status": {
-                "address": 13006,
+                "address": 45,
                 "count": 1,
                 "scale": 1,
                 "unit": None,
                 "name": "Status",
+                "slave": 64,
+            },
+            "soc": {
+                "address": 46,
+                "count": 1,
+                "scale": 1,
+                "unit": "%",
+                "name": "State of Charge",
+                "slave": 64,
             },
             "power": {
-                "address": 13021,
-                "count": 2,
+                "address": 47,
+                "count": 1,
                 "scale": 1,
                 "unit": "W",
                 "name": "Power",
                 "signed": True,
+                "offset": -16384,
+                "slave": 64,
             },
             "smartmeter": {
-                "address": 13034,
+                "address": 48,
                 "count": 1,
                 "scale": 1,
                 "unit": None,
                 "name": "Smart Meter",
+                "signed": True,
+                "offset": -16384,
+                "slave": 64,
             },
             "capacity": {
-                "address": 13025,
-                "count": 2,
-                "scale": 0.1,
+                "address": 40115,
+                "count": 1,
+                "scale": 10,
                 "unit": "Wh",
                 "name": "Capacity",
+                "slave": 40,
             },
             "cycles": {
-                "address": 13027,
-                "count": 2,
+                "address": 40116,
+                "count": 1,
                 "scale": 1,
                 "unit": "cycles",
                 "name": "Cycles",
+                "slave": 40,
             },
             "temp": {
-                "address": 13005,
+                "address": 40117,
                 "count": 1,
-                "scale": 0.1,
+                "scale": 1,
                 "unit": "°C",
                 "name": "Temperature",
+                "slave": 40,
             },
             "energy_produced": {
-                "address": 13001,
-                "count": 2,
-                "scale": 0.1,
+                "address": 40096,
+                "count": 1,
+                "scale": 1,
                 "unit": "kWh",
                 "name": "Energy Produced",
+                "slave": 40,
             },
             "energy_consumed": {
-                "address": 13003,
-                "count": 2,
-                "scale": 0.1,
+                "address": 40097,
+                "count": 1,
+                "scale": 1,
                 "unit": "kWh",
                 "name": "Energy Consumed",
+                "slave": 40,
             },
             "voltage_l1": {
-                "address": 13011,
+                "address": 40081,
                 "count": 1,
                 "scale": 0.1,
                 "unit": "V",
                 "name": "Voltage L1",
+                "slave": 40,
             },
             "voltage_l2": {
-                "address": 13012,
+                "address": 40082,
                 "count": 1,
                 "scale": 0.1,
                 "unit": "V",
                 "name": "Voltage L2",
+                "slave": 40,
             },
             "voltage_l3": {
-                "address": 13013,
+                "address": 40083,
                 "count": 1,
                 "scale": 0.1,
                 "unit": "V",
                 "name": "Voltage L3",
+                "slave": 40,
             },
             "current_l1": {
-                "address": 13014,
-                "count": 1,
-                "scale": 0.1,
-                "unit": "A",
-                "name": "Current L1",
-                "signed": True,
-            },
-            "current_l2": {
-                "address": 13015,
-                "count": 1,
-                "scale": 0.1,
-                "unit": "A",
-                "name": "Current L2",
-                "signed": True,
-            },
-            "current_l3": {
-                "address": 13016,
-                "count": 1,
-                "scale": 0.1,
-                "unit": "A",
-                "name": "Current L3",
-                "signed": True,
-            },
-            "grid_frequency": {
-                "address": 13017,
+                "address": 40074,
                 "count": 1,
                 "scale": 0.01,
-                "unit": "Hz",
-                "name": "Grid Frequency",
-            },
-            "active_power_l1": {
-                "address": 13018,
-                "count": 1,
-                "scale": 1,
-                "unit": "W",
-                "name": "Active Power L1",
-                "signed": True,
-            },
-            "active_power_l2": {
-                "address": 13019,
-                "count": 1,
-                "scale": 1,
-                "unit": "W",
-                "name": "Active Power L2",
-                "signed": True,
-            },
-            "active_power_l3": {
-                "address": 13020,
-                "count": 1,
-                "scale": 1,
-                "unit": "W",
-                "name": "Active Power L3",
-                "signed": True,
-            },
-            "apparent_power": {
-                "address": 13031,
-                "count": 1,
-                "scale": 1,
-                "unit": "VA",
-                "name": "Apparent Power",
-            },
-            "reactive_power": {
-                "address": 13032,
-                "count": 1,
-                "scale": 1,
-                "unit": "VAR",
-                "name": "Reactive Power",
-                "signed": True,
-            },
-            "power_factor": {
-                "address": 13033,
-                "count": 1,
-                "scale": 0.001,
-                "unit": None,
-                "name": "Power Factor",
-                "signed": True,
-            },
-            "phase_currents_sum": {
-                "address": 13029,
-                "count": 1,
-                "scale": 0.1,
                 "unit": "A",
-                "name": "Phase Currents Sum",
-                "signed": True,
+                "name": "Current L1",
+                "slave": 40,
+            },
+            "current_l2": {
+                "address": 40075,
+                "count": 1,
+                "scale": 0.01,
+                "unit": "A",
+                "name": "Current L2",
+                "slave": 40,
+            },
+            "current_l3": {
+                "address": 40076,
+                "count": 1,
+                "scale": 0.01,
+                "unit": "A",
+                "name": "Current L3",
+                "slave": 40,
             },
             "ac_power_total": {
-                "address": 13023,
+                "address": 40085,
                 "count": 1,
-                "scale": 1,
+                "scale": 10,
                 "unit": "W",
                 "name": "AC Power Total",
                 "signed": True,
+                "slave": 40,
             },
-            "storage_status": {
-                "address": 13007,
-                "count": 1,
-                "scale": 1,
-                "unit": None,
-                "name": "Storage Status",
-            },
-            "smartmeter_voltage_l1": {
-                "address": 13035,
+            "grid_frequency": {
+                "address": 40087,
                 "count": 1,
                 "scale": 0.1,
-                "unit": "V",
-                "name": "Smart Meter Voltage L1",
+                "unit": "Hz",
+                "name": "Grid Frequency",
+                "slave": 40,
             },
-            "smartmeter_voltage_l2": {
-                "address": 13036,
+            "phase_currents_sum": {
+                "address": 40073,
                 "count": 1,
-                "scale": 0.1,
-                "unit": "V",
-                "name": "Smart Meter Voltage L2",
-            },
-            "smartmeter_voltage_l3": {
-                "address": 13037,
-                "count": 1,
-                "scale": 0.1,
-                "unit": "V",
-                "name": "Smart Meter Voltage L3",
-            },
-            "smartmeter_current_l1": {
-                "address": 13038,
-                "count": 1,
-                "scale": 0.1,
+                "scale": 0.01,
                 "unit": "A",
-                "name": "Smart Meter Current L1",
-                "signed": True,
-            },
-            "smartmeter_current_l2": {
-                "address": 13039,
-                "count": 1,
-                "scale": 0.1,
-                "unit": "A",
-                "name": "Smart Meter Current L2",
-                "signed": True,
-            },
-            "smartmeter_current_l3": {
-                "address": 13040,
-                "count": 1,
-                "scale": 0.1,
-                "unit": "A",
-                "name": "Smart Meter Current L3",
-                "signed": True,
-            },
-            "smartmeter_total_power": {
-                "address": 13041,
-                "count": 2,
-                "scale": 1,
-                "unit": "W",
-                "name": "Smart Meter Total Power",
-                "signed": True,
+                "name": "Phase Currents Sum",
+                "slave": 40,
             },
         }
 
@@ -434,6 +381,11 @@ class SAXBattery:
                 value = raw_value[0]
         else:
             value = raw_value
+
+        # Apply offset first (used in original code for some registers)
+        offset = config.get("offset", 0)
+        if offset != 0:
+            value += offset
 
         # Handle signed values
         if config.get("signed", False):
@@ -455,20 +407,27 @@ class SAXBattery:
     async def read_data(self) -> dict[str, float | int | None]:
         """Read battery data."""
         _LOGGER.debug("Starting to read battery data...")
+        _LOGGER.debug(
+            "Will read %d registers: %s",
+            len(self._register_map),
+            list(self._register_map.keys()),
+        )
         data: dict[str, float | int | None] = {}
 
         for key, config in self._register_map.items():
+            slave_id = config.get("slave", 1)  # Get slave ID from config
             _LOGGER.debug(
-                "Reading register for %s: address=%d, count=%d",
+                "Reading register for %s: address=%d, count=%d, slave=%d",
                 key,
                 config["address"],
                 config["count"],
+                slave_id,
             )
             try:
                 raw_registers = await self._hub.modbus_read_holding_registers(
                     address=config["address"],
                     count=config["count"],
-                    slave=1,
+                    slave=slave_id,
                 )
 
                 if raw_registers is not None:
@@ -491,10 +450,14 @@ class SAXBattery:
                         config.get("unit", ""),
                     )
                 else:
-                    _LOGGER.warning("No data received for %s", key)
+                    _LOGGER.warning(
+                        "No data received for %s (address %d)", key, config["address"]
+                    )
 
             except (HubException, ConnectionException, ModbusIOException) as e:
-                _LOGGER.error("Error reading %s: %s", key, e)
+                _LOGGER.error(
+                    "Error reading %s (address %d): %s", key, config["address"], e
+                )
                 data[key] = None
 
         _LOGGER.debug("Finished reading battery data, got %d values", len(data))
@@ -551,6 +514,54 @@ async def create_hub(hass: HomeAssistant, config: dict[str, Any]) -> SAXBatteryH
 
         # Test reading some data - but don't fail if it doesn't work immediately
         _LOGGER.debug("Testing data read from hub...")
+
+        # First, let's try some basic diagnostic reads
+        _LOGGER.info("Running basic Modbus diagnostics...")
+        try:
+            # Try reading the basic status/SOC registers that should work
+            test_configs = [
+                {"addr": 45, "slave": 64, "desc": "Status"},
+                {"addr": 46, "slave": 64, "desc": "SOC"},
+                {"addr": 47, "slave": 64, "desc": "Power"},
+                {"addr": 40115, "slave": 40, "desc": "Capacity"},
+                {"addr": 40117, "slave": 40, "desc": "Temperature"},
+            ]
+
+            for test_config in test_configs:
+                try:
+                    _LOGGER.debug(
+                        "Testing register %d (slave %d) for %s",
+                        test_config["addr"],
+                        test_config["slave"],
+                        test_config["desc"],
+                    )
+                    result = await hub.modbus_read_holding_registers(
+                        address=test_config["addr"], count=1, slave=test_config["slave"]
+                    )
+                    _LOGGER.info(
+                        "SUCCESS: %s register at address %d (slave %d) with value: %s",
+                        test_config["desc"],
+                        test_config["addr"],
+                        test_config["slave"],
+                        result,
+                    )
+                    break
+                except (HubException, ConnectionException, ModbusIOException) as e:
+                    _LOGGER.debug(
+                        "Register %d (slave %d) failed: %s",
+                        test_config["addr"],
+                        test_config["slave"],
+                        e,
+                    )
+
+        except (
+            HubException,
+            ConnectionException,
+            ModbusIOException,
+            OSError,
+        ) as diag_err:
+            _LOGGER.error("Diagnostic tests failed: %s", diag_err)
+
         try:
             test_data = await hub.read_data()
             _LOGGER.debug("Test data read result: %s", test_data)

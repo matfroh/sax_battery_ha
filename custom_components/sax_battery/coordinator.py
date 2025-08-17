@@ -6,9 +6,11 @@ import asyncio
 from datetime import timedelta
 import logging
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .const import CONF_DEVICE_ID
 from .hub import SAXBatteryHub, HubException, HubConnectionError
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,7 +24,11 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
     """SAX Battery data update coordinator."""
 
     def __init__(
-        self, hass: HomeAssistant, hub: SAXBatteryHub, scan_interval: int
+        self,
+        hass: HomeAssistant,
+        hub: SAXBatteryHub,
+        scan_interval: int,
+        entry: ConfigEntry,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -32,6 +38,12 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._hub = hub
+        self.entry = entry  # Add entry attribute
+        self.device_id = entry.data.get(CONF_DEVICE_ID)  # Add device_id attribute
+
+        # Add other attributes that platforms might expect
+        self.power_sensor_entity_id = entry.data.get("power_sensor_entity_id")
+        self.pf_sensor_entity_id = entry.data.get("pf_sensor_entity_id")
 
     async def _async_update_data(self) -> dict[str, float | int | None]:
         """Update data via library."""

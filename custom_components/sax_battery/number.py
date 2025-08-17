@@ -22,6 +22,7 @@ from .const import (
     DEFAULT_MIN_SOC,
     DOMAIN,
 )
+from .coordinator import SAXBatteryCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,24 +63,19 @@ async def async_setup_entry(
 class SAXBatteryMaxChargeNumber(NumberEntity):
     """SAX Battery Maximum Charge Power number."""
 
-    def __init__(self, sax_battery_data: Any, max_value: float) -> None:
-        """Initialize the SAX Battery Maximum Charge Power number.
-
-        Args:
-            sax_battery_data: The data manager for SAX Battery.
-            max_value: The maximum charge power value.
-
-        """
-        self._data_manager = sax_battery_data
+    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
+        """Initialize the SAX Battery Maximum Charge Power number."""
+        self._coordinator = coordinator
+        self._data_manager = coordinator  # For compatibility
         self._attr_unique_id = f"{DOMAIN}_max_charge_power"
         self._attr_name = "Maximum Charge Power"
         self._attr_native_min_value = 0
-        self._attr_native_max_value = max_value
+        self._attr_native_max_value = 5000  # Default max, can be updated from data
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_native_value = max_value
+        self._attr_native_value = 3000  # Default value
         self._attr_mode = NumberMode.SLIDER
-        self._last_written_value = max_value
+        self._last_written_value = 3000
 
         # Set up periodic writes
         self._write_task = None
@@ -155,18 +151,19 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
 class SAXBatteryMaxDischargeNumber(NumberEntity):
     """SAX Battery Maximum Discharge Power number."""
 
-    def __init__(self, sax_battery_data: Any, max_value: float) -> None:
+    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
         """Initialize the SAX Battery Maximum Discharge Power number."""
-        self._data_manager = sax_battery_data
+        self._coordinator = coordinator
+        self._data_manager = coordinator  # For compatibility
         self._attr_unique_id = f"{DOMAIN}_max_discharge_power"
         self._attr_name = "Maximum Discharge Power"
         self._attr_native_min_value = 0
-        self._attr_native_max_value = max_value
+        self._attr_native_max_value = 5000  # Default max, can be updated from data
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_native_value = max_value
+        self._attr_native_value = 3000  # Default value
         self._attr_mode = NumberMode.SLIDER
-        self._last_written_value = max_value
+        self._last_written_value = 3000
 
         # Set up periodic writes
         self._write_task = None

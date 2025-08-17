@@ -163,6 +163,8 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
         """Get state class for sensor."""
         if key in ["energy_produced", "energy_consumed", "cycles"]:
             return SensorStateClass.TOTAL_INCREASING
+        if key == "capacity":  # Capacity should be TOTAL, not MEASUREMENT
+            return SensorStateClass.TOTAL
         if key in [
             "soc",
             "power",
@@ -188,7 +190,6 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "smartmeter_current_l2",
             "smartmeter_current_l3",
             "smartmeter_total_power",
-            "capacity",
         ]:
             return SensorStateClass.MEASUREMENT
         return None

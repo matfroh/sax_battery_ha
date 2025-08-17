@@ -23,7 +23,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hub = await create_hub(hass, dict(entry.data))
 
         # Create the coordinator
-        coordinator = SAXBatteryCoordinator(hass, hub, 30)
+        coordinator = SAXBatteryCoordinator(hass, hub, 30, entry)
 
         # Initial data fetch
         await coordinator.async_config_entry_first_refresh()
