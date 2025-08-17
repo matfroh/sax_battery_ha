@@ -51,7 +51,9 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
         self._data_key = data_key
         self._attr_unique_id = f"{DOMAIN}_{data_key}"
         self._attr_name = self._get_sensor_name(data_key)
-        self._attr_device_class, self._attr_native_unit_of_measurement = self._get_device_class_and_unit(data_key)
+        self._attr_device_class, self._attr_native_unit_of_measurement = (
+            self._get_device_class_and_unit(data_key)
+        )
         self._attr_state_class = self._get_state_class(data_key)
 
         # Add device info
@@ -101,7 +103,9 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
         }
         return name_mapping.get(key, key.replace("_", " ").title())
 
-    def _get_device_class_and_unit(self, key: str) -> tuple[SensorDeviceClass | None, str | None]:
+    def _get_device_class_and_unit(
+        self, key: str
+    ) -> tuple[SensorDeviceClass | None, str | None]:
         """Get device class and unit for sensor."""
         mapping = {
             "soc": (SensorDeviceClass.BATTERY, PERCENTAGE),
@@ -122,14 +126,35 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "active_power_l3": (SensorDeviceClass.POWER, UnitOfPower.WATT),
             "apparent_power": (SensorDeviceClass.APPARENT_POWER, "VA"),
             "reactive_power": (SensorDeviceClass.REACTIVE_POWER, "VAR"),
-            "phase_currents_sum": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
+            "phase_currents_sum": (
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
             "ac_power_total": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "smartmeter_voltage_l1": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT),
-            "smartmeter_voltage_l2": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT),
-            "smartmeter_voltage_l3": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT),
-            "smartmeter_current_l1": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
-            "smartmeter_current_l2": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
-            "smartmeter_current_l3": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
+            "smartmeter_voltage_l1": (
+                SensorDeviceClass.VOLTAGE,
+                UnitOfElectricPotential.VOLT,
+            ),
+            "smartmeter_voltage_l2": (
+                SensorDeviceClass.VOLTAGE,
+                UnitOfElectricPotential.VOLT,
+            ),
+            "smartmeter_voltage_l3": (
+                SensorDeviceClass.VOLTAGE,
+                UnitOfElectricPotential.VOLT,
+            ),
+            "smartmeter_current_l1": (
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
+            "smartmeter_current_l2": (
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
+            "smartmeter_current_l3": (
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
             "smartmeter_total_power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
         }
         return mapping.get(key, (None, None))
@@ -138,13 +163,33 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
         """Get state class for sensor."""
         if key in ["energy_produced", "energy_consumed", "cycles"]:
             return SensorStateClass.TOTAL_INCREASING
-        if key in ["soc", "power", "temp", "voltage_l1", "voltage_l2", "voltage_l3",
-                   "current_l1", "current_l2", "current_l3", "grid_frequency",
-                   "active_power_l1", "active_power_l2", "active_power_l3",
-                   "apparent_power", "reactive_power", "phase_currents_sum",
-                   "ac_power_total", "smartmeter_voltage_l1", "smartmeter_voltage_l2",
-                   "smartmeter_voltage_l3", "smartmeter_current_l1", "smartmeter_current_l2",
-                   "smartmeter_current_l3", "smartmeter_total_power", "capacity"]:
+        if key in [
+            "soc",
+            "power",
+            "temp",
+            "voltage_l1",
+            "voltage_l2",
+            "voltage_l3",
+            "current_l1",
+            "current_l2",
+            "current_l3",
+            "grid_frequency",
+            "active_power_l1",
+            "active_power_l2",
+            "active_power_l3",
+            "apparent_power",
+            "reactive_power",
+            "phase_currents_sum",
+            "ac_power_total",
+            "smartmeter_voltage_l1",
+            "smartmeter_voltage_l2",
+            "smartmeter_voltage_l3",
+            "smartmeter_current_l1",
+            "smartmeter_current_l2",
+            "smartmeter_current_l3",
+            "smartmeter_total_power",
+            "capacity",
+        ]:
             return SensorStateClass.MEASUREMENT
         return None
 
@@ -158,4 +203,6 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self.coordinator.last_update_success and self._data_key in (self.coordinator.data or {})
+        return self.coordinator.last_update_success and self._data_key in (
+            self.coordinator.data or {}
+        )

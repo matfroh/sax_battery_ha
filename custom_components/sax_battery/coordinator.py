@@ -57,11 +57,13 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
             except (HubException, HubConnectionError) as err:
                 if i == limit - 1:  # Last attempt
                     raise ex_type(f"Error refreshing data: {err}") from err
-                _LOGGER.warning("Retry %s/%s - Error refreshing data: %s", i + 1, limit, err)
+                _LOGGER.warning(
+                    "Retry %s/%s - Error refreshing data: %s", i + 1, limit, err
+                )
                 await asyncio.sleep(1)  # Wait before retry
             else:
                 return data or {}
-                
+
         return {}
 
     @property

@@ -11,7 +11,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ConnectionException, ModbusIOException
-from pymodbus.pdu import ExceptionResponse
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,24 +54,52 @@ class SAXBatteryHub:
         """Connect to the inverter."""
         async with self._lock:
             try:
+                _LOGGER.info(
+                    "Attempting to connect to SAX Battery at %s:%s",
+                    self._host,
+                    self._port,
+                )
+
                 if self._client is None:
+                    _LOGGER.debug("Creating new AsyncModbusTcpClient")
+                    # Use parameters that worked in original version
                     self._client = AsyncModbusTcpClient(
                         host=self._host,
                         port=self._port,
-                        timeout=10,
+                        timeout=30,  # Increased timeout like original
+                        # Remove any new parameters that might cause issues
                     )
 
                 if not self._client.connected:
+                    _LOGGER.debug("Client not connected, attempting connection...")
                     result = await self._client.connect()
+                    _LOGGER.debug("Connection result: %s", result)
+
                     if not result:
-                        _LOGGER.error("Failed to connect to %s:%s", self._host, self._port)
+                        _LOGGER.error(
+                            "Failed to connect to %s:%s - connection result was False",
+                            self._host,
+                            self._port,
+                        )
                         return False
 
                 self._connected = True
-                _LOGGER.debug("Connected to %s:%s", self._host, self._port)
+                _LOGGER.info(
+                    "Successfully connected to SAX Battery at %s:%s",
+                    self._host,
+                    self._port,
+                )
 
             except (ConnectionException, OSError, TimeoutError) as e:
-                _LOGGER.error("Connection error to %s:%s: %s", self._host, self._port, e)
+                _LOGGER.error(
+                    "Connection error to %s:%s: %s", self._host, self._port, e
+                )
+                self._connected = False
+                return False
+            except (ModbusIOException,) as e:
+                _LOGGER.error(
+                    "Modbus connection error to %s:%s: %s", self._host, self._port, e
+                )
                 self._connected = False
                 return False
             else:
@@ -90,30 +117,38 @@ class SAXBatteryHub:
         self, address: int, count: int, slave: int = 1
     ) -> list[int]:
         """Read holding registers with pymodbus 3.9.2 compatibility."""
+        _LOGGER.debug(
+            "Reading %d registers from address %d (slave %d)", count, address, slave
+        )
+
         if not self._connected or not self._client:
+            _LOGGER.error(
+                "Cannot read registers: not connected (connected=%s, client=%s)",
+                self._connected,
+                self._client is not None,
+            )
             raise HubConnectionError("Not connected to device")
 
         try:
-            # Use slave parameter for backward compatibility
+            # Use the same pattern as the working original code
             result = await self._client.read_holding_registers(
                 address=address,
                 count=count,
                 slave=slave,
             )
 
+            _LOGGER.debug("Read result: %s", result)
+
             if result.isError():
-                if isinstance(result, ExceptionResponse):
-                    raise HubException(f"Modbus exception: {result}")
+                _LOGGER.error("Modbus error response: %s", result)
                 raise HubException(f"Modbus error: {result}")
-                
+
         except (ConnectionException, ModbusIOException) as e:
             _LOGGER.error("Modbus communication error: %s", e)
             self._connected = False
             raise HubConnectionError(f"Modbus communication error: {e}") from e
-        except Exception as e:
-            _LOGGER.error("Unexpected error reading registers: %s", e)
-            raise HubException(f"Unexpected error: {e}") from e
         else:
+            _LOGGER.debug("Successfully read registers: %s", result.registers)
             return result.registers
 
     async def read_data(self) -> dict[str, Any]:
@@ -387,7 +422,9 @@ class SAXBattery:
             },
         }
 
-    def _convert_value(self, raw_value: int | list[int], config: dict[str, Any]) -> float | int:
+    def _convert_value(
+        self, raw_value: int | list[int], config: dict[str, Any]
+    ) -> float | int:
         """Convert raw modbus value to proper value."""
         if isinstance(raw_value, list):
             if len(raw_value) == 2:
@@ -417,9 +454,16 @@ class SAXBattery:
 
     async def read_data(self) -> dict[str, float | int | None]:
         """Read battery data."""
+        _LOGGER.debug("Starting to read battery data...")
         data: dict[str, float | int | None] = {}
 
         for key, config in self._register_map.items():
+            _LOGGER.debug(
+                "Reading register for %s: address=%d, count=%d",
+                key,
+                config["address"],
+                config["count"],
+            )
             try:
                 raw_registers = await self._hub.modbus_read_holding_registers(
                     address=config["address"],
@@ -428,29 +472,43 @@ class SAXBattery:
                 )
 
                 if raw_registers is not None:
+                    _LOGGER.debug(
+                        "Successfully read %d registers for %s: %s",
+                        len(raw_registers),
+                        key,
+                        raw_registers,
+                    )
                     if config["count"] == 1:
                         value = self._convert_value(raw_registers[0], config)
                     else:
                         value = self._convert_value(raw_registers, config)
 
                     data[key] = value
-                    _LOGGER.debug("Read %s: %s %s", key, value, config.get("unit", ""))
+                    _LOGGER.debug(
+                        "Converted value for %s: %s %s",
+                        key,
+                        value,
+                        config.get("unit", ""),
+                    )
+                else:
+                    _LOGGER.warning("No data received for %s", key)
 
             except (HubException, ConnectionException, ModbusIOException) as e:
                 _LOGGER.error("Error reading %s: %s", key, e)
                 data[key] = None
 
+        _LOGGER.debug("Finished reading battery data, got %d values", len(data))
         return data
 
 
 async def create_hub(hass: HomeAssistant, config: dict[str, Any]) -> SAXBatteryHub:
     """Create and initialize the hub."""
     _LOGGER.debug("Creating hub with config: %s", list(config.keys()))
-    
+
     # Find the first battery configuration
     host = None
     port = None
-    
+
     # Look for battery_a_host, battery_b_host, etc.
     for key, value in config.items():
         if key.endswith("_host"):
@@ -458,18 +516,28 @@ async def create_hub(hass: HomeAssistant, config: dict[str, Any]) -> SAXBatteryH
             # Find corresponding port
             port_key = key.replace("_host", "_port")
             port = config.get(port_key, 502)
-            _LOGGER.debug("Found battery config: %s=%s, %s=%s", key, host, port_key, port)
+            _LOGGER.debug(
+                "Found battery config: %s=%s, %s=%s", key, host, port_key, port
+            )
             break
-    
+
     if host is None:
         # Fallback to direct host/port if available
         host = config.get("host") or config.get(CONF_HOST)
         port = config.get("port") or config.get(CONF_PORT, 502)
         _LOGGER.debug("Using fallback config: host=%s, port=%s", host, port)
-    
+
     if host is None:
-        _LOGGER.error("No host configuration found in config keys: %s", list(config.keys()))
+        _LOGGER.error(
+            "No host configuration found in config keys: %s", list(config.keys())
+        )
         raise HubInitFailed("No host configuration found")
+
+    # Ensure port is an integer
+    if isinstance(port, str):
+        port = int(port)
+    elif port is None:
+        port = 502
 
     _LOGGER.info("Initializing SAX Battery Hub with %s:%s", host, port)
     hub = SAXBatteryHub(hass, host, port)
@@ -481,19 +549,30 @@ async def create_hub(hass: HomeAssistant, config: dict[str, Any]) -> SAXBatteryH
             _LOGGER.error(msg)
             raise HubInitFailed(msg)
 
-        # Test reading some data
-        test_data = await hub.read_data()
-        if not test_data:
-            msg = f"Could not read data from SAX Battery at {host}:{port}"
-            _LOGGER.error(msg)
-            raise HubInitFailed(msg)
+        # Test reading some data - but don't fail if it doesn't work immediately
+        _LOGGER.debug("Testing data read from hub...")
+        try:
+            test_data = await hub.read_data()
+            _LOGGER.debug("Test data read result: %s", test_data)
+            # Don't fail if no data initially - the coordinator will retry
+            if test_data:
+                _LOGGER.info("Successfully read initial data from SAX Battery")
+            else:
+                _LOGGER.warning(
+                    "No initial data read, but connection appears stable - will retry via coordinator"
+                )
+        except (HubException, ConnectionException, ModbusIOException) as read_err:
+            _LOGGER.warning(
+                "Initial data read failed: %s - will retry via coordinator", read_err
+            )
+            # Don't fail the setup - let the coordinator handle retries
 
         _LOGGER.info("Successfully connected to SAX Battery at %s:%s", host, port)
 
     except HubException:
         await hub.disconnect()
         raise
-    except Exception as e:
+    except (ConnectionException, ModbusIOException, OSError, TimeoutError) as e:
         _LOGGER.error("Hub initialization failed: %s", e)
         await hub.disconnect()
         raise HubInitFailed(f"Hub initialization failed: {e}") from e
