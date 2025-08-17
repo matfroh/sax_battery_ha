@@ -41,11 +41,20 @@ async def async_setup_entry(
             # Skip battery-specific keys for now - they'll be handled separately
             if not key.startswith("battery_"):
                 entities.append(SAXBatterySensor(coordinator, key))
-            elif key.startswith("battery_a_"):
-                # Create battery-specific sensors with "Battery A" naming
-                entities.append(
-                    SAXBatterySensor(coordinator, key, battery_name="Battery A")
-                )
+            else:
+                # Handle battery-specific sensors (battery_a_, battery_b_, etc.)
+                for battery_prefix in ["battery_a_", "battery_b_", "battery_c_"]:
+                    if key.startswith(battery_prefix):
+                        battery_letter = battery_prefix.split("_")[
+                            1
+                        ].upper()  # Extract A, B, C
+                        battery_name = f"Battery {battery_letter}"
+                        entities.append(
+                            SAXBatterySensor(
+                                coordinator, key, battery_name=battery_name
+                            )
+                        )
+                        break
 
     async_add_entities(entities)
 
@@ -63,14 +72,29 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._data_key = data_key
         self._battery_name = battery_name
-        self._attr_unique_id = f"{DOMAIN}_{data_key}"
 
         # Use battery-specific name if provided
         if battery_name:
-            sensor_base_name = self._get_sensor_name(data_key.replace("battery_a_", ""))
-            self._attr_name = f"{battery_name} {sensor_base_name}"
+            # Remove battery prefix (battery_a_, battery_b_, etc.) from data key
+            sensor_key = data_key
+            for prefix in ["battery_a_", "battery_b_", "battery_c_"]:
+                if data_key.startswith(prefix):
+                    sensor_key = data_key.replace(prefix, "")
+                    break
+
+            sensor_base_name = self._get_sensor_name(sensor_key)
+            # Create entity name in format: SAX Battery A Sensor Name
+            battery_letter = battery_name.split()[
+                -1
+            ].upper()  # Extract "A" from "Battery A"
+            self._attr_name = f"SAX Battery {battery_letter} {sensor_base_name}"
+            # Update unique_id to match the naming pattern you want: sax_battery_a_sensor_key
+            self._attr_unique_id = (
+                f"{DOMAIN}_battery_{battery_letter.lower()}_{sensor_key}"
+            )
         else:
             self._attr_name = self._get_sensor_name(data_key)
+            self._attr_unique_id = f"{DOMAIN}_{data_key}"
 
         self._attr_device_class, self._attr_native_unit_of_measurement = (
             self._get_device_class_and_unit(data_key)
@@ -129,9 +153,11 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
     ) -> tuple[SensorDeviceClass | None, str | None]:
         """Get device class and unit for sensor."""
         # Remove battery prefix for lookup
-        lookup_key = (
-            key.replace("battery_a_", "") if key.startswith("battery_a_") else key
-        )
+        lookup_key = key
+        for prefix in ["battery_a_", "battery_b_", "battery_c_"]:
+            if key.startswith(prefix):
+                lookup_key = key.replace(prefix, "")
+                break
 
         mapping = {
             "soc": (SensorDeviceClass.BATTERY, PERCENTAGE),
@@ -188,9 +214,11 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
     def _get_state_class(self, key: str) -> SensorStateClass | None:
         """Get state class for sensor."""
         # Remove battery prefix for lookup
-        lookup_key = (
-            key.replace("battery_a_", "") if key.startswith("battery_a_") else key
-        )
+        lookup_key = key
+        for prefix in ["battery_a_", "battery_b_", "battery_c_"]:
+            if key.startswith(prefix):
+                lookup_key = key.replace(prefix, "")
+                break
 
         if lookup_key in ["energy_produced", "energy_consumed", "cycles"]:
             return SensorStateClass.TOTAL_INCREASING

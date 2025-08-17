@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import CONF_DEVICE_ID, SAX_STATUS
+from .const import CONF_DEVICE_ID
 from .hub import SAXBatteryHub, HubException, HubConnectionError
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,27 +46,30 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
         self.power_sensor_entity_id = entry.data.get("power_sensor_entity_id")
         self.pf_sensor_entity_id = entry.data.get("pf_sensor_entity_id")
 
-        # Add batteries dict for compatibility with existing platform code
-        # For now, create a single battery entry - this can be expanded later
-        self.batteries = {"battery_a": hub.battery}
+        # Add batteries dict for multi-battery support
+        self.batteries = {}
+        for battery_id, battery in hub.batteries.items():
+            self.batteries[battery_id] = battery
+            # Set each battery's _data_manager reference to this coordinator
+            battery._data_manager = self
 
-        # Add master_battery attribute for compatibility
-        self.master_battery = hub.battery  # Single battery setup
-
-        # Set the battery's _data_manager reference to this coordinator
-        hub.battery._data_manager = self
+        # Add master_battery attribute for compatibility (use first battery)
+        self.master_battery = (
+            next(iter(hub.batteries.values())) if hub.batteries else None
+        )
 
         # Add other attributes that might be expected
-        self.modbus_clients = {
-            "battery_a": hub.client
-        }  # Map battery_id to modbus client
+        self.modbus_clients = hub._clients
 
         # Add more compatibility attributes that might be expected
-        self.last_updates = {}  # Initialize empty dictionary for last updates
+        self.last_updates: dict[
+            str, Any
+        ] = {}  # Initialize empty dictionary for last updates
 
         # Add modbus_registers for compatibility with switch platform
-        self.modbus_registers = {
-            "battery_a": {
+        self.modbus_registers = {}
+        for battery_id in self.batteries:
+            self.modbus_registers[battery_id] = {
                 "sax_status": {
                     "address": 45,
                     "count": 1,
@@ -78,7 +82,6 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
                     "command_off": 1,
                 }
             }
-        }
 
     async def _async_update_data(self) -> dict[str, float | int | None]:
         """Update data via library."""
