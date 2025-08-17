@@ -30,8 +30,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the SAX Battery number entities."""
-    sax_battery_data = hass.data[DOMAIN][entry.entry_id]
-    battery_count = len(sax_battery_data.batteries)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities = []
 
@@ -39,8 +38,8 @@ async def async_setup_entry(
     if entry.data.get(CONF_LIMIT_POWER, False):
         entities.extend(
             [
-                SAXBatteryMaxChargeNumber(sax_battery_data, battery_count * 3500),
-                SAXBatteryMaxDischargeNumber(sax_battery_data, battery_count * 4600),
+                SAXBatteryMaxChargeNumber(coordinator),
+                SAXBatteryMaxDischargeNumber(coordinator),
             ]
         )
 
@@ -48,14 +47,14 @@ async def async_setup_entry(
     if entry.data.get(CONF_PILOT_FROM_HA, False):
         entities.extend(
             [
-                SAXBatteryPilotIntervalNumber(sax_battery_data, entry),
-                SAXBatteryMinSOCNumber(sax_battery_data, entry),
+                SAXBatteryPilotIntervalNumber(coordinator, entry),
+                SAXBatteryMinSOCNumber(coordinator, entry),
             ]
         )
 
     # Add manual control entity if manual_control is enabled
     if entry.data.get(CONF_MANUAL_CONTROL, False):
-        entities.append(SAXBatteryManualPowerEntity(sax_battery_data))
+        entities.append(SAXBatteryManualPowerEntity(coordinator))
 
     async_add_entities(entities)
 

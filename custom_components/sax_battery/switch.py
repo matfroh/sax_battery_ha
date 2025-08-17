@@ -25,18 +25,14 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the SAX Battery switches."""
-    sax_battery_data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = hass.data[DOMAIN][entry.entry_id]
     entities = []
 
     # Add pilot-related switches only if pilot control is enabled
-    #    if entry.data.get(CONF_PILOT_FROM_HA, False):
-    #        entities.append(SAXBatterySolarChargingSwitch(sax_battery_data, entry))
-    #        entities.append(SAXBatteryManualControlSwitch(sax_battery_data, entry))
-
     if entry.data.get(CONF_PILOT_FROM_HA, False):
         # Create both switches
-        solar_charging_switch = SAXBatterySolarChargingSwitch(sax_battery_data, entry)
-        manual_control_switch = SAXBatteryManualControlSwitch(sax_battery_data, entry)
+        solar_charging_switch = SAXBatterySolarChargingSwitch(coordinator, entry)
+        manual_control_switch = SAXBatteryManualControlSwitch(coordinator, entry)
 
         # Set references to each other
         solar_charging_switch.set_other_switch(manual_control_switch)
@@ -44,10 +40,8 @@ async def async_setup_entry(
 
         entities.extend([solar_charging_switch, manual_control_switch])
 
-    entities.extend(
-        SAXBatteryOnOffSwitch(battery)
-        for battery in sax_battery_data.batteries.values()
-    )
+    # Add basic on/off switch for the battery
+    entities.append(SAXBatteryOnOffSwitch(coordinator))
 
     async_add_entities(entities)
 
