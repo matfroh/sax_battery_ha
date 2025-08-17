@@ -51,6 +51,11 @@ class SAXBatteryHub:
         """Return the port."""
         return self._port
 
+    @property
+    def client(self):
+        """Return the modbus client."""
+        return self._client
+
     async def connect(self) -> bool:
         """Connect to the inverter."""
         async with self._lock:
@@ -213,6 +218,8 @@ class SAXBattery:
         """Initialize the battery."""
         self._hub = hub
         self._register_map = self._get_register_map()
+        self.battery_id = "battery_a"  # Default battery ID
+        self._data_manager = None  # Will be set by coordinator
 
     def _get_register_map(self) -> dict[str, dict[str, Any]]:
         """Get the register map for SAX Battery from original working version."""

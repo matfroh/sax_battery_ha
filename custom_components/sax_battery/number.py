@@ -81,9 +81,9 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
         self._write_task = None
         self._track_time_remove: Callable[[], None] | None = None
 
-        # Add device info
+        # Add device info - use coordinator device_id for consistency
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._data_manager.device_id)},
+            "identifiers": {(DOMAIN, self._coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -169,9 +169,9 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
         self._write_task = None
         self._track_time_remove: Callable[[], None] | None = None
 
-        # Add device info
+        # Add device info - use coordinator device_id for consistency
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._data_manager.device_id)},
+            "identifiers": {(DOMAIN, self._coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -239,9 +239,10 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
 class SAXBatteryPilotIntervalNumber(NumberEntity):
     """SAX Battery Auto Pilot Interval number."""
 
-    def __init__(self, sax_battery_data: Any, entry: ConfigEntry) -> None:
+    def __init__(self, coordinator: SAXBatteryCoordinator, entry: ConfigEntry) -> None:
         """Initialize the SAX Battery Auto Pilot Interval number."""
-        self._data_manager = sax_battery_data
+        self._coordinator = coordinator
+        self._data_manager = coordinator  # For compatibility
         self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_pilot_interval"
         self._attr_name = "Auto Pilot Interval"
@@ -254,9 +255,9 @@ class SAXBatteryPilotIntervalNumber(NumberEntity):
         )
         self._attr_mode = NumberMode.SLIDER
 
-        # Add device info
+        # Add device info - pilot interval entity uses coordinator device_id
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._data_manager.device_id)},
+            "identifiers": {(DOMAIN, self._coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -275,9 +276,10 @@ class SAXBatteryPilotIntervalNumber(NumberEntity):
 class SAXBatteryMinSOCNumber(NumberEntity):
     """SAX Battery Minimum State of Charge number."""
 
-    def __init__(self, sax_battery_data: Any, entry: ConfigEntry) -> None:
+    def __init__(self, coordinator: SAXBatteryCoordinator, entry: ConfigEntry) -> None:
         """Initialize the SAX Battery Minimum State of Charge number."""
-        self._data_manager = sax_battery_data
+        self._coordinator = coordinator
+        self._data_manager = coordinator  # For compatibility
         self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_min_soc"
         self._attr_name = "Minimum State of Charge"
@@ -288,9 +290,9 @@ class SAXBatteryMinSOCNumber(NumberEntity):
         self._attr_native_value = self._entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
         self._attr_mode = NumberMode.SLIDER
 
-        # Add device info
+        # Add device info - min SOC entity uses coordinator device_id
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._data_manager.device_id)},
+            "identifiers": {(DOMAIN, self._coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -309,13 +311,14 @@ class SAXBatteryMinSOCNumber(NumberEntity):
 class SAXBatteryManualPowerEntity(NumberEntity):
     """Entity for setting manual power value."""
 
-    def __init__(self, sax_battery_data: Any) -> None:
+    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
         """Initialize the entity."""
-        self._data_manager = sax_battery_data
-        self._attr_unique_id = f"{DOMAIN}_manual_power_{self._data_manager.device_id}"
+        self._coordinator = coordinator
+        self._data_manager = coordinator  # For compatibility
+        self._attr_unique_id = f"{DOMAIN}_manual_power_{coordinator.device_id}"
         self._attr_name = "Battery Manual Power"
 
-        battery_count = len(self._data_manager.batteries)
+        battery_count = len(coordinator.batteries)
         max_charge_power = battery_count * 3500  # 3.5kW per battery for charge
         max_discharge_power = battery_count * 4600  # 4.6kW per battery for discharge
 
@@ -326,13 +329,11 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         self._attr_native_value = 0  # Use _attr_native_value instead of _value
         self._attr_mode = NumberMode.SLIDER
         self._attr_icon = "mdi:battery"
-        self._attr_available = self._data_manager.entry.data.get(
-            CONF_MANUAL_CONTROL, False
-        )
+        self._attr_available = coordinator.entry.data.get(CONF_MANUAL_CONTROL, False)
 
-        # Add device info
+        # Add device info - manual power entity uses coordinator device_id
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._data_manager.device_id)},
+            "identifiers": {(DOMAIN, self._coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",

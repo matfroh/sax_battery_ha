@@ -56,9 +56,9 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
         )
         self._attr_state_class = self._get_state_class(data_key)
 
-        # Add device info
+        # Add device info - use same device identifier as other platforms
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, "sax_battery_system")},
+            "identifiers": {(DOMAIN, coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",

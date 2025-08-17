@@ -15,7 +15,6 @@ from .const import (
     CONF_MANUAL_CONTROL,
     CONF_PILOT_FROM_HA,
     DOMAIN,
-    SAX_STATUS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,19 +48,22 @@ async def async_setup_entry(
 class SAXBatteryOnOffSwitch(SwitchEntity):
     """SAX Battery On/Off switch."""
 
-    def __init__(self, battery: Any) -> None:
+    def __init__(self, coordinator: Any) -> None:
         """Initialize the switch."""
-        self.battery = battery
-        self._attr_unique_id = f"{DOMAIN}_{battery.battery_id}_switch"
-        self._attr_name = f"Sax {battery.battery_id.replace('_', ' ').title()} On/Off"
-        #        self._attr_has_entity_name = True
-        self._registers = self.battery._data_manager.modbus_registers[  # noqa: SLF001
-            battery.battery_id
-        ][SAX_STATUS]
+        self._coordinator = coordinator
+        # Use the master battery for the switch functionality
+        self.battery = coordinator.master_battery
+        self._attr_unique_id = f"{DOMAIN}_battery_switch"
+        self._attr_name = "SAX Battery System"
 
-        # Add device info
+        # Get the status register configuration from the coordinator
+        self._registers = coordinator.modbus_registers[
+            coordinator.master_battery.battery_id
+        ]["sax_status"]
+
+        # Add device info - use same device identifier as other platforms
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self.battery._data_manager.device_id)},  # noqa: SLF001
+            "identifiers": {(DOMAIN, coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -71,29 +73,28 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
     @property
     def is_on(self) -> bool | None:
         """Return True if the switch is on."""
-        if SAX_STATUS not in self.battery.data:
+        # Get status from coordinator data instead of battery.data
+        if self._coordinator.data is None or "status" not in self._coordinator.data:
             return None
 
-        # Replace with your actual logic to determine if battery is on
-        # This is just an example - adjust based on your battery status data
-        status = self.battery.data[SAX_STATUS]
+        # Get status value from coordinator
+        status = self._coordinator.data["status"]
         if status is None:
             return None
 
-        # Example: assuming status value indicates on/off state
-        return bool(status.get("is_charging", False))  # Adjust this logic
+        # Based on the original register config: state_on = 3, state_off = 1
+        return status == self._registers.get("state_on", 3)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
         try:
-            client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
+            client = self._coordinator.modbus_clients[self.battery.battery_id]
             slave_id = self._registers.get("slave", 64)
 
             await asyncio.sleep(0.1)
 
             _LOGGER.debug(
-                "Turning ON battery %s - Writing %s to register %s",
-                self.battery.battery_id,
+                "Turning ON battery system - Writing %s to register %s",
                 self._registers["command_on"],
                 self._registers["address"],
             )
@@ -108,24 +109,22 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             )
 
             await asyncio.sleep(180)
-            await self.async_update()
+            # Request coordinator update instead of battery update
+            await self._coordinator.async_request_refresh()
 
         except (ConnectionError, ValueError) as err:
-            _LOGGER.error(
-                "Failed to turn on battery %s: %s", self.battery.battery_id, err
-            )
+            _LOGGER.error("Failed to turn on battery system: %s", err)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
         try:
-            client = self.battery._data_manager.modbus_clients[self.battery.battery_id]  # noqa: SLF001
+            client = self._coordinator.modbus_clients[self.battery.battery_id]
             slave_id = self._registers.get("slave", 64)
 
             await asyncio.sleep(0.1)
 
             _LOGGER.debug(
-                "Turning OFF battery %s - Writing %s to register %s",
-                self.battery.battery_id,
+                "Turning OFF battery system - Writing %s to register %s",
                 self._registers["command_off"],
                 self._registers["address"],
             )
@@ -140,34 +139,36 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
             )
 
             await asyncio.sleep(120)
-            await self.async_update()
+            # Request coordinator update instead of battery update
+            await self._coordinator.async_request_refresh()
 
         except (ConnectionError, ValueError) as err:
-            _LOGGER.error(
-                "Failed to turn off battery %s: %s", self.battery.battery_id, err
-            )
+            _LOGGER.error("Failed to turn off battery system: %s", err)
 
     @cached_property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return SAX_STATUS in self.battery.data
+        return self._coordinator.data is not None and "status" in (
+            self._coordinator.data or {}
+        )
 
     @property
     def should_poll(self) -> bool:
         """Return True if entity has to be polled for state."""
-        return True
+        return False  # Use coordinator updates instead
 
     async def async_update(self) -> None:
         """Update the switch state."""
-        await self.battery.async_update()
+        # No need to manually update - coordinator handles this
 
 
 class SAXBatterySolarChargingSwitch(SwitchEntity):
     """Switch to control solar charging for SAX Battery."""
 
-    def __init__(self, sax_battery_data: Any, entry: Any) -> None:
+    def __init__(self, coordinator: Any, entry: Any) -> None:
         """Initialize the switch."""
-        self._data_manager = sax_battery_data
+        self._coordinator = coordinator
+        self._data_manager = coordinator  # For compatibility
         self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_solar_charging"
         self._attr_name = "Solar Charging"
@@ -176,8 +177,9 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
             None  # Reference to the manual control switch
         )
 
+        # Add device info - use coordinator device_id for consistency
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._data_manager.device_id)},
+            "identifiers": {(DOMAIN, self._coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
@@ -230,9 +232,10 @@ class SAXBatterySolarChargingSwitch(SwitchEntity):
 class SAXBatteryManualControlSwitch(SwitchEntity):
     """Switch to enable/disable manual control for SAX Battery."""
 
-    def __init__(self, sax_battery_data: Any, entry: Any) -> None:
+    def __init__(self, coordinator: Any, entry: Any) -> None:
         """Initialize the switch."""
-        self._data_manager = sax_battery_data
+        self._coordinator = coordinator
+        self._data_manager = coordinator  # For compatibility
         self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_manual_control"
         self._attr_name = "Manual Control"
@@ -241,8 +244,9 @@ class SAXBatteryManualControlSwitch(SwitchEntity):
             None  # Reference to the solar charging switch
         )
 
+        # Add device info - use coordinator device_id for consistency
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._data_manager.device_id)},
+            "identifiers": {(DOMAIN, self._coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",

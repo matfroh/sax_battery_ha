@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import CONF_DEVICE_ID
+from .const import CONF_DEVICE_ID, SAX_STATUS
 from .hub import SAXBatteryHub, HubException, HubConnectionError
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,6 +44,41 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
         # Add other attributes that platforms might expect
         self.power_sensor_entity_id = entry.data.get("power_sensor_entity_id")
         self.pf_sensor_entity_id = entry.data.get("pf_sensor_entity_id")
+
+        # Add batteries dict for compatibility with existing platform code
+        # For now, create a single battery entry - this can be expanded later
+        self.batteries = {"battery_a": hub.battery}
+
+        # Add master_battery attribute for compatibility
+        self.master_battery = hub.battery  # Single battery setup
+
+        # Set the battery's _data_manager reference to this coordinator
+        hub.battery._data_manager = self
+
+        # Add other attributes that might be expected
+        self.modbus_clients = {
+            "battery_a": hub.client
+        }  # Map battery_id to modbus client
+
+        # Add more compatibility attributes that might be expected
+        self.last_updates = {}  # Initialize empty dictionary for last updates
+
+        # Add modbus_registers for compatibility with switch platform
+        self.modbus_registers = {
+            "battery_a": {
+                "sax_status": {
+                    "address": 45,
+                    "count": 1,
+                    "data_type": "int",
+                    "slave": 64,
+                    "scan_interval": 60,
+                    "state_on": 3,
+                    "state_off": 1,
+                    "command_on": 2,
+                    "command_off": 1,
+                }
+            }
+        }
 
     async def _async_update_data(self) -> dict[str, float | int | None]:
         """Update data via library."""
