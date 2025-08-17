@@ -445,9 +445,33 @@ class SAXBattery:
 
 async def create_hub(hass: HomeAssistant, config: dict[str, Any]) -> SAXBatteryHub:
     """Create and initialize the hub."""
-    host = config[CONF_HOST]
-    port = config[CONF_PORT]
+    _LOGGER.debug("Creating hub with config: %s", list(config.keys()))
+    
+    # Find the first battery configuration
+    host = None
+    port = None
+    
+    # Look for battery_a_host, battery_b_host, etc.
+    for key, value in config.items():
+        if key.endswith("_host"):
+            host = value
+            # Find corresponding port
+            port_key = key.replace("_host", "_port")
+            port = config.get(port_key, 502)
+            _LOGGER.debug("Found battery config: %s=%s, %s=%s", key, host, port_key, port)
+            break
+    
+    if host is None:
+        # Fallback to direct host/port if available
+        host = config.get("host") or config.get(CONF_HOST)
+        port = config.get("port") or config.get(CONF_PORT, 502)
+        _LOGGER.debug("Using fallback config: host=%s, port=%s", host, port)
+    
+    if host is None:
+        _LOGGER.error("No host configuration found in config keys: %s", list(config.keys()))
+        raise HubInitFailed("No host configuration found")
 
+    _LOGGER.info("Initializing SAX Battery Hub with %s:%s", host, port)
     hub = SAXBatteryHub(hass, host, port)
 
     # Test connection
@@ -473,5 +497,5 @@ async def create_hub(hass: HomeAssistant, config: dict[str, Any]) -> SAXBatteryH
         _LOGGER.error("Hub initialization failed: %s", e)
         await hub.disconnect()
         raise HubInitFailed(f"Hub initialization failed: {e}") from e
-    else:
-        return hub
+
+    return hub
