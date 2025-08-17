@@ -203,7 +203,14 @@ class SAXBatteryHub:
             data = {}
             battery_data = await self.battery.read_data()
             if battery_data:
+                # For single battery setup, add both direct keys and battery_a prefixed keys
                 data.update(battery_data)
+
+                # Add battery-specific prefixed keys for multi-battery compatibility
+                for key, value in battery_data.items():
+                    data[f"battery_a_{key}"] = value
+
+                _LOGGER.debug("Successfully read data with %d keys", len(data))
         except (HubException, ConnectionException, ModbusIOException) as e:
             _LOGGER.error("Error reading data: %s", e)
             raise

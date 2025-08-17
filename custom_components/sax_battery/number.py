@@ -123,8 +123,8 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
     async def _write_value(self, value: float) -> None:
         """Write the value to the hardware."""
         try:
-            client = self._data_manager.master_battery._data_manager.modbus_clients[  # noqa: SLF001
-                self._data_manager.master_battery.battery_id
+            client = self._coordinator.modbus_clients[
+                self._coordinator.master_battery.battery_id
             ]
 
             def _write_register() -> bool:
@@ -211,8 +211,8 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
     async def _write_value(self, value: float) -> None:
         """Write the value to the hardware."""
         try:
-            client = self._data_manager.master_battery._data_manager.modbus_clients[  # noqa: SLF001
-                self._data_manager.master_battery.battery_id
+            client = self._coordinator.modbus_clients[
+                self._coordinator.master_battery.battery_id
             ]
 
             def _write_register() -> bool:

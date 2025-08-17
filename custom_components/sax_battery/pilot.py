@@ -492,10 +492,11 @@ class SAXBatteryPilot:
                 return
 
             # Check if client is connected
-            if not hasattr(client, "is_socket_open") or not client.is_socket_open():
+            if not hasattr(client, "connected") or not client.connected:
                 _LOGGER.error("Modbus client socket not open, attempting to reconnect")
                 try:
-                    client.connect()
+                    # Use async connect for pymodbus 3.9.2 compatibility
+                    await client.connect()
                     _LOGGER.info("Reconnected to Modbus device")
                 except ConnectionError as connect_err:
                     _LOGGER.error("Failed to reconnect: %s", connect_err)
@@ -522,13 +523,14 @@ class SAXBatteryPilot:
             )
 
             # Use write_registers with slave parameter, similar to your working switch implementation
-            result = await self.hass.async_add_executor_job(
-                lambda: client.write_registers(
+            def _write_registers():
+                return client.write_registers(
                     41,  # Starting register (power control)
                     values,
                     slave=slave_id,
                 )
-            )
+
+            result = await self.hass.async_add_executor_job(_write_registers)
 
             if hasattr(result, "isError") and result.isError():
                 _LOGGER.error("Error sending combined power and PF command: %s", result)

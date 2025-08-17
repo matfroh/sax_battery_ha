@@ -37,7 +37,15 @@ async def async_setup_entry(
 
     # Create sensors for all data keys from the coordinator
     if coordinator.data:
-        entities.extend(SAXBatterySensor(coordinator, key) for key in coordinator.data)
+        for key in coordinator.data:
+            # Skip battery-specific keys for now - they'll be handled separately
+            if not key.startswith("battery_"):
+                entities.append(SAXBatterySensor(coordinator, key))
+            elif key.startswith("battery_a_"):
+                # Create battery-specific sensors with "Battery A" naming
+                entities.append(
+                    SAXBatterySensor(coordinator, key, battery_name="Battery A")
+                )
 
     async_add_entities(entities)
 
@@ -45,18 +53,31 @@ async def async_setup_entry(
 class SAXBatterySensor(CoordinatorEntity, SensorEntity):
     """SAX Battery sensor using coordinator."""
 
-    def __init__(self, coordinator: SAXBatteryCoordinator, data_key: str) -> None:
+    def __init__(
+        self,
+        coordinator: SAXBatteryCoordinator,
+        data_key: str,
+        battery_name: str | None = None,
+    ) -> None:
         """Initialize the SAX Battery sensor."""
         super().__init__(coordinator)
         self._data_key = data_key
+        self._battery_name = battery_name
         self._attr_unique_id = f"{DOMAIN}_{data_key}"
-        self._attr_name = self._get_sensor_name(data_key)
+
+        # Use battery-specific name if provided
+        if battery_name:
+            sensor_base_name = self._get_sensor_name(data_key.replace("battery_a_", ""))
+            self._attr_name = f"{battery_name} {sensor_base_name}"
+        else:
+            self._attr_name = self._get_sensor_name(data_key)
+
         self._attr_device_class, self._attr_native_unit_of_measurement = (
             self._get_device_class_and_unit(data_key)
         )
         self._attr_state_class = self._get_state_class(data_key)
 
-        # Add device info - use same device identifier as other platforms
+        # Add device info - use coordinator device_id for consistency
         self._attr_device_info = {
             "identifiers": {(DOMAIN, coordinator.device_id)},
             "name": "SAX Battery System",
@@ -107,6 +128,11 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
         self, key: str
     ) -> tuple[SensorDeviceClass | None, str | None]:
         """Get device class and unit for sensor."""
+        # Remove battery prefix for lookup
+        lookup_key = (
+            key.replace("battery_a_", "") if key.startswith("battery_a_") else key
+        )
+
         mapping = {
             "soc": (SensorDeviceClass.BATTERY, PERCENTAGE),
             "power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
@@ -157,15 +183,20 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             ),
             "smartmeter_total_power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
         }
-        return mapping.get(key, (None, None))
+        return mapping.get(lookup_key, (None, None))
 
     def _get_state_class(self, key: str) -> SensorStateClass | None:
         """Get state class for sensor."""
-        if key in ["energy_produced", "energy_consumed", "cycles"]:
+        # Remove battery prefix for lookup
+        lookup_key = (
+            key.replace("battery_a_", "") if key.startswith("battery_a_") else key
+        )
+
+        if lookup_key in ["energy_produced", "energy_consumed", "cycles"]:
             return SensorStateClass.TOTAL_INCREASING
-        if key == "capacity":  # Capacity should be TOTAL, not MEASUREMENT
+        if lookup_key == "capacity":  # Capacity should be TOTAL, not MEASUREMENT
             return SensorStateClass.TOTAL
-        if key in [
+        if lookup_key in [
             "soc",
             "power",
             "temp",
