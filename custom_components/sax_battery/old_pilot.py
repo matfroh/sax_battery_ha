@@ -25,7 +25,6 @@ from .const import (
     DEFAULT_MIN_SOC,
     DOMAIN,
     SAX_COMBINED_SOC,
-    SAX_COMBINED_POWER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -162,20 +161,17 @@ class SAXBatteryPilot:
         try:
             # Check if in manual mode
             if self.entry.data.get(CONF_MANUAL_CONTROL, False):
-                # Get current combined SOC for constraint checks
-                combined_soc = (
-                    self._data_manager.data.get("combined_soc", 0)
-                    if self._data_manager.data
-                    else 0
-                )
-
+                # Skip automatic calculations in manual mode
                 _LOGGER.debug(
-                    "Manual control mode active - Current power setting: %sW, Combined SOC: %s%%",
+                    "Manual control mode active - Current power setting: %sW",
                     self.calculated_power,
-                    combined_soc,
                 )
 
                 # Check SOC constraints for the current manual power setting
+                _LOGGER.debug(
+                    "Checking SOC constraints for manual power: %sW",
+                    self.calculated_power,
+                )
                 constrained_power = await self._apply_soc_constraints(
                     self.calculated_power
                 )
@@ -188,6 +184,10 @@ class SAXBatteryPilot:
                     # Update the power setting if constraints changed it
                     await self.send_power_command(constrained_power, 1.0)
                     self.calculated_power = constrained_power
+                    _LOGGER.info(
+                        "Manual power adjusted to %sW due to SOC constraints",
+                        constrained_power,
+                    )
                 else:
                     _LOGGER.debug(
                         "No SOC constraint adjustments needed for manual power %sW",
@@ -255,22 +255,60 @@ class SAXBatteryPilot:
                             "Could not convert state of %s to number", device_id
                         )
 
-            # Get current combined battery power from our coordinator
-            battery_power = (
-                self._data_manager.data.get("combined_power", 0.0)
-                if self._data_manager.data
-                else 0.0
+            # Get current battery power
+            battery_power_state = self.hass.states.get(
+                "sensor.sax_battery_combined_power"
             )
+            battery_power = 0.0
+            if battery_power_state is not None:
+                try:
+                    if battery_power_state.state not in (
+                        None,
+                        "unknown",
+                        "unavailable",
+                    ):
+                        battery_power = float(battery_power_state.state)
+                    else:
+                        _LOGGER.debug(
+                            "Battery power state is %s", battery_power_state.state
+                        )
+                except (ValueError, TypeError) as err:
+                    _LOGGER.warning(
+                        "Could not convert battery power '%s' to number: %s",
+                        battery_power_state.state,
+                        err,
+                    )
+            # Check if the combined_data attribute exists
+            if hasattr(self.master_battery._data_manager, "combined_data"):  # noqa: SLF001
+                # Get the SOC from the combined_data dictionary
+                master_soc = self.master_battery._data_manager.combined_data.get(  # noqa: SLF001
+                    SAX_COMBINED_SOC, 0
+                )
+            else:
+                master_soc = 0
 
-            # Get combined SOC for logging
-            combined_soc = (
-                self._data_manager.data.get("combined_soc", 0)
-                if self._data_manager.data
-                else 0
-            )
-            _LOGGER.debug("Current combined SOC: %s%%", combined_soc)
+            # Note: master_soc is used for logging context but not in calculations here
+            _LOGGER.debug("Current master SOC: %s%%", master_soc)
 
-            # Calculate target power (same logic as before)
+            # Calculate target power
+            #            net_power = total_power - battery_power
+            # Calculate target power
+            #            if total_power < 0 and priority_power >= 50:
+            #                net_power = total_power + priority_power - battery_power
+            #            elif (total_power < 0 and priority_power < 50) or total_power > 0:
+            #                net_power = total_power - battery_power
+            #            target_power = -net_power  # Negative because we want to offset consumption
+
+            #            _LOGGER.debug(f"Starting calculation with total_power={total_power}, priority_power={priority_power}, battery_power={battery_power}")
+            #
+            #            if total_power < 0 and priority_power >= 50:
+            #                _LOGGER.debug(f"Condition met: total_power < 0 and priority_power >= 50")
+            #                net_power = total_power + priority_power - battery_power
+            #                _LOGGER.debug(f"Calculated net_power = {total_power} + {priority_power} - {battery_power} = {net_power}")
+            #            elif (total_power < 0 and priority_power < 50) or total_power > 0:
+            #                _LOGGER.debug(f"Condition met: (total_power < 0 and priority_power < 50) or total_power > 0")
+            #                net_power = total_power - battery_power
+            #                _LOGGER.debug(f"Calculated net_power = {total_power} - {battery_power} = {net_power}")
             _LOGGER.debug(
                 "Starting calculation with total_power=%s, priority_power=%s, battery_power=%s",
                 total_power,
@@ -296,14 +334,17 @@ class SAXBatteryPilot:
                     net_power,
                 )
 
+            _LOGGER.debug("Final net_power value: %s", net_power)
+
             target_power = -net_power
+            _LOGGER.debug("Final net_power value: %s", target_power)
 
             # Apply limits
             target_power = max(
                 -self.max_discharge_power, min(self.max_charge_power, target_power)
             )
 
-            # Apply SOC constraints
+            # Apply SOC constraints before the "Update calculated power" line (line ~221)
             _LOGGER.debug("Pre-constraint target power: %sW", target_power)
             target_power = await self._apply_soc_constraints(target_power)
             _LOGGER.debug("Post-constraint target power: %sW", target_power)
@@ -328,17 +369,20 @@ class SAXBatteryPilot:
 
     async def _apply_soc_constraints(self, power_value: float) -> float:
         """Apply SOC constraints to a power value."""
-        # Get current combined SOC from coordinator data
-        combined_soc = (
-            self._data_manager.data.get("combined_soc", 0)
-            if self._data_manager.data
-            else 0
-        )
+        # Get current battery SOC
+        # Check if the combined_data attribute exists
+        if hasattr(self.master_battery._data_manager, "combined_data"):  # noqa: SLF001
+            # Get the SOC from the combined_data dictionary
+            master_soc = self.master_battery._data_manager.combined_data.get(  # noqa: SLF001
+                SAX_COMBINED_SOC, 0
+            )
+        else:
+            master_soc = 0
 
         # Log the input values
         _LOGGER.debug(
-            "Applying SOC constraints - Current combined SOC: %s%%, Min SOC: %s%%, Power: %sW",
-            combined_soc,
+            "Applying SOC constraints - Current SOC: %s%%, Min SOC: %s%%, Power: %sW",
+            master_soc,
             self.min_soc,
             power_value,
         )
@@ -347,17 +391,16 @@ class SAXBatteryPilot:
         original_value = power_value
 
         # Don't discharge below min SOC
-        if combined_soc < self.min_soc and power_value > 0:
+        if master_soc < self.min_soc and power_value > 0:
             power_value = 0
             _LOGGER.debug(
-                "Battery combined SOC below minimum (%s%%), preventing discharge",
-                combined_soc,
+                "Battery SOC at minimum (%s%%), preventing discharge", master_soc
             )
 
         # Don't charge above 100%
-        if combined_soc >= 100 and power_value < 0:
+        if master_soc >= 100 and power_value < 0:
             power_value = 0
-            _LOGGER.debug("Battery combined SOC at maximum (100%), preventing charge")
+            _LOGGER.debug("Battery SOC at maximum (100%), preventing charge")
 
         # Log if any change was made
         if original_value != power_value:
@@ -449,11 +492,10 @@ class SAXBatteryPilot:
                 return
 
             # Check if client is connected
-            if not hasattr(client, "connected") or not client.connected:
+            if not hasattr(client, "is_socket_open") or not client.is_socket_open():
                 _LOGGER.error("Modbus client socket not open, attempting to reconnect")
                 try:
-                    # Use async connect for pymodbus 3.9.2 compatibility
-                    await client.connect()
+                    client.connect()
                     _LOGGER.info("Reconnected to Modbus device")
                 except ConnectionError as connect_err:
                     _LOGGER.error("Failed to reconnect: %s", connect_err)
@@ -480,14 +522,13 @@ class SAXBatteryPilot:
             )
 
             # Use write_registers with slave parameter, similar to your working switch implementation
-            def _write_registers():
-                return client.write_registers(
+            result = await self.hass.async_add_executor_job(
+                lambda: client.write_registers(
                     41,  # Starting register (power control)
                     values,
                     slave=slave_id,
                 )
-
-            result = await self.hass.async_add_executor_job(_write_registers)
+            )
 
             if hasattr(result, "isError") and result.isError():
                 _LOGGER.error("Error sending combined power and PF command: %s", result)

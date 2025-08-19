@@ -83,17 +83,76 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
                 }
             }
 
-    async def _async_update_data(self) -> dict[str, float | int | None]:
-        """Update data via library."""
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch data from the hub."""
         try:
-            data = await self._refresh_modbus_data_with_retry(
-                ex_type=DataUpdateFailed,
-                limit=3,
-            )
-        except Exception as err:
-            raise DataUpdateFailed(f"Error communicating with hub: {err}") from err
+            # Get raw data from all batteries
+            raw_data = await self._hub.read_data()
+
+            # Calculate combined values for multi-battery systems
+            combined_data = self._calculate_combined_values(raw_data)
+
+            # Merge raw data with combined values
+            raw_data.update(combined_data)
+
+            return raw_data
+        except Exception as error:
+            raise UpdateFailed(f"Error communicating with API: {error}") from error
+
+    def _calculate_combined_values(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Calculate combined values from all batteries."""
+        combined = {}
+
+        # Calculate combined SOC (average of all batteries)
+        soc_values = []
+        soc_sum = 0.0
+        soc_count = 0
+
+        # Calculate combined power (sum of all batteries)
+        power_sum = 0.0
+
+        # Iterate through all configured batteries
+        for battery_id in self.batteries:
+            # Get SOC for this battery
+            soc_key = f"{battery_id}_soc"
+            if soc_key in data and data[soc_key] is not None:
+                soc_values.append(data[soc_key])
+                soc_sum += data[soc_key]
+                soc_count += 1
+
+            # Get power for this battery
+            power_key = f"{battery_id}_power"
+            if power_key in data and data[power_key] is not None:
+                power_sum += data[power_key]
+
+        # Calculate average SOC
+        if soc_count > 0:
+            combined["combined_soc"] = round(soc_sum / soc_count, 1)
         else:
-            return data or {}
+            combined["combined_soc"] = None
+
+        # Set combined power
+        combined["combined_power"] = round(power_sum, 1) if power_sum != 0 else 0.0
+
+        _LOGGER.debug(
+            "Calculated combined values: SOC=%s%% (from %d batteries), Power=%sW",
+            combined["combined_soc"],
+            soc_count,
+            combined["combined_power"],
+        )
+
+        return combined
+
+    @property
+    def combined_data(self) -> dict[str, Any]:
+        """Return combined data for backward compatibility."""
+        if not self.data:
+            return {}
+
+        return {
+            "sax_battery_combined_soc": self.data.get("combined_soc"),
+            "sax_battery_combined_power": self.data.get("combined_power"),
+        }
 
     async def _refresh_modbus_data_with_retry(
         self,

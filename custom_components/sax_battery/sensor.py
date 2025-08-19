@@ -35,11 +35,19 @@ async def async_setup_entry(
 
     entities: list[SensorEntity] = []
 
+    # Create combined sensors first (these aggregate data from all batteries)
+    entities.extend(
+        [
+            SAXBatteryCombinedSensor(coordinator, "combined_soc", "Combined SOC"),
+            SAXBatteryCombinedSensor(coordinator, "combined_power", "Combined Power"),
+        ]
+    )
+
     # Create sensors for all data keys from the coordinator
     if coordinator.data:
         for key in coordinator.data:
-            # Skip battery-specific keys for now - they'll be handled separately
-            if not key.startswith("battery_"):
+            # Skip battery-specific keys and combined keys - they'll be handled separately
+            if not key.startswith("battery_") and not key.startswith("combined_"):
                 entities.append(SAXBatterySensor(coordinator, key))
             else:
                 # Handle battery-specific sensors (battery_a_, battery_b_, etc.)
@@ -57,6 +65,54 @@ async def async_setup_entry(
                         break
 
     async_add_entities(entities)
+
+
+class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
+    """Combined sensor that aggregates data from all batteries."""
+
+    def __init__(
+        self,
+        coordinator: SAXBatteryCoordinator,
+        sensor_type: str,
+        name: str,
+    ) -> None:
+        """Initialize the combined sensor."""
+        super().__init__(coordinator)
+        self._sensor_type = sensor_type
+        self._attr_name = f"SAX Battery {name}"
+        self._attr_unique_id = f"{DOMAIN}_{sensor_type}"
+
+        # Set device class and unit based on sensor type
+        if sensor_type == "combined_soc":
+            self._attr_device_class = SensorDeviceClass.BATTERY
+            self._attr_native_unit_of_measurement = PERCENTAGE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+        elif sensor_type == "combined_power":
+            self._attr_device_class = SensorDeviceClass.POWER
+            self._attr_native_unit_of_measurement = UnitOfPower.WATT
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, coordinator.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the combined value."""
+        if not self.coordinator.data:
+            return None
+
+        if self._sensor_type == "combined_soc":
+            return self.coordinator.data.get("combined_soc")
+        elif self._sensor_type == "combined_power":
+            return self.coordinator.data.get("combined_power")
+
+        return None
 
 
 class SAXBatterySensor(CoordinatorEntity, SensorEntity):
