@@ -146,13 +146,14 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
     @property
     def combined_data(self) -> dict[str, Any]:
         """Return combined data for backward compatibility."""
-        if not self.data:
-            return {}
+        if not hasattr(self, "_combined_data"):
+            self._combined_data = {}
+        return self._combined_data
 
-        return {
-            "sax_battery_combined_soc": self.data.get("combined_soc"),
-            "sax_battery_combined_power": self.data.get("combined_power"),
-        }
+    @combined_data.setter
+    def combined_data(self, value: dict[str, Any]) -> None:
+        """Set combined data."""
+        self._combined_data = value
 
     async def _refresh_modbus_data_with_retry(
         self,

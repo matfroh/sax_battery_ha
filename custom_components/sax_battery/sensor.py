@@ -88,18 +88,20 @@ class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
         """Initialize the combined sensor."""
         super().__init__(coordinator)
         self._sensor_type = sensor_type
-        self._attr_name = f"SAX Battery {name}"
-        self._attr_unique_id = f"{DOMAIN}_{sensor_type}"
 
-        # Set device class and unit based on sensor type
+        # Match old naming convention exactly
         if sensor_type == "combined_soc":
+            self._attr_name = "SAX Battery Combined SOC"
             self._attr_device_class = SensorDeviceClass.BATTERY
             self._attr_native_unit_of_measurement = PERCENTAGE
             self._attr_state_class = SensorStateClass.MEASUREMENT
         elif sensor_type == "combined_power":
+            self._attr_name = "SAX Battery Combined Power"
             self._attr_device_class = SensorDeviceClass.POWER
             self._attr_native_unit_of_measurement = UnitOfPower.WATT
             self._attr_state_class = SensorStateClass.MEASUREMENT
+
+        self._attr_unique_id = f"{DOMAIN}_{sensor_type}"
 
         # Add device info
         self._attr_device_info = {
@@ -109,6 +111,11 @@ class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
             "model": "SAX Battery",
             "sw_version": "1.0",
         }
+
+    @property
+    def should_poll(self) -> bool:
+        """Return True if entity has to be polled for state."""
+        return True
 
     @property
     def native_value(self) -> float | None:
@@ -122,6 +129,84 @@ class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
             return self.coordinator.data.get("combined_power")
 
         return None
+
+    async def async_update(self) -> None:
+        """Update the sensor by recalculating combined values."""
+        # Force coordinator update first
+        await self.coordinator.async_request_refresh()
+
+        # Calculate combined values similar to old implementation
+        if self._sensor_type == "combined_power":
+            await self._calculate_combined_power()
+        elif self._sensor_type == "combined_soc":
+            await self._calculate_combined_soc()
+
+    async def _calculate_combined_power(self) -> None:
+        """Calculate combined power from all batteries."""
+        total_power = 0.0
+
+        # Sum power from all configured batteries
+        for battery_id in self.coordinator.batteries:
+            power_key = f"{battery_id}_power"
+            if (
+                self.coordinator.data
+                and power_key in self.coordinator.data
+                and self.coordinator.data[power_key] is not None
+            ):
+                total_power += self.coordinator.data[power_key]
+
+        # Store in coordinator data for consistency
+        if not self.coordinator.data:
+            self.coordinator.data = {}
+        self.coordinator.data["combined_power"] = round(total_power, 1)
+
+        # Also store in combined_data for backward compatibility
+        if not hasattr(self.coordinator, "combined_data"):
+            self.coordinator.combined_data = {}
+        self.coordinator.combined_data["sax_battery_combined_power"] = round(
+            total_power, 1
+        )
+
+        self._attr_native_value = round(total_power, 1)
+
+    async def _calculate_combined_soc(self) -> None:
+        """Calculate average SOC from all batteries."""
+        total_soc = 0.0
+        valid_batteries = 0
+
+        # Calculate average SOC from all configured batteries
+        for battery_id in self.coordinator.batteries:
+            soc_key = f"{battery_id}_soc"
+            if (
+                self.coordinator.data
+                and soc_key in self.coordinator.data
+                and self.coordinator.data[soc_key] is not None
+            ):
+                total_soc += self.coordinator.data[soc_key]
+                valid_batteries += 1
+
+        # Calculate average if we have valid data
+        if valid_batteries > 0:
+            combined_soc = round(total_soc / valid_batteries, 1)
+
+            # Store in coordinator data
+            if not self.coordinator.data:
+                self.coordinator.data = {}
+            self.coordinator.data["combined_soc"] = combined_soc
+
+            # Also store in combined_data for backward compatibility (matching old const)
+            if not hasattr(self.coordinator, "combined_data"):
+                self.coordinator.combined_data = {}
+            self.coordinator.combined_data["sax_battery_combined_soc"] = combined_soc
+
+            self._attr_native_value = combined_soc
+        else:
+            # No valid SOC data
+            if self.coordinator.data:
+                self.coordinator.data["combined_soc"] = None
+            if hasattr(self.coordinator, "combined_data"):
+                self.coordinator.combined_data["sax_battery_combined_soc"] = None
+            self._attr_native_value = None
 
 
 class SAXBatteryCumulativeEnergyProducedSensor(CoordinatorEntity, SensorEntity):

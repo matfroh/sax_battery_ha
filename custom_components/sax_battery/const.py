@@ -18,9 +18,13 @@ SAX_TEMP = "sax_temp"
 SAX_ENERGY_PRODUCED = "sax_energy_produced"
 SAX_ENERGY_CONSUMED = "sax_energy_consumed"
 
-# Combined sensor keys (for backward compatibility)
-SAX_COMBINED_POWER = "sax_battery_combined_power"
+# Combined sensor keys (matching old implementation exactly)
 SAX_COMBINED_SOC = "sax_battery_combined_soc"
+SAX_COMBINED_POWER = "sax_battery_combined_power"
+
+# Individual sensor keys (for reference)
+SAX_SOC = "soc"
+SAX_POWER = "power"
 
 CONF_PILOT_FROM_HA = "pilot_from_ha"
 CONF_LIMIT_POWER = "limit_power"
