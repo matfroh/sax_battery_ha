@@ -1,67 +1,44 @@
 """Switch platform for SAX Battery integration."""
 
-import asyncio
-from functools import cached_property
-import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    CONF_ENABLE_SOLAR_CHARGING,
-    CONF_MANUAL_CONTROL,
-    CONF_PILOT_FROM_HA,
-    DOMAIN,
-)
-
-_LOGGER = logging.getLogger(__name__)
+from .const import CONF_ENABLE_SOLAR_CHARGING, CONF_MANUAL_CONTROL, DOMAIN
+from .coordinator import SAXBatteryCoordinator
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the SAX Battery switches."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = []
+    coordinator: SAXBatteryCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    # Add pilot-related switches only if pilot control is enabled
-    if entry.data.get(CONF_PILOT_FROM_HA, False):
-        # Create both switches
-        solar_charging_switch = SAXBatterySolarChargingSwitch(coordinator, entry)
-        manual_control_switch = SAXBatteryManualControlSwitch(coordinator, entry)
-
-        # Set references to each other
-        solar_charging_switch.set_other_switch(manual_control_switch)
-        manual_control_switch.set_other_switch(solar_charging_switch)
-
-        entities.extend([solar_charging_switch, manual_control_switch])
-
-    # Add basic on/off switch for the battery
-    entities.append(SAXBatteryOnOffSwitch(coordinator))
+    entities = [
+        SAXBatterySolarChargingSwitch(coordinator),
+        SAXBatteryManualControlSwitch(coordinator),
+    ]
 
     async_add_entities(entities)
 
 
-class SAXBatteryOnOffSwitch(SwitchEntity):
-    """SAX Battery On/Off switch."""
+class SAXBatterySolarChargingSwitch(CoordinatorEntity, SwitchEntity):
+    """Switch to enable/disable solar charging."""
 
-    def __init__(self, coordinator: Any) -> None:
+    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
         """Initialize the switch."""
-        self._coordinator = coordinator
-        # Use the master battery for the switch functionality
-        self.battery = coordinator.master_battery
-        self._attr_unique_id = f"{DOMAIN}_battery_switch"
-        self._attr_name = "SAX Battery System"
+        super().__init__(coordinator)
+        self._attr_name = "SAX Battery Solar Charging"
+        self._attr_unique_id = f"{DOMAIN}_solar_charging"
+        self._attr_icon = "mdi:solar-power"
 
-        # Get the status register configuration from the coordinator
-        self._registers = coordinator.modbus_registers[
-            coordinator.master_battery.battery_id
-        ]["sax_status"]
-
-        # Add device info - use same device identifier as other platforms
+        # Add device info
         self._attr_device_info = {
             "identifiers": {(DOMAIN, coordinator.device_id)},
             "name": "SAX Battery System",
@@ -71,227 +48,106 @@ class SAXBatteryOnOffSwitch(SwitchEntity):
         }
 
     @property
-    def is_on(self) -> bool | None:
-        """Return True if the switch is on."""
-        # Get status from coordinator data instead of battery.data
-        if self._coordinator.data is None or "status" not in self._coordinator.data:
-            return None
-
-        # Get status value from coordinator
-        status = self._coordinator.data["status"]
-        if status is None:
-            return None
-
-        # Based on the original register config: state_on = 3, state_off = 1
-        return status == self._registers.get("state_on", 3)
+    def is_on(self) -> bool:
+        """Return true if the switch is on."""
+        return self.coordinator.config_entry.data.get(CONF_ENABLE_SOLAR_CHARGING, False)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the switch on."""
-        try:
-            client = self._coordinator.modbus_clients[self.battery.battery_id]
-            slave_id = self._registers.get("slave", 64)
+        """Turn the switch on (enable solar charging)."""
+        new_data = dict(self.coordinator.config_entry.data)
+        new_data[CONF_ENABLE_SOLAR_CHARGING] = True
+        # When solar charging is enabled, manual control must be disabled
+        new_data[CONF_MANUAL_CONTROL] = False
 
-            await asyncio.sleep(0.1)
+        self.hass.config_entries.async_update_entry(
+            self.coordinator.config_entry,
+            data=new_data,
+        )
 
-            _LOGGER.debug(
-                "Turning ON battery system - Writing %s to register %s",
-                self._registers["command_on"],
-                self._registers["address"],
-            )
+        # Update pilot mode
+        if hasattr(self.coordinator, "_pilot") and self.coordinator._pilot:
+            self.coordinator._pilot.solar_charging_enabled = True
+            await self.coordinator._pilot._async_update_pilot()
 
-            # Use write_registers (plural) instead of write_register
-            await self.battery.hass.async_add_executor_job(
-                lambda: client.write_registers(
-                    self._registers["address"],
-                    [self._registers["command_on"]],  # Note the list format
-                    slave=slave_id,
-                )
-            )
-
-            await asyncio.sleep(180)
-            # Request coordinator update instead of battery update
-            await self._coordinator.async_request_refresh()
-
-        except (ConnectionError, ValueError) as err:
-            _LOGGER.error("Failed to turn on battery system: %s", err)
+        self.async_write_ha_state()
+        # Trigger update of manual control switch
+        self.hass.async_create_task(self.coordinator.async_request_refresh())
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the switch off."""
-        try:
-            client = self._coordinator.modbus_clients[self.battery.battery_id]
-            slave_id = self._registers.get("slave", 64)
+        """Turn the switch off (disable solar charging)."""
+        new_data = dict(self.coordinator.config_entry.data)
+        new_data[CONF_ENABLE_SOLAR_CHARGING] = False
 
-            await asyncio.sleep(0.1)
-
-            _LOGGER.debug(
-                "Turning OFF battery system - Writing %s to register %s",
-                self._registers["command_off"],
-                self._registers["address"],
-            )
-
-            # Use write_registers (plural) instead of write_register
-            await self.battery.hass.async_add_executor_job(
-                lambda: client.write_registers(
-                    self._registers["address"],
-                    [self._registers["command_off"]],  # Note the list format
-                    slave=slave_id,
-                )
-            )
-
-            await asyncio.sleep(120)
-            # Request coordinator update instead of battery update
-            await self._coordinator.async_request_refresh()
-
-        except (ConnectionError, ValueError) as err:
-            _LOGGER.error("Failed to turn off battery system: %s", err)
-
-    @cached_property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self._coordinator.data is not None and "status" in (
-            self._coordinator.data or {}
+        self.hass.config_entries.async_update_entry(
+            self.coordinator.config_entry,
+            data=new_data,
         )
+
+        # Update pilot mode
+        if hasattr(self.coordinator, "_pilot") and self.coordinator._pilot:
+            self.coordinator._pilot.solar_charging_enabled = False
+            await self.coordinator._pilot._async_update_pilot()
+
+        self.async_write_ha_state()
+
+
+class SAXBatteryManualControlSwitch(CoordinatorEntity, SwitchEntity):
+    """Switch to enable/disable manual control mode."""
+
+    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
+        """Initialize the switch."""
+        super().__init__(coordinator)
+        self._attr_name = "SAX Battery Manual Control"
+        self._attr_unique_id = f"{DOMAIN}_manual_control"
+        self._attr_icon = "mdi:hand-back-right"
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, coordinator.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
 
     @property
-    def should_poll(self) -> bool:
-        """Return True if entity has to be polled for state."""
-        return False  # Use coordinator updates instead
-
-    async def async_update(self) -> None:
-        """Update the switch state."""
-        # No need to manually update - coordinator handles this
-
-
-class SAXBatterySolarChargingSwitch(SwitchEntity):
-    """Switch to control solar charging for SAX Battery."""
-
-    def __init__(self, coordinator: Any, entry: Any) -> None:
-        """Initialize the switch."""
-        self._coordinator = coordinator
-        self._data_manager = coordinator  # For compatibility
-        self._entry = entry
-        self._attr_unique_id = f"{DOMAIN}_solar_charging"
-        self._attr_name = "Solar Charging"
-        self._attr_is_on = entry.data.get(CONF_ENABLE_SOLAR_CHARGING, True)
-        self._other_switch: SwitchEntity | None = (
-            None  # Reference to the manual control switch
-        )
-
-        # Add device info - use coordinator device_id for consistency
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
-
-    def set_other_switch(self, other_switch: Any) -> None:
-        """Set reference to the other switch (manual control)."""
-        self._other_switch = other_switch
+    def is_on(self) -> bool:
+        """Return true if the switch is on."""
+        return self.coordinator.config_entry.data.get(CONF_MANUAL_CONTROL, False)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on solar charging."""
-        try:
-            # Turn off manual control if it's on
-            if self._other_switch is not None and self._other_switch.is_on is True:
-                await self._other_switch.async_turn_off()
+        """Turn the switch on (enable manual control)."""
+        new_data = dict(self.coordinator.config_entry.data)
+        new_data[CONF_MANUAL_CONTROL] = True
+        # When manual control is enabled, solar charging must be disabled
+        new_data[CONF_ENABLE_SOLAR_CHARGING] = False
 
-            # Call the pilot's set_solar_charging method
-            await self._data_manager.pilot.set_solar_charging(True)
-
-            self._attr_is_on = True
-            self.async_write_ha_state()
-
-            # Update configuration entry data
-            data = dict(self._entry.data)
-            data[CONF_ENABLE_SOLAR_CHARGING] = True
-            self.hass.config_entries.async_update_entry(self._entry, data=data)
-
-        except (ConnectionError, ValueError) as err:
-            _LOGGER.error("Failed to enable solar charging: %s", err)
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off solar charging."""
-        try:
-            # Call the pilot's set_solar_charging method
-            await self._data_manager.pilot.set_solar_charging(False)
-
-            self._attr_is_on = False
-            self.async_write_ha_state()
-
-            # Update configuration entry data
-            data = dict(self._entry.data)
-            data[CONF_ENABLE_SOLAR_CHARGING] = False
-            self.hass.config_entries.async_update_entry(self._entry, data=data)
-
-        except (ConnectionError, ValueError) as err:
-            _LOGGER.error("Failed to disable solar charging: %s", err)
-
-
-class SAXBatteryManualControlSwitch(SwitchEntity):
-    """Switch to enable/disable manual control for SAX Battery."""
-
-    def __init__(self, coordinator: Any, entry: Any) -> None:
-        """Initialize the switch."""
-        self._coordinator = coordinator
-        self._data_manager = coordinator  # For compatibility
-        self._entry = entry
-        self._attr_unique_id = f"{DOMAIN}_manual_control"
-        self._attr_name = "Manual Control"
-        self._attr_is_on = False  # Default to off
-        self._other_switch: SwitchEntity | None = (
-            None  # Reference to the solar charging switch
+        self.hass.config_entries.async_update_entry(
+            self.coordinator.config_entry,
+            data=new_data,
         )
 
-        # Add device info - use coordinator device_id for consistency
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
+        # Update pilot mode
+        if hasattr(self.coordinator, "_pilot") and self.coordinator._pilot:
+            self.coordinator._pilot.solar_charging_enabled = False
+            await self.coordinator._pilot._async_update_pilot()
 
-    def set_other_switch(self, other_switch: Any) -> None:
-        """Set reference to the other switch (solar charging)."""
-        self._other_switch = other_switch
-
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on manual control."""
-        try:
-            # Turn off solar charging switch if it's on
-            if self._other_switch is not None and self._other_switch.is_on is True:
-                await self._other_switch.async_turn_off()
-            elif hasattr(self._data_manager, "pilot"):
-                # Directly turn off solar charging if the switch isn't available
-                await self._data_manager.pilot.set_solar_charging(False)
-
-            self._attr_is_on = True
-            self.async_write_ha_state()
-
-            # Update configuration entry data
-            data = dict(self._entry.data)
-            data[CONF_MANUAL_CONTROL] = True
-            self.hass.config_entries.async_update_entry(self._entry, data=data)
-
-        except (ConnectionError, ValueError) as err:
-            _LOGGER.error("Failed to enable manual control: %s", err)
+        self.async_write_ha_state()
+        # Trigger update of solar charging switch
+        self.hass.async_create_task(self.coordinator.async_request_refresh())
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off manual control."""
-        try:
-            # Turn on solar charging when manual control is disabled
-            if hasattr(self._data_manager, "pilot"):
-                await self._data_manager.pilot.set_solar_charging(True)
+        """Turn the switch off (disable manual control)."""
+        new_data = dict(self.coordinator.config_entry.data)
+        new_data[CONF_MANUAL_CONTROL] = False
 
-            self._attr_is_on = False
-            self.async_write_ha_state()
+        self.hass.config_entries.async_update_entry(
+            self.coordinator.config_entry,
+            data=new_data,
+        )
 
-            # Update configuration entry data
-            data = dict(self._entry.data)
-            data[CONF_MANUAL_CONTROL] = False
-            self.hass.config_entries.async_update_entry(self._entry, data=data)
+        # Force pilot back to automatic mode
+        if hasattr(self.coordinator, "_pilot") and self.coordinator._pilot:
+            await self.coordinator._pilot._async_update_pilot()
 
-        except (ConnectionError, ValueError) as err:
-            _LOGGER.error("Failed to disable manual control: %s", err)
+        self.async_write_ha_state()

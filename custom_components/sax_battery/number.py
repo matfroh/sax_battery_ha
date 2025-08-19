@@ -314,9 +314,8 @@ class SAXBatteryManualPowerEntity(NumberEntity):
     def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
         """Initialize the entity."""
         self._coordinator = coordinator
-        self._data_manager = coordinator  # For compatibility
-        self._attr_unique_id = f"{DOMAIN}_manual_power_{coordinator.device_id}"
-        self._attr_name = "Battery Manual Power"
+        self._attr_unique_id = f"{DOMAIN}_battery_manual_power"
+        self._attr_name = "SAX Battery Manual Power"
 
         battery_count = len(coordinator.batteries)
         max_charge_power = battery_count * 3500  # 3.5kW per battery for charge
@@ -326,24 +325,18 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         self._attr_native_max_value = max_charge_power  # max charge power
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_native_value = 0  # Use _attr_native_value instead of _value
+        self._attr_native_value = 0.0
         self._attr_mode = NumberMode.SLIDER
         self._attr_icon = "mdi:battery"
-        self._attr_available = coordinator.entry.data.get(CONF_MANUAL_CONTROL, False)
 
-        # Add device info - manual power entity uses coordinator device_id
+        # Add device info
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._coordinator.device_id)},
+            "identifiers": {(DOMAIN, coordinator.device_id)},
             "name": "SAX Battery System",
             "manufacturer": "SAX",
             "model": "SAX Battery",
             "sw_version": "1.0",
         }
-
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks."""
-        # Update icon based on value
-        self._update_icon()
 
     def _update_icon(self) -> None:
         """Update the icon based on current value."""
@@ -358,6 +351,14 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         """Set the manual power value."""
         self._attr_native_value = value
         self._update_icon()
-        if hasattr(self._data_manager, "pilot"):
-            await self._data_manager.pilot.set_manual_power(value)
+
+        # If manual control is enabled, immediately apply the new power value
+        if self._coordinator.config_entry.data.get(CONF_MANUAL_CONTROL, False):
+            if hasattr(self._coordinator, "_pilot") and self._coordinator._pilot:
+                _LOGGER.debug("Manual power changed to %sW, updating pilot", value)
+                await self._coordinator._pilot._async_update_pilot()
+            else:
+                _LOGGER.warning("Pilot not available for manual power update")
+
         self.async_write_ha_state()
+        _LOGGER.debug("Manual power set to %sW", value)

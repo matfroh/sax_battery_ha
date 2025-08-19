@@ -162,6 +162,28 @@ class SAXBatteryPilot:
         try:
             # Check if in manual mode
             if self.entry.data.get(CONF_MANUAL_CONTROL, False):
+                # Get the manual power value from the number entity
+                manual_power_entity_id = f"number.{DOMAIN}_battery_manual_power"
+                manual_power_state = self.hass.states.get(manual_power_entity_id)
+
+                if manual_power_state and manual_power_state.state not in (
+                    "unknown",
+                    "unavailable",
+                ):
+                    try:
+                        manual_power = float(manual_power_state.state)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid manual power value: %s", manual_power_state.state
+                        )
+                        return
+                else:
+                    _LOGGER.warning(
+                        "Manual power entity not found or unavailable: %s",
+                        manual_power_entity_id,
+                    )
+                    return
+
                 # Get current combined SOC for constraint checks
                 combined_soc = (
                     self._data_manager.data.get("combined_soc", 0)
@@ -170,29 +192,25 @@ class SAXBatteryPilot:
                 )
 
                 _LOGGER.debug(
-                    "Manual control mode active - Current power setting: %sW, Combined SOC: %s%%",
-                    self.calculated_power,
+                    "Manual control mode active - Manual power setting: %sW, Combined SOC: %s%%",
+                    manual_power,
                     combined_soc,
                 )
 
-                # Check SOC constraints for the current manual power setting
-                constrained_power = await self._apply_soc_constraints(
-                    self.calculated_power
-                )
-                if constrained_power != self.calculated_power:
+                # Apply SOC constraints to the manual power setting
+                constrained_power = await self._apply_soc_constraints(manual_power)
+                if constrained_power != manual_power:
                     _LOGGER.info(
-                        "Manual power needs adjustment from %sW to %sW due to SOC constraints",
-                        self.calculated_power,
+                        "Manual power adjusted from %sW to %sW due to SOC constraints",
+                        manual_power,
                         constrained_power,
                     )
-                    # Update the power setting if constraints changed it
-                    await self.send_power_command(constrained_power, 1.0)
-                    self.calculated_power = constrained_power
-                else:
-                    _LOGGER.debug(
-                        "No SOC constraint adjustments needed for manual power %sW",
-                        self.calculated_power,
-                    )
+
+                # Send the constrained manual power to the battery
+                await self.send_power_command(constrained_power, 1.0)
+                self.calculated_power = constrained_power
+
+                _LOGGER.debug("Manual power %sW sent to battery", constrained_power)
                 return
 
             # Get current power sensor state
