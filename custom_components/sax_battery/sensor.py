@@ -1,5 +1,6 @@
 """Sensor platform for SAX Battery integration."""
 
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -40,6 +41,14 @@ async def async_setup_entry(
         [
             SAXBatteryCombinedSensor(coordinator, "combined_soc", "Combined SOC"),
             SAXBatteryCombinedSensor(coordinator, "combined_power", "Combined Power"),
+        ]
+    )
+
+    # Add cumulative energy sensors for the system (only once per system)
+    entities.extend(
+        [
+            SAXBatteryCumulativeEnergyProducedSensor(coordinator),
+            SAXBatteryCumulativeEnergyConsumedSensor(coordinator),
         ]
     )
 
@@ -113,6 +122,134 @@ class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
             return self.coordinator.data.get("combined_power")
 
         return None
+
+
+class SAXBatteryCumulativeEnergyProducedSensor(CoordinatorEntity, SensorEntity):
+    """SAX Battery Cumulative Energy Produced sensor for the system."""
+
+    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+        self._attr_name = "SAX Battery Cumulative Energy Produced"
+        self._attr_unique_id = f"{DOMAIN}_cumulative_energy_produced"
+        self._last_update_time: datetime | None = None
+        self._cumulative_value = 0.0
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, coordinator.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def native_value(self) -> float:
+        """Return the native value of the sensor."""
+        return self._cumulative_value
+
+    async def async_update(self) -> None:
+        """Update the sensor."""
+        # Get current time
+        current_time = datetime.now()
+
+        # Only update the cumulative value once per hour
+        if (
+            self._last_update_time is None
+            or (current_time - self._last_update_time).total_seconds() >= 3600
+        ):  # 3600 seconds = 1 hour
+            # Get the current energy produced value from master battery
+            # Use the first available energy_produced value from any battery
+            current_value = None
+
+            if self.coordinator.data:
+                # Try to get from master battery first, then from any available battery
+                current_value = self.coordinator.data.get("energy_produced")
+
+                # If not available from master, try battery-specific values
+                if current_value is None:
+                    for battery_id in ["battery_a", "battery_b", "battery_c"]:
+                        key = f"{battery_id}_energy_produced"
+                        if (
+                            key in self.coordinator.data
+                            and self.coordinator.data[key] is not None
+                        ):
+                            current_value = self.coordinator.data[key]
+                            break
+
+            if current_value is not None:
+                # Update the cumulative value
+                self._cumulative_value += current_value
+                # Update the last update time
+                self._last_update_time = current_time
+
+
+class SAXBatteryCumulativeEnergyConsumedSensor(CoordinatorEntity, SensorEntity):
+    """SAX Battery Cumulative Energy Consumed sensor for the system."""
+
+    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+        self._attr_name = "SAX Battery Cumulative Energy Consumed"
+        self._attr_unique_id = f"{DOMAIN}_cumulative_energy_consumed"
+        self._last_update_time: datetime | None = None
+        self._cumulative_value = 0.0
+
+        # Add device info
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, coordinator.device_id)},
+            "name": "SAX Battery System",
+            "manufacturer": "SAX",
+            "model": "SAX Battery",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def native_value(self) -> float:
+        """Return the native value of the sensor."""
+        return self._cumulative_value
+
+    async def async_update(self) -> None:
+        """Update the sensor."""
+        # Get current time
+        current_time = datetime.now()
+
+        # Only update the cumulative value once per hour
+        if (
+            self._last_update_time is None
+            or (current_time - self._last_update_time).total_seconds() >= 3600
+        ):  # 3600 seconds = 1 hour
+            # Get the current energy consumed value from master battery
+            # Use the first available energy_consumed value from any battery
+            current_value = None
+
+            if self.coordinator.data:
+                # Try to get from master battery first, then from any available battery
+                current_value = self.coordinator.data.get("energy_consumed")
+
+                # If not available from master, try battery-specific values
+                if current_value is None:
+                    for battery_id in ["battery_a", "battery_b", "battery_c"]:
+                        key = f"{battery_id}_energy_consumed"
+                        if (
+                            key in self.coordinator.data
+                            and self.coordinator.data[key] is not None
+                        ):
+                            current_value = self.coordinator.data[key]
+                            break
+
+            if current_value is not None:
+                # Update the cumulative value
+                self._cumulative_value += current_value
+                # Update the last update time
+                self._last_update_time = current_time
 
 
 class SAXBatterySensor(CoordinatorEntity, SensorEntity):
