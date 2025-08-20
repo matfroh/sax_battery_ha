@@ -50,8 +50,7 @@ async def async_setup_entry(
             [
                 SAXBatteryPilotIntervalNumber(coordinator, entry),
                 SAXBatteryMinSOCNumber(coordinator, entry),
-                # Always add manual power entity when pilot is enabled
-                SAXBatteryManualPowerEntity(coordinator),
+                SAXBatteryManualPowerEntity(coordinator),  # Add this line
             ]
         )
 
@@ -121,17 +120,39 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
     async def _write_value(self, value: float) -> None:
         """Write the value to the hardware."""
         try:
-            client = self._coordinator.modbus_clients[
-                self._coordinator.master_battery.battery_id
-            ]
+            # Get the modbus client from the master battery's data manager
+            master_battery = self._coordinator.master_battery
+            if not master_battery or not hasattr(master_battery, "_data_manager"):
+                _LOGGER.error("Master battery or data manager not available")
+                return
+
+            client = master_battery._data_manager.modbus_clients.get(
+                master_battery.battery_id
+            )
+
+            if client is None:
+                _LOGGER.error(
+                    "No Modbus client found for battery %s", master_battery.battery_id
+                )
+                return
+
+            # Check if client is connected
+            if not hasattr(client, "connected") or not client.connected:
+                _LOGGER.error("Modbus client not connected, attempting to reconnect")
+                try:
+                    await client.connect()
+                    _LOGGER.info("Reconnected to Modbus device")
+                except ConnectionError as connect_err:
+                    _LOGGER.error("Failed to reconnect: %s", connect_err)
+                    return
 
             def _write_register() -> bool:
                 result = client.write_register(
-                    address=49,
+                    address=49,  # Max charge power register
                     value=int(value),
-                    slave=64,  # Slave ID
+                    slave=64,
                 )
-                return hasattr(result, "function_code")
+                return not (hasattr(result, "isError") and result.isError())
 
             success = await self.hass.async_add_executor_job(_write_register)
             if success:
@@ -140,7 +161,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 self.async_write_ha_state()
                 _LOGGER.debug("Successfully wrote max charge value: %s", value)
             else:
-                _LOGGER.error("Failed to write max charge value")
+                _LOGGER.error("Failed to write max charge value to register")
 
         except (ConnectionError, TimeoutError, ValueError) as err:
             _LOGGER.error("Failed to write max charge value: %s", err)
@@ -209,17 +230,39 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
     async def _write_value(self, value: float) -> None:
         """Write the value to the hardware."""
         try:
-            client = self._coordinator.modbus_clients[
-                self._coordinator.master_battery.battery_id
-            ]
+            # Get the modbus client from the master battery's data manager
+            master_battery = self._coordinator.master_battery
+            if not master_battery or not hasattr(master_battery, "_data_manager"):
+                _LOGGER.error("Master battery or data manager not available")
+                return
+
+            client = master_battery._data_manager.modbus_clients.get(
+                master_battery.battery_id
+            )
+
+            if client is None:
+                _LOGGER.error(
+                    "No Modbus client found for battery %s", master_battery.battery_id
+                )
+                return
+
+            # Check if client is connected
+            if not hasattr(client, "connected") or not client.connected:
+                _LOGGER.error("Modbus client not connected, attempting to reconnect")
+                try:
+                    await client.connect()
+                    _LOGGER.info("Reconnected to Modbus device")
+                except ConnectionError as connect_err:
+                    _LOGGER.error("Failed to reconnect: %s", connect_err)
+                    return
 
             def _write_register() -> bool:
                 result = client.write_register(
-                    address=50,
+                    address=50,  # Max discharge power register
                     value=int(value),
-                    slave=64,  # Slave ID
+                    slave=64,
                 )
-                return hasattr(result, "function_code")
+                return not (hasattr(result, "isError") and result.isError())
 
             success = await self.hass.async_add_executor_job(_write_register)
             if success:
@@ -228,9 +271,9 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 self.async_write_ha_state()
                 _LOGGER.debug("Successfully wrote max discharge value: %s", value)
             else:
-                _LOGGER.error("Failed to write max discharge value")
+                _LOGGER.error("Failed to write max discharge value to register")
 
-        except (ConnectionError, TimeoutError) as err:
+        except (ConnectionError, TimeoutError, ValueError) as err:
             _LOGGER.error("Failed to write max discharge value: %s", err)
 
 

@@ -498,12 +498,16 @@ class SAXBatteryPilot:
                     _LOGGER.error("Failed to reconnect: %s", connect_err)
                     return
 
-            # Convert power to integer for Modbus
-            power_int = int(power) & 0xFFFF
+            # Convert power to signed 16-bit integer for Modbus
+            # Handle negative values properly using two's complement
+            if power < 0:
+                power_int = int(65536 + power)  # Convert negative to unsigned 16-bit
+            else:
+                power_int = int(power) & 0xFFFF
 
-            # Convert PF to integer (assuming PF is a small decimal like 0.95)
-            # Scale PF by 1000 to preserve precision
-            pf_int = int(power_factor * 10) & 0xFFFF
+            # Convert PF to integer (scale by 100 to preserve 2 decimal places)
+            # Assuming PF is between 0.0 and 1.0
+            pf_int = int(power_factor * 100) & 0xFFFF
 
             # Prepare data for writing both registers at once
             values = [power_int, pf_int]
@@ -512,13 +516,15 @@ class SAXBatteryPilot:
             slave_id = 64
 
             _LOGGER.debug(
-                "Sending combined command: Power=%s, PF=%s to registers 41-42 with slave=%s",
+                "Sending combined command: Power=%s (original: %s), PF=%s (original: %s) to registers 41-42 with slave=%s",
                 power_int,
+                power,
                 pf_int,
+                power_factor,
                 slave_id,
             )
 
-            # Use write_registers with slave parameter, similar to your working switch implementation
+            # Use write_registers with slave parameter
             def _write_registers():
                 return client.write_registers(
                     41,  # Starting register (power control)
