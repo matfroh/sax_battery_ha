@@ -410,6 +410,31 @@ class SAXBatteryPilot:
         self.calculated_power = power_value
         _LOGGER.info("Manual power set to %sW", power_value)
 
+    async def set_interval(self, interval: float) -> None:
+        """Set the pilot update interval."""
+        self.update_interval = int(interval)
+
+        # Restart the timer with new interval
+        if self._running and self._remove_interval_update is not None:
+            self._remove_interval_update()
+            self._remove_interval_update = async_track_time_interval(
+                self.hass,
+                self._async_update_pilot,
+                timedelta(seconds=self.update_interval),
+            )
+
+        _LOGGER.debug("Pilot update interval changed to %ss", self.update_interval)
+
+    async def set_min_soc(self, min_soc: float) -> None:
+        """Set the minimum SOC constraint."""
+        self.min_soc = min_soc
+
+        # Apply new constraint immediately if running
+        if self._running:
+            await self._async_update_pilot()
+
+        _LOGGER.debug("Minimum SOC changed to %s%%", self.min_soc)
+
     async def _apply_manual_power_with_constraints(self) -> None:
         """Apply the stored manual power value with current SOC constraints."""
         # Use the current calculated power as the manual power value

@@ -50,12 +50,10 @@ async def async_setup_entry(
             [
                 SAXBatteryPilotIntervalNumber(coordinator, entry),
                 SAXBatteryMinSOCNumber(coordinator, entry),
+                # Always add manual power entity when pilot is enabled
+                SAXBatteryManualPowerEntity(coordinator),
             ]
         )
-
-    # Add manual control entity if manual_control is enabled
-    if entry.data.get(CONF_MANUAL_CONTROL, False):
-        entities.append(SAXBatteryManualPowerEntity(coordinator))
 
     async_add_entities(entities)
 
@@ -267,10 +265,15 @@ class SAXBatteryPilotIntervalNumber(NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Update the interval."""
         self._attr_native_value = value
+
         # Update pilot interval if available
-        if hasattr(self._data_manager, "pilot"):
-            await self._data_manager.pilot.set_interval(value)
+        if hasattr(self._coordinator, "_pilot") and self._coordinator._pilot:
+            await self._coordinator._pilot.set_interval(value)
+        else:
+            _LOGGER.warning("Pilot not available for interval update")
+
         self.async_write_ha_state()
+        _LOGGER.debug("Pilot interval set to %s seconds", value)
 
 
 class SAXBatteryMinSOCNumber(NumberEntity):
@@ -302,10 +305,15 @@ class SAXBatteryMinSOCNumber(NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Update the minimum SOC."""
         self._attr_native_value = value
+
         # Update pilot minimum SOC if available
-        if hasattr(self._data_manager, "pilot"):
-            await self._data_manager.pilot.set_min_soc(value)
+        if hasattr(self._coordinator, "_pilot") and self._coordinator._pilot:
+            await self._coordinator._pilot.set_min_soc(value)
+        else:
+            _LOGGER.warning("Pilot not available for min SOC update")
+
         self.async_write_ha_state()
+        _LOGGER.debug("Minimum SOC set to %s%%", value)
 
 
 class SAXBatteryManualPowerEntity(NumberEntity):
