@@ -186,8 +186,8 @@ class SAXBatteryPilot:
 
                 # Get current combined SOC for constraint checks
                 combined_soc = (
-                    self._data_manager.data.get("combined_soc", 0)
-                    if self._data_manager.data
+                    self.sax_data.data.get("combined_soc", 0)
+                    if self.sax_data.data
                     else 0
                 )
 
@@ -275,16 +275,14 @@ class SAXBatteryPilot:
 
             # Get current combined battery power from our coordinator
             battery_power = (
-                self._data_manager.data.get("combined_power", 0.0)
-                if self._data_manager.data
+                self.sax_data.data.get("combined_power", 0.0)
+                if self.sax_data.data
                 else 0.0
             )
 
             # Get combined SOC for logging
             combined_soc = (
-                self._data_manager.data.get("combined_soc", 0)
-                if self._data_manager.data
-                else 0
+                self.sax_data.data.get("combined_soc", 0) if self.sax_data.data else 0
             )
             _LOGGER.debug("Current combined SOC: %s%%", combined_soc)
 
@@ -348,9 +346,7 @@ class SAXBatteryPilot:
         """Apply SOC constraints to a power value."""
         # Get current combined SOC from coordinator data
         combined_soc = (
-            self._data_manager.data.get("combined_soc", 0)
-            if self._data_manager.data
-            else 0
+            self.sax_data.data.get("combined_soc", 0) if self.sax_data.data else 0
         )
 
         # Log the input values
