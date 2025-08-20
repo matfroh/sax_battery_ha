@@ -405,11 +405,13 @@ class SAXBatteryManualPowerEntity(NumberEntity):
 
         # If manual control is enabled, immediately apply the new power value
         if self._coordinator.config_entry.data.get(CONF_MANUAL_CONTROL, False):
-            if hasattr(self._coordinator, "_pilot") and self._coordinator._pilot:
-                _LOGGER.debug("Manual power changed to %sW, updating pilot", value)
-                await self._coordinator._pilot._async_update_pilot()
+            # Access pilot through sax_data instead of coordinator
+            sax_data = self.hass.data[DOMAIN][self._coordinator.config_entry.entry_id]
+            if hasattr(sax_data, "pilot") and sax_data.pilot:
+                _LOGGER.debug(f"Manual power changed to {value}W, updating pilot")
+                await sax_data.pilot._async_update_pilot()
             else:
                 _LOGGER.warning("Pilot not available for manual power update")
 
         self.async_write_ha_state()
-        _LOGGER.debug("Manual power set to %sW", value)
+        _LOGGER.debug(f"Manual power set to {value}W")

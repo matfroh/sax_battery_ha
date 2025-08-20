@@ -500,13 +500,13 @@ class SAXBatteryPilot:
 
             # Convert power to signed 16-bit integer for Modbus
             # Clamp to valid range first
-            power = max(-32767, min(32767, power))
+            power_clamped = max(-32767, min(32767, power))
 
-            # Convert to signed 16-bit integer
-            if power < 0:
-                power_int = int(power) + 65536  # Two's complement for negative values
+            # For negative values, convert to unsigned 16-bit using two's complement
+            if power_clamped < 0:
+                power_int = 65536 + int(power_clamped)  # Convert to unsigned 16-bit
             else:
-                power_int = int(power)
+                power_int = int(power_clamped)
 
             # Convert PF to integer - ensure it's positive and reasonable
             # PF should be between 0.0 and 1.0, scale by 100
@@ -521,31 +521,26 @@ class SAXBatteryPilot:
             slave_id = 64
 
             _LOGGER.debug(
-                "Sending combined command: Power=%s (original: %s), PF=%s (original: %s) to registers 41-42 with slave=%s",
-                power_int,
-                power,
-                pf_int,
-                power_factor,
-                slave_id,
+                f"Sending combined command: Power={power_int} (original: {power}), PF={pf_int} (original: {power_factor}) to registers 41-42 with slave={slave_id}"
             )
 
             # Use write_registers with slave parameter
-            def _write_registers():
-                return client.write_registers(
+            async def _write_registers():
+                return await client.write_registers(
                     41,  # Starting register (power control)
                     values,
                     slave=slave_id,
                 )
 
-            result = await self.hass.async_add_executor_job(_write_registers)
+            result = await _write_registers()
 
             if hasattr(result, "isError") and result.isError():
-                _LOGGER.error("Error sending combined power and PF command: %s", result)
+                _LOGGER.error(f"Error sending combined power and PF command: {result}")
             else:
                 _LOGGER.debug("Successfully sent combined power and PF command")
 
         except (ConnectionError, ValueError, TypeError) as err:
-            _LOGGER.error("Failed to send power command: %s", err)
+            _LOGGER.error(f"Failed to send power command: {err}")
 
 
 class SAXBatteryPilotPowerEntity(NumberEntity):
