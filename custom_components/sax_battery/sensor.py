@@ -52,26 +52,51 @@ async def async_setup_entry(
         ]
     )
 
+    # Keep track of created sensors to avoid duplicates
+    created_sensors: set[str] = set()
+
     # Create sensors for all data keys from the coordinator
     if coordinator.data:
         for key in coordinator.data:
-            # Skip battery-specific keys and combined keys - they'll be handled separately
-            if not key.startswith("battery_") and not key.startswith("combined_"):
-                entities.append(SAXBatterySensor(coordinator, key))
-            else:
-                # Handle battery-specific sensors (battery_a_, battery_b_, etc.)
+            # Skip combined keys as they're handled above
+            if key.startswith("combined_"):
+                continue
+
+            # Handle battery-specific sensors (battery_a_, battery_b_, etc.)
+            if key.startswith("battery_"):
                 for battery_prefix in ["battery_a_", "battery_b_", "battery_c_"]:
                     if key.startswith(battery_prefix):
-                        battery_letter = battery_prefix.split("_")[
-                            1
-                        ].upper()  # Extract A, B, C
+                        battery_letter = battery_prefix.split("_")[1].upper()
                         battery_name = f"Battery {battery_letter}"
-                        entities.append(
-                            SAXBatterySensor(
-                                coordinator, key, battery_name=battery_name
+
+                        # Create unique sensor key to track duplicates
+                        sensor_key = f"battery_{battery_letter.lower()}_{key.replace(battery_prefix, '')}"
+
+                        if sensor_key not in created_sensors:
+                            entities.append(
+                                SAXBatterySensor(
+                                    coordinator, key, battery_name=battery_name
+                                )
                             )
-                        )
+                            created_sensors.add(sensor_key)
                         break
+            else:
+                # Handle non-battery-specific keys
+                # Only create if this isn't duplicating a battery-specific sensor
+                sensor_base_key = key
+
+                # Check if this sensor would duplicate a battery-specific one
+                is_duplicate = False
+                for battery_id in ["battery_a", "battery_b", "battery_c"]:
+                    battery_specific_key = f"{battery_id}_{sensor_base_key}"
+                    if battery_specific_key in coordinator.data:
+                        is_duplicate = True
+                        break
+
+                # Only create the non-prefixed sensor if it's not a duplicate
+                if not is_duplicate and key not in created_sensors:
+                    entities.append(SAXBatterySensor(coordinator, key))
+                    created_sensors.add(key)
 
     async_add_entities(entities)
 
@@ -90,16 +115,17 @@ class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
         self._sensor_type = sensor_type
 
         # Match old naming convention exactly
-        if sensor_type == "combined_soc":
-            self._attr_name = "SAX Battery Combined SOC"
-            self._attr_device_class = SensorDeviceClass.BATTERY
-            self._attr_native_unit_of_measurement = PERCENTAGE
-            self._attr_state_class = SensorStateClass.MEASUREMENT
-        elif sensor_type == "combined_power":
-            self._attr_name = "SAX Battery Combined Power"
-            self._attr_device_class = SensorDeviceClass.POWER
-            self._attr_native_unit_of_measurement = UnitOfPower.WATT
-            self._attr_state_class = SensorStateClass.MEASUREMENT
+        match sensor_type:
+            case "combined_soc":
+                self._attr_name = "SAX Battery Combined SOC"
+                self._attr_device_class = SensorDeviceClass.BATTERY
+                self._attr_native_unit_of_measurement = PERCENTAGE
+                self._attr_state_class = SensorStateClass.MEASUREMENT
+            case "combined_power":
+                self._attr_name = "SAX Battery Combined Power"
+                self._attr_device_class = SensorDeviceClass.POWER
+                self._attr_native_unit_of_measurement = UnitOfPower.WATT
+                self._attr_state_class = SensorStateClass.MEASUREMENT
 
         self._attr_unique_id = f"{DOMAIN}_{sensor_type}"
 
@@ -123,12 +149,7 @@ class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data:
             return None
 
-        if self._sensor_type == "combined_soc":
-            return self.coordinator.data.get("combined_soc")
-        elif self._sensor_type == "combined_power":
-            return self.coordinator.data.get("combined_power")
-
-        return None
+        return self.coordinator.data.get(self._sensor_type)
 
     async def async_update(self) -> None:
         """Update the sensor by recalculating combined values."""
@@ -136,10 +157,11 @@ class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
         await self.coordinator.async_request_refresh()
 
         # Calculate combined values similar to old implementation
-        if self._sensor_type == "combined_power":
-            await self._calculate_combined_power()
-        elif self._sensor_type == "combined_soc":
-            await self._calculate_combined_soc()
+        match self._sensor_type:
+            case "combined_power":
+                await self._calculate_combined_power()
+            case "combined_soc":
+                await self._calculate_combined_soc()
 
     async def _calculate_combined_power(self) -> None:
         """Calculate combined power from all batteries."""
@@ -362,9 +384,7 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
 
             sensor_base_name = self._get_sensor_name(sensor_key)
             # Create entity name in format: SAX Battery A Sensor Name
-            battery_letter = battery_name.split()[
-                -1
-            ].upper()  # Extract "A" from "Battery A"
+            battery_letter = battery_name.split()[-1].upper()
             self._attr_name = f"SAX Battery {battery_letter} {sensor_base_name}"
             # Update unique_id to match the naming pattern you want: sax_battery_a_sensor_key
             self._attr_unique_id = (

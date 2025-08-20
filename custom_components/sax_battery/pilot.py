@@ -487,60 +487,66 @@ class SAXBatteryPilot:
                 )
                 return
 
-            # Check if client is connected
-            if not hasattr(client, "connected") or not client.connected:
-                _LOGGER.error("Modbus client socket not open, attempting to reconnect")
+            # For pymodbus 3.9.2, check connection status differently
+            if not client.connected:
+                _LOGGER.error("Modbus client not connected, attempting to reconnect")
                 try:
-                    # Use async connect for pymodbus 3.9.2 compatibility
+                    # In pymodbus 3.9.2, connect() is async
                     await client.connect()
                     _LOGGER.info("Reconnected to Modbus device")
-                except ConnectionError as connect_err:
+                except Exception as connect_err:
                     _LOGGER.error("Failed to reconnect: %s", connect_err)
                     return
 
-            # Convert power to signed 16-bit integer for Modbus
-            # Clamp to valid range first
-            power_clamped = max(-32767, min(32767, power))
+            # Convert power to integer for Modbus (keep old format for compatibility)
+            power_int = int(power) & 0xFFFF
 
-            # For negative values, convert to unsigned 16-bit using two's complement
-            if power_clamped < 0:
-                power_int = 65536 + int(power_clamped)  # Convert to unsigned 16-bit
-            else:
-                power_int = int(power_clamped)
-
-            # Convert PF to integer - ensure it's positive and reasonable
-            # PF should be between 0.0 and 1.0, scale by 100
-            power_factor = abs(power_factor)
-            power_factor = max(0.0, min(1.0, power_factor))
-            pf_int = int(power_factor * 100)
+            # Convert PF to integer (use old scaling: * 10)
+            pf_int = int(power_factor * 10) & 0xFFFF
 
             # Prepare data for writing both registers at once
             values = [power_int, pf_int]
 
-            # Set slave ID
+            # Set slave ID (keep as 64)
             slave_id = 64
 
             _LOGGER.debug(
-                f"Sending combined command: Power={power_int} (original: {power}), PF={pf_int} (original: {power_factor}) to registers 41-42 with slave={slave_id}"
+                "Sending combined command: Power=%s (original: %s), PF=%s (original: %s) to registers 41-42 with slave=%s",
+                power_int,
+                power,
+                pf_int,
+                power_factor,
+                slave_id,
             )
 
-            # Use write_registers with slave parameter
-            async def _write_registers():
-                return await client.write_registers(
-                    41,  # Starting register (power control)
-                    values,
-                    slave=slave_id,
-                )
+            # For pymodbus 3.9.2, write_registers is async and takes different parameters
+            result = await client.write_registers(
+                41,  # Starting register (power control)
+                values,
+                slave=slave_id,
+            )
 
-            result = await _write_registers()
-
-            if hasattr(result, "isError") and result.isError():
-                _LOGGER.error(f"Error sending combined power and PF command: {result}")
+            # Check result for errors (pymodbus 3.9.2 format)
+            if result.isError():
+                _LOGGER.error("Error sending combined power and PF command: %s", result)
+                # Try to reconnect for next time
+                try:
+                    await client.close()
+                    await client.connect()
+                except Exception as reconnect_err:
+                    _LOGGER.debug("Failed to reconnect after error: %s", reconnect_err)
             else:
                 _LOGGER.debug("Successfully sent combined power and PF command")
 
-        except (ConnectionError, ValueError, TypeError) as err:
-            _LOGGER.error(f"Failed to send power command: {err}")
+        except Exception as err:
+            _LOGGER.error("Failed to send power command: %s", err)
+            # Try to close and reconnect the client for next attempt
+            try:
+                if client and hasattr(client, "close"):
+                    await client.close()
+                    # Don't reconnect immediately, let it reconnect on next call
+            except Exception as close_err:
+                _LOGGER.debug("Failed to close client after error: %s", close_err)
 
 
 class SAXBatteryPilotPowerEntity(NumberEntity):
