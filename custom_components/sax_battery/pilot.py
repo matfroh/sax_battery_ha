@@ -499,15 +499,20 @@ class SAXBatteryPilot:
                     return
 
             # Convert power to signed 16-bit integer for Modbus
-            # Handle negative values properly using two's complement
-            if power < 0:
-                power_int = int(65536 + power)  # Convert negative to unsigned 16-bit
-            else:
-                power_int = int(power) & 0xFFFF
+            # Clamp to valid range first
+            power = max(-32767, min(32767, power))
 
-            # Convert PF to integer (scale by 100 to preserve 2 decimal places)
-            # Assuming PF is between 0.0 and 1.0
-            pf_int = int(power_factor * 100) & 0xFFFF
+            # Convert to signed 16-bit integer
+            if power < 0:
+                power_int = int(power) + 65536  # Two's complement for negative values
+            else:
+                power_int = int(power)
+
+            # Convert PF to integer - ensure it's positive and reasonable
+            # PF should be between 0.0 and 1.0, scale by 100
+            power_factor = abs(power_factor)
+            power_factor = max(0.0, min(1.0, power_factor))
+            pf_int = int(power_factor * 100)
 
             # Prepare data for writing both registers at once
             values = [power_int, pf_int]
