@@ -403,15 +403,36 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         self._attr_native_value = value
         self._update_icon()
 
-        # If manual control is enabled, immediately apply the new power value
-        if self._coordinator.config_entry.data.get(CONF_MANUAL_CONTROL, False):
-            # Access pilot through sax_data instead of coordinator
-            sax_data = self.hass.data[DOMAIN][self._coordinator.config_entry.entry_id]
-            if hasattr(sax_data, "pilot") and sax_data.pilot:
-                _LOGGER.debug(f"Manual power changed to {value}W, updating pilot")
-                await sax_data.pilot._async_update_pilot()
+        # Get the pilot instance
+        sax_data = self.hass.data[DOMAIN][self._coordinator.config_entry.entry_id]
+        if hasattr(sax_data, "pilot") and sax_data.pilot:
+            _LOGGER.debug("Manual power changed to %sW, updating pilot", value)
+
+            # Set the calculated_power in the pilot FIRST
+            sax_data.pilot.calculated_power = value
+
+            # If manual control is enabled, send the command immediately
+            if self._coordinator.config_entry.data.get(CONF_MANUAL_CONTROL, False):
+                # Apply SOC constraints and send to battery
+                constrained_value = await sax_data.pilot._apply_soc_constraints(value)
+                await sax_data.pilot.send_power_command(constrained_value, 1.0)
+
+                if constrained_value != value:
+                    _LOGGER.info(
+                        "Manual power requested: %sW, actually sent: %sW (constrained by SOC)",
+                        value,
+                        constrained_value,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Manual power sent to battery: %sW", constrained_value
+                    )
             else:
-                _LOGGER.warning("Pilot not available for manual power update")
+                _LOGGER.debug(
+                    "Manual power stored: %sW (manual mode not active)", value
+                )
+        else:
+            _LOGGER.warning("Pilot not available for manual power update")
 
         self.async_write_ha_state()
-        _LOGGER.debug(f"Manual power set to {value}W")
+        _LOGGER.debug("Manual power set to %sW", value)

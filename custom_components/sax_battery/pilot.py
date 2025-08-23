@@ -160,29 +160,16 @@ class SAXBatteryPilot:
     async def _async_update_pilot(self, now: Any = None) -> None:
         """Update the pilot calculations and send to battery."""
         try:
-            # Check if in manual mode
+            # Check if in manual mode - if so, skip automatic calculations entirely
             if self.entry.data.get(CONF_MANUAL_CONTROL, False):
-                # Get the manual power value from the number entity
-                manual_power_entity_id = f"number.{DOMAIN}_battery_manual_power"
-                manual_power_state = self.hass.states.get(manual_power_entity_id)
+                # In manual mode, use the stored calculated_power value
+                manual_power = self.calculated_power
 
-                if manual_power_state and manual_power_state.state not in (
-                    "unknown",
-                    "unavailable",
-                ):
-                    try:
-                        manual_power = float(manual_power_state.state)
-                    except (ValueError, TypeError):
-                        _LOGGER.warning(
-                            "Invalid manual power value: %s", manual_power_state.state
-                        )
-                        return
-                else:
-                    _LOGGER.warning(
-                        "Manual power entity not found or unavailable: %s",
-                        manual_power_entity_id,
-                    )
-                    return
+                # Add debugging to see what we're actually reading
+                _LOGGER.debug(
+                    "Reading calculated_power from pilot: %sW", self.calculated_power
+                )
+                _LOGGER.debug("Manual power variable: %sW", manual_power)
 
                 # Get current combined SOC for constraint checks
                 combined_soc = (
@@ -208,11 +195,12 @@ class SAXBatteryPilot:
 
                 # Send the constrained manual power to the battery
                 await self.send_power_command(constrained_power, 1.0)
-                self.calculated_power = constrained_power
 
+                # DON'T overwrite calculated_power in manual mode - preserve user input
                 _LOGGER.debug("Manual power %sW sent to battery", constrained_power)
                 return
 
+            # Automatic mode - only execute if NOT in manual mode
             # Get current power sensor state
             power_state = self.hass.states.get(self.power_sensor_entity_id)
             if power_state is None:
@@ -273,7 +261,7 @@ class SAXBatteryPilot:
                             "Could not convert state of %s to number", device_id
                         )
 
-            # Get current combined battery power from our coordinator
+            # Get current combined battery power from coordinator
             battery_power = (
                 self.sax_data.data.get("combined_power", 0.0)
                 if self.sax_data.data
@@ -286,7 +274,7 @@ class SAXBatteryPilot:
             )
             _LOGGER.debug("Current combined SOC: %s%%", combined_soc)
 
-            # Calculate target power (same logic as before)
+            # Calculate target power
             _LOGGER.debug(
                 "Starting calculation with total_power=%s, priority_power=%s, battery_power=%s",
                 total_power,
@@ -324,7 +312,7 @@ class SAXBatteryPilot:
             target_power = await self._apply_soc_constraints(target_power)
             _LOGGER.debug("Post-constraint target power: %sW", target_power)
 
-            # Update calculated power
+            # Update calculated power (only in automatic mode)
             self.calculated_power = target_power
 
             # Send to battery if solar charging is enabled
@@ -391,24 +379,31 @@ class SAXBatteryPilot:
         """Enable or disable solar charging."""
         self.solar_charging_enabled = enabled
 
-        if enabled:
-            # Recalculate and send current value
+        # Only trigger automatic calculations if NOT in manual mode
+        if enabled and not self.entry.data.get(CONF_MANUAL_CONTROL, False):
+            # Recalculate and send current value (automatic mode only)
             await self._async_update_pilot()
-        else:
-            # Send 0 to stop charging from solar
+        elif not enabled:
+            # Always send 0 to stop charging, regardless of mode
             await self.send_power_command(0, 1.0)
 
         _LOGGER.info("Solar charging %s", "enabled" if enabled else "disabled")
 
     async def set_manual_power(self, power_value: float) -> None:
         """Set a manual power value."""
-        # Apply SOC constraints
-        power_value = await self._apply_soc_constraints(power_value)
-
-        # Send the power command with a default power factor of 1.0
-        await self.send_power_command(power_value, 1.0)
+        # Store the value
         self.calculated_power = power_value
-        _LOGGER.info("Manual power set to %sW", power_value)
+
+        # If in manual mode, apply constraints and send immediately
+        if self.entry.data.get(CONF_MANUAL_CONTROL, False):
+            constrained_power = await self._apply_soc_constraints(power_value)
+            await self.send_power_command(constrained_power, 1.0)
+            _LOGGER.debug("Manual power set to %sW", constrained_power)
+        else:
+            _LOGGER.debug(
+                "Manual power stored: %sW (will be used when manual mode is enabled)",
+                power_value,
+            )
 
     async def set_interval(self, interval: float) -> None:
         """Set the pilot update interval."""
@@ -598,8 +593,38 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Handle manual override of calculated power."""
-        await self._pilot.send_power_command(value, 1.0)
+        _LOGGER.debug("Setting manual power to %sW via pilot entity", value)
+
+        # Store the manual power value in the pilot
         self._pilot.calculated_power = value
+
+        # Force entity state update
+        self.async_write_ha_state()
+
+        # Log to confirm it was set
+        _LOGGER.debug(
+            "Pilot calculated_power updated to: %sW", self._pilot.calculated_power
+        )
+
+        # If we're in manual mode, send the command immediately
+        if self._pilot.entry.data.get(CONF_MANUAL_CONTROL, False):
+            # Apply SOC constraints
+            constrained_value = await self._pilot._apply_soc_constraints(value)
+            await self._pilot.send_power_command(constrained_value, 1.0)
+
+            # Log what actually happened
+            if constrained_value != value:
+                _LOGGER.info(
+                    "Manual power requested: %sW, actually sent: %sW (constrained by SOC)",
+                    value,
+                    constrained_value,
+                )
+            else:
+                _LOGGER.debug(
+                    "Manual power set to %sW via pilot entity", constrained_value
+                )
+        else:
+            _LOGGER.debug("Power value stored: %sW (manual mode not active)", value)
 
 
 class SAXBatterySolarChargingSwitch(SwitchEntity):

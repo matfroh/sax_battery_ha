@@ -65,9 +65,9 @@ class SAXBatterySolarChargingSwitch(CoordinatorEntity, SwitchEntity):
         )
 
         # Update pilot mode
-        if hasattr(self.coordinator, "_pilot") and self.coordinator._pilot:
-            self.coordinator._pilot.solar_charging_enabled = True
-            await self.coordinator._pilot._async_update_pilot()
+        sax_data = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
+        if hasattr(sax_data, "pilot") and sax_data.pilot:
+            await sax_data.pilot.set_solar_charging(True)
 
         self.async_write_ha_state()
         # Trigger update of manual control switch
@@ -84,9 +84,9 @@ class SAXBatterySolarChargingSwitch(CoordinatorEntity, SwitchEntity):
         )
 
         # Update pilot mode
-        if hasattr(self.coordinator, "_pilot") and self.coordinator._pilot:
-            self.coordinator._pilot.solar_charging_enabled = False
-            await self.coordinator._pilot._async_update_pilot()
+        sax_data = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
+        if hasattr(sax_data, "pilot") and sax_data.pilot:
+            await sax_data.pilot.set_solar_charging(False)
 
         self.async_write_ha_state()
 
@@ -128,9 +128,9 @@ class SAXBatteryManualControlSwitch(CoordinatorEntity, SwitchEntity):
         )
 
         # Update pilot mode
-        if hasattr(self.coordinator, "_pilot") and self.coordinator._pilot:
-            self.coordinator._pilot.solar_charging_enabled = False
-            await self.coordinator._pilot._async_update_pilot()
+        sax_data = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
+        if hasattr(sax_data, "pilot") and sax_data.pilot:
+            await sax_data.pilot.set_solar_charging(False)
 
         self.async_write_ha_state()
         # Trigger update of solar charging switch
@@ -147,7 +147,8 @@ class SAXBatteryManualControlSwitch(CoordinatorEntity, SwitchEntity):
         )
 
         # Force pilot back to automatic mode
-        if hasattr(self.coordinator, "_pilot") and self.coordinator._pilot:
-            await self.coordinator._pilot._async_update_pilot()
+        sax_data = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
+        if hasattr(sax_data, "pilot") and sax_data.pilot:
+            await sax_data.pilot._async_update_pilot()
 
         self.async_write_ha_state()
