@@ -487,7 +487,7 @@ class SAXBatteryPilot:
                 )
                 return
 
-            # For pymodbus 3.9.2, check connection status differently
+            # For pymodbus 3.9.2, check connection status
             if not client.connected:
                 _LOGGER.error("Modbus client not connected, attempting to reconnect")
                 try:
@@ -498,8 +498,13 @@ class SAXBatteryPilot:
                     _LOGGER.error("Failed to reconnect: %s", connect_err)
                     return
 
-            # Convert power to integer for Modbus (keep old format for compatibility)
-            power_int = int(power) & 0xFFFF
+            # Fix power format to match old_pilot.py two's complement handling
+            if power < 0:
+                # Negative power (discharge): convert to two's complement
+                power_int = (65536 + int(power)) & 0xFFFF
+            else:
+                # Positive power (charge): direct conversion
+                power_int = int(power) & 0xFFFF
 
             # Convert PF to integer (use old scaling: * 10)
             pf_int = int(power_factor * 10) & 0xFFFF
@@ -519,14 +524,14 @@ class SAXBatteryPilot:
                 slave_id,
             )
 
-            # For pymodbus 3.9.2, write_registers is async and takes different parameters
+            # For pymodbus 3.9.2, write_registers is async
             result = await client.write_registers(
                 41,  # Starting register (power control)
                 values,
                 slave=slave_id,
             )
 
-            # Check result for errors (pymodbus 3.9.2 format)
+            # Check result for errors
             if result.isError():
                 _LOGGER.error("Error sending combined power and PF command: %s", result)
                 # Try to reconnect for next time

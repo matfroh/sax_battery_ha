@@ -9,16 +9,13 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import CONF_DEVICE_ID
 from .hub import SAXBatteryHub, HubException, HubConnectionError
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class DataUpdateFailed(Exception):
-    """Exception for data update failures."""
 
 
 class SAXBatteryCoordinator(DataUpdateCoordinator):
@@ -39,8 +36,8 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._hub = hub
-        self.entry = entry  # Add entry attribute
-        self.device_id = entry.data.get(CONF_DEVICE_ID)  # Add device_id attribute
+        self.entry = entry
+        self.device_id = entry.data.get(CONF_DEVICE_ID)
 
         # Add other attributes that platforms might expect
         self.power_sensor_entity_id = entry.data.get("power_sensor_entity_id")
@@ -62,9 +59,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
         self.modbus_clients = hub._clients
 
         # Add more compatibility attributes that might be expected
-        self.last_updates: dict[
-            str, Any
-        ] = {}  # Initialize empty dictionary for last updates
+        self.last_updates: dict[str, Any] = {}
 
         # Add modbus_registers for compatibility with switch platform
         self.modbus_registers = {}
@@ -84,10 +79,13 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
             }
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from the hub."""
+        """Fetch data from the hub with timeout and sequential processing."""
         try:
-            # Get raw data from all batteries
-            raw_data = await self._hub.read_data()
+            # Add timeout to prevent coordinator timeouts
+            raw_data = await asyncio.wait_for(
+                self._hub.read_data(),  # Changed back to existing method
+                timeout=25.0,  # 25 seconds to stay under HA's 30 second limit
+            )
 
             # Calculate combined values for multi-battery systems
             combined_data = self._calculate_combined_values(raw_data)
@@ -96,7 +94,13 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
             raw_data.update(combined_data)
 
             return raw_data
+
+        except asyncio.TimeoutError:
+            _LOGGER.warning("Data fetch timed out after 25 seconds")
+            # Return last known data if available
+            return self.data or {}
         except Exception as error:
+            _LOGGER.error("Error communicating with API: %s", error)
             raise UpdateFailed(f"Error communicating with API: {error}") from error
 
     def _calculate_combined_values(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -104,7 +108,6 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
         combined = {}
 
         # Calculate combined SOC (average of all batteries)
-        soc_values = []
         soc_sum = 0.0
         soc_count = 0
 
@@ -116,7 +119,6 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
             # Get SOC for this battery
             soc_key = f"{battery_id}_soc"
             if soc_key in data and data[soc_key] is not None:
-                soc_values.append(data[soc_key])
                 soc_sum += data[soc_key]
                 soc_count += 1
 
@@ -163,10 +165,10 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
         """Refresh modbus data with retries."""
         for i in range(limit):
             try:
-                data = await self._hub.read_data()
+                data = await self._hub.read_data()  # Changed back to existing method
             except (HubException, HubConnectionError) as err:
                 if i == limit - 1:  # Last attempt
-                    raise ex_type(f"Error refreshing data: {err}") from err
+                    raise ex_type(f"Error refreshing data: %s", err) from err
                 _LOGGER.warning(
                     "Retry %s/%s - Error refreshing data: %s", i + 1, limit, err
                 )
