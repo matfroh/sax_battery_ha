@@ -93,7 +93,6 @@ class SAXBatteryPilot:
         self._remove_interval_update: Callable[[], None] | None = None
         self._remove_config_update: Callable[[], None] | None = None
         self._running = False
-        self._modbus_lock = asyncio.Lock()
 
     def _update_config_values(self) -> None:
         """Update configuration values from entry data."""
@@ -471,6 +470,9 @@ class SAXBatteryPilot:
 
     async def send_power_command(self, power: float, power_factor: float) -> None:
         """Send power command to battery via coordinator."""
+        # Small delay to avoid conflicts with coordinator reads
+        await asyncio.sleep(0.1)
+
         # Convert power format for two's complement
         if power < 0:
             power_int = (65536 + int(power)) & 0xFFFF
