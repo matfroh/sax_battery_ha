@@ -117,12 +117,12 @@ class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
         # Match old naming convention exactly
         match sensor_type:
             case "combined_soc":
-                self._attr_name = "SAX Battery Combined SOC"
+                self._attr_name = "Sax Battery Combined SOC"
                 self._attr_device_class = SensorDeviceClass.BATTERY
                 self._attr_native_unit_of_measurement = PERCENTAGE
                 self._attr_state_class = SensorStateClass.MEASUREMENT
             case "combined_power":
-                self._attr_name = "SAX Battery Combined Power"
+                self._attr_name = "Sax Battery Combined Power"
                 self._attr_device_class = SensorDeviceClass.POWER
                 self._attr_native_unit_of_measurement = UnitOfPower.WATT
                 self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -240,7 +240,7 @@ class SAXBatteryCumulativeEnergyProducedSensor(CoordinatorEntity, SensorEntity):
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = "SAX Battery Cumulative Energy Produced"
+        self._attr_name = "Sax Battery Cumulative Energy Produced"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_produced"
         self._last_update_time: datetime | None = None
         self._cumulative_value = 0.0
@@ -304,7 +304,7 @@ class SAXBatteryCumulativeEnergyConsumedSensor(CoordinatorEntity, SensorEntity):
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = "SAX Battery Cumulative Energy Consumed"
+        self._attr_name = "Sax Battery Cumulative Energy Consumed"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_consumed"
         self._last_update_time: datetime | None = None
         self._cumulative_value = 0.0
@@ -385,7 +385,7 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             sensor_base_name = self._get_sensor_name(sensor_key)
             # Create entity name in format: SAX Battery A Sensor Name
             battery_letter = battery_name.split()[-1].upper()
-            self._attr_name = f"SAX Battery {battery_letter} {sensor_base_name}"
+            self._attr_name = f"Sax Battery {battery_letter} {sensor_base_name}"
             # Update unique_id to match the naming pattern you want: sax_battery_a_sensor_key
             self._attr_unique_id = (
                 f"{DOMAIN}_battery_{battery_letter.lower()}_{sensor_key}"

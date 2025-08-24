@@ -79,7 +79,7 @@ class SAXBatterySolarChargingSwitch(CoordinatorEntity, SwitchEntity):
     def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
-        self._attr_name = "SAX Battery Solar Charging"
+        self._attr_name = "Sax Battery Solar Charging"
         self._attr_unique_id = f"{DOMAIN}_solar_charging"
         self._attr_icon = "mdi:solar-power"
 
@@ -142,7 +142,7 @@ class SAXBatteryManualControlSwitch(CoordinatorEntity, SwitchEntity):
     def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
-        self._attr_name = "SAX Battery Manual Control"
+        self._attr_name = "Sax Battery Manual Control"
         self._attr_unique_id = f"{DOMAIN}_manual_control"
         self._attr_icon = "mdi:hand-back-right"
 
@@ -210,7 +210,7 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
         self.battery_id = battery_id
         self.battery = battery
         self._attr_unique_id = f"{DOMAIN}_{battery_id}_switch"
-        self._attr_name = f"SAX {battery_id.replace('_', ' ').title()} On/Off"
+        self._attr_name = f"Sax {battery_id.replace('_', ' ').title()} On/Off"
 
         # Get registers from coordinator's modbus_registers
         if battery_id in coordinator.modbus_registers:
