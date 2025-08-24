@@ -150,41 +150,59 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 getattr(client, "connected", "unknown"),
             )
 
-            # Use executor job for synchronous modbus call
-            def _write_register() -> tuple[bool, str | None]:
-                """Write register synchronously."""
+            # Use executor for async Modbus operations
+            async def _async_write_register() -> bool:
+                """Write register using async executor."""
                 try:
                     _LOGGER.debug(
                         "Writing to address 49, value: %s, slave: 64", int(value)
                     )
+
+                    # Call the write_register method
                     result = client.write_register(
                         address=49,  # Max charge power register
                         value=int(value),
                         slave=64,
                     )
 
+                    # If it returns a coroutine, await it
+                    import asyncio
+
+                    if asyncio.iscoroutine(result):
+                        _LOGGER.debug("write_register returned coroutine, awaiting")
+                        result = await result
+                    else:
+                        _LOGGER.debug("write_register returned synchronous result")
+
                     _LOGGER.debug("Modbus write result: %s", result)
 
+                    # Check if the write was successful
                     if hasattr(result, "isError") and result.isError():
-                        return False, f"Modbus error: {result}"
+                        _LOGGER.error(
+                            "Failed to write max charge value: Modbus error: %s", result
+                        )
+                        return False
                     elif hasattr(result, "function_code"):
-                        return True, None
+                        _LOGGER.debug("Successfully wrote max charge value: %s", value)
+                        return True
                     else:
-                        return False, f"Unexpected result format: {type(result)}"
+                        _LOGGER.error(
+                            "Failed to write max charge value: Unexpected result format: %s",
+                            type(result),
+                        )
+                        return False
 
                 except Exception as exc:
-                    _LOGGER.debug("Exception in write_register: %s", exc, exc_info=True)
-                    return False, f"Write exception: {exc}"
+                    _LOGGER.error("Exception in write_register: %s", exc, exc_info=True)
+                    return False
 
-            success, error_msg = await self.hass.async_add_executor_job(_write_register)
+            # Execute the write operation
+            success = await _async_write_register()
 
             if success:
                 self._attr_native_value = value
                 self._last_written_value = value
                 self.async_write_ha_state()
-                _LOGGER.debug("Successfully wrote max charge value: %s", value)
-            else:
-                _LOGGER.error("Failed to write max charge value: %s", error_msg)
 
         except Exception as err:
             _LOGGER.error("Failed to write max charge value: %s", err, exc_info=True)
@@ -202,7 +220,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
 
         # Calculate dynamic max value based on battery count
         battery_count = len(coordinator.batteries)
-        self._attr_native_max_value = battery_count * 4600  # 4.6kW per battery
+        self._attr_native_max_value = battery_count * 3500  # 3.5kW per battery
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_native_value = self._attr_native_max_value  # Start at max
@@ -283,66 +301,85 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 getattr(client, "connected", "unknown"),
             )
 
-            # Use executor job for synchronous modbus call
-            def _write_register() -> tuple[bool, str | None]:
-                """Write register synchronously."""
+            # Use executor for async Modbus operations
+            async def _async_write_register() -> bool:
+                """Write register using async executor."""
                 try:
                     _LOGGER.debug(
                         "Writing to address 50, value: %s, slave: 64", int(value)
                     )
+
+                    # Call the write_register method
                     result = client.write_register(
                         address=50,  # Max discharge power register
                         value=int(value),
                         slave=64,
                     )
 
+                    # If it returns a coroutine, await it
+                    import asyncio
+
+                    if asyncio.iscoroutine(result):
+                        _LOGGER.debug("write_register returned coroutine, awaiting")
+                        result = await result
+                    else:
+                        _LOGGER.debug("write_register returned synchronous result")
+
                     _LOGGER.debug("Modbus write result: %s", result)
 
+                    # Check if the write was successful
                     if hasattr(result, "isError") and result.isError():
-                        return False, f"Modbus error: {result}"
+                        _LOGGER.error(
+                            "Failed to write max discharge value: Modbus error: %s",
+                            result,
+                        )
+                        return False
                     elif hasattr(result, "function_code"):
-                        return True, None
+                        _LOGGER.debug(
+                            "Successfully wrote max discharge value: %s", value
+                        )
+                        return True
                     else:
-                        return False, f"Unexpected result format: {type(result)}"
+                        _LOGGER.error(
+                            "Failed to write max discharge value: Unexpected result format: %s",
+                            type(result),
+                        )
+                        return False
 
                 except Exception as exc:
-                    _LOGGER.debug("Exception in write_register: %s", exc, exc_info=True)
-                    return False, f"Write exception: {exc}"
+                    _LOGGER.error("Exception in write_register: %s", exc, exc_info=True)
+                    return False
 
-            success, error_msg = await self.hass.async_add_executor_job(_write_register)
+            # Execute the write operation
+            success = await _async_write_register()
 
             if success:
                 self._attr_native_value = value
                 self._last_written_value = value
                 self.async_write_ha_state()
-                _LOGGER.debug("Successfully wrote max discharge value: %s", value)
-            else:
-                _LOGGER.error("Failed to write max discharge value: %s", error_msg)
 
         except Exception as err:
             _LOGGER.error("Failed to write max discharge value: %s", err, exc_info=True)
 
 
 class SAXBatteryPilotIntervalNumber(NumberEntity):
-    """SAX Battery Auto Pilot Interval number."""
+    """SAX Battery Pilot Interval number."""
 
     def __init__(self, coordinator: SAXBatteryCoordinator, entry: ConfigEntry) -> None:
-        """Initialize the SAX Battery Auto Pilot Interval number."""
+        """Initialize the SAX Battery Pilot Interval number."""
         self._coordinator = coordinator
-        self._data_manager = coordinator  # For compatibility
-        self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_pilot_interval"
-        self._attr_name = "Auto Pilot Interval"
-        self._attr_native_min_value = 5
-        self._attr_native_max_value = 300
-        self._attr_native_step = 5
-        self._attr_native_unit_of_measurement = "seconds"
-        self._attr_native_value = self._entry.data.get(
+        self._attr_name = "Pilot Interval"
+        self._attr_native_min_value = 1
+        self._attr_native_max_value = 60  # Max 60 minutes
+        self._attr_native_step = 1
+        self._attr_native_unit_of_measurement = "min"
+        self._attr_native_value = entry.options.get(
             CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
         )
         self._attr_mode = NumberMode.SLIDER
 
-        # Add device info - pilot interval entity uses coordinator device_id
+        # Add device info
         self._attr_device_info = {
             "identifiers": {(DOMAIN, self._coordinator.device_id)},
             "name": "SAX Battery System",
@@ -352,37 +389,38 @@ class SAXBatteryPilotIntervalNumber(NumberEntity):
         }
 
     async def async_set_native_value(self, value: float) -> None:
-        """Update the interval."""
+        """Update the pilot interval value."""
+        await self._write_value(value)
+
+    async def _write_value(self, value: float) -> None:
+        """Write the pilot interval value to the coordinator."""
+        _LOGGER.debug("Setting pilot interval to: %s", value)
         self._attr_native_value = value
-
-        # Update pilot interval if available
-        if hasattr(self._coordinator, "_pilot") and self._coordinator._pilot:
-            await self._coordinator._pilot.set_interval(value)
-        else:
-            _LOGGER.warning("Pilot not available for interval update")
-
         self.async_write_ha_state()
-        _LOGGER.debug("Pilot interval set to %s seconds", value)
+
+        # Update the coordinator's auto pilot interval
+        self._coordinator.auto_pilot_interval = value
+
+        # Optionally, you can also call a method on the coordinator to handle the update
+        # await self._coordinator.update_pilot_interval(value)
 
 
 class SAXBatteryMinSOCNumber(NumberEntity):
-    """SAX Battery Minimum State of Charge number."""
+    """SAX Battery Minimum State of Charge (SoC) number."""
 
     def __init__(self, coordinator: SAXBatteryCoordinator, entry: ConfigEntry) -> None:
-        """Initialize the SAX Battery Minimum State of Charge number."""
+        """Initialize the SAX Battery Minimum SoC number."""
         self._coordinator = coordinator
-        self._data_manager = coordinator  # For compatibility
-        self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_min_soc"
         self._attr_name = "Minimum State of Charge"
         self._attr_native_min_value = 0
         self._attr_native_max_value = 100
         self._attr_native_step = 1
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_native_value = self._entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
+        self._attr_native_value = entry.options.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
         self._attr_mode = NumberMode.SLIDER
 
-        # Add device info - min SOC entity uses coordinator device_id
+        # Add device info
         self._attr_device_info = {
             "identifiers": {(DOMAIN, self._coordinator.device_id)},
             "name": "SAX Battery System",
@@ -392,39 +430,41 @@ class SAXBatteryMinSOCNumber(NumberEntity):
         }
 
     async def async_set_native_value(self, value: float) -> None:
-        """Update the minimum SOC."""
+        """Update the minimum SoC value."""
+        await self._write_value(value)
+
+    async def _write_value(self, value: float) -> None:
+        """Write the minimum SoC value to the coordinator."""
+        _LOGGER.debug("Setting minimum SoC to: %s", value)
         self._attr_native_value = value
-
-        # Update pilot minimum SOC if available
-        if hasattr(self._coordinator, "_pilot") and self._coordinator._pilot:
-            await self._coordinator._pilot.set_min_soc(value)
-        else:
-            _LOGGER.warning("Pilot not available for min SOC update")
-
         self.async_write_ha_state()
-        _LOGGER.debug("Minimum SOC set to %s%%", value)
+
+        # Update the coordinator's min SoC
+        self._coordinator.min_soc = value
+
+        # Optionally, you can also call a method on the coordinator to handle the update
+        # await self._coordinator.update_min_soc(value)
 
 
 class SAXBatteryManualPowerEntity(NumberEntity):
-    """Entity for setting manual power value."""
+    """SAX Battery Manual Power Control number."""
 
     def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
-        """Initialize the entity."""
+        """Initialize the SAX Battery Manual Power Control number."""
         self._coordinator = coordinator
-        self._attr_unique_id = f"{DOMAIN}_battery_manual_power"
-        self._attr_name = "SAX Battery Manual Power"
-
-        battery_count = len(coordinator.batteries)
-        max_charge_power = battery_count * 3500  # 3.5kW per battery for charge
-        max_discharge_power = battery_count * 4600  # 4.6kW per battery for discharge
-
-        self._attr_native_min_value = -max_discharge_power  # max discharge power
-        self._attr_native_max_value = max_charge_power  # max charge power
+        # Match the unique ID from pilot.py
+        self._attr_unique_id = f"{DOMAIN}_pilot_power_{coordinator.device_id}"
+        self._attr_name = "Manual Power Control"
+        self._attr_native_min_value = (
+            -coordinator.batteries.__len__() * 3600
+        )  # Max discharge
+        self._attr_native_max_value = (
+            coordinator.batteries.__len__() * 4500
+        )  # Max charge
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_native_value = 0.0
-        self._attr_mode = NumberMode.SLIDER
-        self._attr_icon = "mdi:battery"
+        self._attr_native_value = 0.0  # Start at 0
+        self._attr_mode = NumberMode.BOX
 
         # Add device info
         self._attr_device_info = {
@@ -435,50 +475,39 @@ class SAXBatteryManualPowerEntity(NumberEntity):
             "sw_version": "1.0",
         }
 
-    def _update_icon(self) -> None:
-        """Update the icon based on current value."""
-        if self._attr_native_value and self._attr_native_value > 0:
-            self._attr_icon = "mdi:battery-charging"
-        elif self._attr_native_value and self._attr_native_value < 0:
-            self._attr_icon = "mdi:battery-minus"
-        else:
-            self._attr_icon = "mdi:battery"
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the manual power value."""
-        self._attr_native_value = value
-        self._update_icon()
-
-        # Get the pilot instance
+    @property
+    def native_value(self) -> float | None:
+        """Return the current manual power setting."""
+        # Get the value from the pilot if available
         sax_data = self.hass.data[DOMAIN][self._coordinator.config_entry.entry_id]
         if hasattr(sax_data, "pilot") and sax_data.pilot:
-            _LOGGER.debug("Manual power changed to %sW, updating pilot", value)
+            return (
+                float(sax_data.pilot.calculated_power)
+                if sax_data.pilot.calculated_power is not None
+                else 0.0
+            )
+        return self._attr_native_value
 
-            # Set the calculated_power in the pilot FIRST
-            sax_data.pilot.calculated_power = value
+    @property
+    def icon(self) -> str | None:
+        """Return the icon to use for the entity."""
+        current_value = self.native_value or 0
+        if current_value > 0:
+            return "mdi:battery-charging"
+        elif current_value < 0:
+            return "mdi:battery-minus"
+        return "mdi:battery"
 
-            # If manual control is enabled, send the command immediately
-            if self._coordinator.config_entry.data.get(CONF_MANUAL_CONTROL, False):
-                # Apply SOC constraints and send to battery
-                constrained_value = await sax_data.pilot._apply_soc_constraints(value)
-                await sax_data.pilot.send_power_command(constrained_value, 1.0)
+    async def async_set_native_value(self, value: float) -> None:
+        """Update the manual power value."""
+        _LOGGER.debug("Setting manual power to %sW", value)
 
-                if constrained_value != value:
-                    _LOGGER.info(
-                        "Manual power requested: %sW, actually sent: %sW (constrained by SOC)",
-                        value,
-                        constrained_value,
-                    )
-                else:
-                    _LOGGER.debug(
-                        "Manual power sent to battery: %sW", constrained_value
-                    )
-            else:
-                _LOGGER.debug(
-                    "Manual power stored: %sW (manual mode not active)", value
-                )
+        # Update the stored value
+        self._attr_native_value = value
+
+        # Get the pilot instance and update its calculated power
+        sax_data = self.hass.data[DOMAIN][self._coordinator.config_entry.entry_id]
+        if hasattr(sax_data, "pilot") and sax_data.pilot:
+            await sax_data.pilot.set_manual_power(value)
         else:
-            _LOGGER.warning("Pilot not available for manual power update")
-
-        self.async_write_ha_state()
-        _LOGGER.debug("Manual power set to %sW", value)
+            _LOGGER.warning("Pilot not available to set manual power")
