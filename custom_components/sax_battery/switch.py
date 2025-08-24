@@ -212,13 +212,11 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_unique_id = f"{DOMAIN}_{battery_id}_switch"
         self._attr_name = f"SAX {battery_id.replace('_', ' ').title()} On/Off"
 
-        # Get registers from the battery's data manager
-        if hasattr(battery, "_data_manager") and hasattr(
-            battery._data_manager, "modbus_registers"
-        ):
-            self._registers = battery._data_manager.modbus_registers[battery_id][
-                SAX_STATUS
-            ]
+        # Get registers from coordinator's modbus_registers
+        if battery_id in coordinator.modbus_registers:
+            self._registers = coordinator.modbus_registers[battery_id].get(
+                SAX_STATUS, {}
+            )
         else:
             _LOGGER.error("Cannot access modbus registers for battery %s", battery_id)
             self._registers = {}
@@ -235,30 +233,67 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool | None:
         """Return True if the switch is on."""
-        # Access battery data through coordinator
         if not self.coordinator.data:
             return None
 
-        # Try different status key patterns
+        # Try different status key patterns based on your data structure
         status_keys = [
             f"{self.battery_id}_status",
             f"{self.battery_id}_{SAX_STATUS}",
+            f"{self.battery_id}_sax_status",
             SAX_STATUS,
         ]
 
         for status_key in status_keys:
             if status_key in self.coordinator.data:
-                status = self.coordinator.data[status_key]
-                if status is not None:
-                    # Adjust this logic based on your actual battery status structure
-                    if isinstance(status, dict):
-                        return bool(status.get("is_charging", False))
-                    elif isinstance(status, bool):
-                        return status
-                    elif isinstance(status, (int, float)):
-                        return bool(status)
-                    break
+                status_value = self.coordinator.data[status_key]
+                if status_value is None:
+                    continue
 
+                # Log the actual status value for debugging
+                _LOGGER.debug(
+                    "Battery %s status key '%s' has value: %s (type: %s)",
+                    self.battery_id,
+                    status_key,
+                    status_value,
+                    type(status_value),
+                )
+
+                # Match against configured on/off states from registers
+                if self._registers:
+                    state_on = self._registers.get("state_on", 3)
+                    state_off = self._registers.get("state_off", 1)
+
+                    if isinstance(status_value, (int, float)):
+                        is_on = int(status_value) == state_on
+                        _LOGGER.debug(
+                            "Battery %s status %s compared to on=%s, off=%s -> is_on=%s",
+                            self.battery_id,
+                            status_value,
+                            state_on,
+                            state_off,
+                            is_on,
+                        )
+                        return is_on
+                    elif isinstance(status_value, dict):
+                        # If status is a dict, look for relevant keys
+                        if "state" in status_value:
+                            return int(status_value["state"]) == state_on
+                        elif "status" in status_value:
+                            return int(status_value["status"]) == state_on
+                        elif "is_on" in status_value:
+                            return bool(status_value["is_on"])
+                    elif isinstance(status_value, bool):
+                        return status_value
+
+                # Fallback logic if no register config
+                if isinstance(status_value, (int, float)):
+                    # Assume non-zero means on (adjust based on your battery behavior)
+                    return status_value != 0
+                elif isinstance(status_value, bool):
+                    return status_value
+
+        _LOGGER.debug("No valid status found for battery %s", self.battery_id)
         return None
 
     @property
@@ -271,43 +306,29 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
         status_keys = [
             f"{self.battery_id}_status",
             f"{self.battery_id}_{SAX_STATUS}",
+            f"{self.battery_id}_sax_status",
             SAX_STATUS,
         ]
 
-        for status_key in status_keys:
-            if (
-                status_key in self.coordinator.data
-                and self.coordinator.data[status_key] is not None
-            ):
-                return True
-
-        return False
+        return any(
+            status_key in self.coordinator.data
+            and self.coordinator.data[status_key] is not None
+            for status_key in status_keys
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
         _LOGGER.debug("Attempting to turn ON battery %s", self.battery_id)
 
+        if not self._registers:
+            _LOGGER.error("No registers configuration for battery %s", self.battery_id)
+            return
+
         try:
-            if not hasattr(self.battery, "_data_manager"):
-                _LOGGER.error(
-                    "Battery data manager not available for %s", self.battery_id
-                )
-                return
-
-            client = self.battery._data_manager.modbus_clients.get(self.battery_id)
-            if client is None:
-                _LOGGER.error("No Modbus client found for battery %s", self.battery_id)
-                return
-
-            if not self._registers:
-                _LOGGER.error(
-                    "No registers configuration for battery %s", self.battery_id
-                )
-                return
-
             slave_id = self._registers.get("slave", 64)
-            command_on = self._registers["command_on"]
-            address = self._registers["address"]
+            command_on = self._registers.get("command_on", 2)
+            address = self._registers.get("address", 45)
+            expected_state = self._registers.get("state_on", 3)
 
             _LOGGER.debug(
                 "Turning ON battery %s - Writing %s to register %s with slave %s",
@@ -317,41 +338,29 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
                 slave_id,
             )
 
-            # Short delay before command
-            await asyncio.sleep(0.1)
-
-            async def _async_write_registers() -> bool:
-                """Write registers asynchronously."""
-                try:
-                    result = client.write_registers(
-                        address,
-                        [command_on],
-                        slave=slave_id,
-                    )
-
-                    # Handle async client
-                    if asyncio.iscoroutine(result):
-                        result = await result
-
-                    return hasattr(result, "function_code") and not (
-                        hasattr(result, "isError") and result.isError()
-                    )
-                except Exception as exc:
-                    _LOGGER.debug(
-                        "Exception in write_registers: %s", exc, exc_info=True
-                    )
-                    return False
-
-            success = await _async_write_registers()
+            success = await self.coordinator.async_write_modbus_registers(
+                self.battery_id,
+                address,
+                [command_on],
+                slave=slave_id,
+            )
 
             if success:
-                _LOGGER.debug("Successfully turned ON battery %s", self.battery_id)
-                # Wait for command to take effect
-                await asyncio.sleep(3.0)  # Reduced from 180s
-                # Update the battery data
-                await self.coordinator.async_request_refresh()
+                _LOGGER.debug(
+                    "Successfully sent ON command to battery %s", self.battery_id
+                )
+                _LOGGER.info(
+                    "Battery %s startup initiated - waiting up to 3 minutes",
+                    self.battery_id,
+                )
+
+                # Wait for actual status change with 3-minute timeout
+                await self._wait_for_status_change(expected_state, timeout=180)
+
             else:
-                _LOGGER.error("Failed to turn ON battery %s", self.battery_id)
+                _LOGGER.error(
+                    "Failed to send ON command to battery %s", self.battery_id
+                )
 
         except Exception as err:
             _LOGGER.error(
@@ -362,27 +371,15 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
         """Turn the switch off."""
         _LOGGER.debug("Attempting to turn OFF battery %s", self.battery_id)
 
+        if not self._registers:
+            _LOGGER.error("No registers configuration for battery %s", self.battery_id)
+            return
+
         try:
-            if not hasattr(self.battery, "_data_manager"):
-                _LOGGER.error(
-                    "Battery data manager not available for %s", self.battery_id
-                )
-                return
-
-            client = self.battery._data_manager.modbus_clients.get(self.battery_id)
-            if client is None:
-                _LOGGER.error("No Modbus client found for battery %s", self.battery_id)
-                return
-
-            if not self._registers:
-                _LOGGER.error(
-                    "No registers configuration for battery %s", self.battery_id
-                )
-                return
-
             slave_id = self._registers.get("slave", 64)
-            command_off = self._registers["command_off"]
-            address = self._registers["address"]
+            command_off = self._registers.get("command_off", 1)
+            address = self._registers.get("address", 45)
+            expected_state = self._registers.get("state_off", 1)
 
             _LOGGER.debug(
                 "Turning OFF battery %s - Writing %s to register %s with slave %s",
@@ -392,43 +389,111 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
                 slave_id,
             )
 
-            # Short delay before command
-            await asyncio.sleep(0.1)
-
-            async def _async_write_registers() -> bool:
-                """Write registers asynchronously."""
-                try:
-                    result = client.write_registers(
-                        address,
-                        [command_off],
-                        slave=slave_id,
-                    )
-
-                    # Handle async client
-                    if asyncio.iscoroutine(result):
-                        result = await result
-
-                    return hasattr(result, "function_code") and not (
-                        hasattr(result, "isError") and result.isError()
-                    )
-                except Exception as exc:
-                    _LOGGER.debug(
-                        "Exception in write_registers: %s", exc, exc_info=True
-                    )
-                    return False
-
-            success = await _async_write_registers()
+            success = await self.coordinator.async_write_modbus_registers(
+                self.battery_id,
+                address,
+                [command_off],
+                slave=slave_id,
+            )
 
             if success:
-                _LOGGER.debug("Successfully turned OFF battery %s", self.battery_id)
-                # Wait for command to take effect
-                await asyncio.sleep(3.0)  # Reduced from 120s
-                # Update the battery data
-                await self.coordinator.async_request_refresh()
+                _LOGGER.debug(
+                    "Successfully sent OFF command to battery %s", self.battery_id
+                )
+                _LOGGER.info(
+                    "Battery %s shutdown initiated - waiting up to 3 minutes",
+                    self.battery_id,
+                )
+
+                # Wait for actual status change with 3-minute timeout
+                await self._wait_for_status_change(expected_state, timeout=180)
+
             else:
-                _LOGGER.error("Failed to turn OFF battery %s", self.battery_id)
+                _LOGGER.error(
+                    "Failed to send OFF command to battery %s", self.battery_id
+                )
 
         except Exception as err:
             _LOGGER.error(
                 "Failed to turn off battery %s: %s", self.battery_id, err, exc_info=True
             )
+
+    async def _wait_for_status_change(
+        self, expected_state: int, timeout: int = 180
+    ) -> None:
+        """Wait for battery status to change to expected state."""
+        start_time = asyncio.get_event_loop().time()
+        check_interval = 10  # Check every 10 seconds to reduce coordinator load
+        last_log_time = start_time
+        log_interval = 30  # Log progress every 30 seconds
+
+        while (elapsed := asyncio.get_event_loop().time() - start_time) < timeout:
+            # Refresh coordinator data
+            await self.coordinator.async_request_refresh()
+            await asyncio.sleep(2)  # Give coordinator time to update
+
+            # Check current status
+            current_status = self._get_current_status()
+
+            if current_status is not None and int(current_status) == expected_state:
+                _LOGGER.info(
+                    "Battery %s status changed to %s after %d seconds",
+                    self.battery_id,
+                    expected_state,
+                    int(elapsed),
+                )
+                # Force entity state update
+                self.async_write_ha_state()
+                return
+
+            # Log progress every 30 seconds
+            if elapsed - last_log_time >= log_interval:
+                _LOGGER.debug(
+                    "Battery %s status is %s, waiting for %s (elapsed: %ds/%ds)",
+                    self.battery_id,
+                    current_status,
+                    expected_state,
+                    int(elapsed),
+                    timeout,
+                )
+                last_log_time = elapsed
+
+            # Wait before next check
+            await asyncio.sleep(check_interval)
+
+        # Timeout reached
+        final_status = self._get_current_status()
+        _LOGGER.warning(
+            "Timeout after %d seconds waiting for battery %s status change - Expected: %s, Current: %s",
+            timeout,
+            self.battery_id,
+            expected_state,
+            final_status,
+        )
+        # Force final entity state update even on timeout
+        self.async_write_ha_state()
+
+    def _get_current_status(self) -> int | None:
+        """Get current battery status value."""
+        if not self.coordinator.data:
+            return None
+
+        status_keys = [
+            f"{self.battery_id}_status",
+            f"{self.battery_id}_{SAX_STATUS}",
+            f"{self.battery_id}_sax_status",
+            SAX_STATUS,
+        ]
+
+        for status_key in status_keys:
+            if status_key in self.coordinator.data:
+                status_value = self.coordinator.data[status_key]
+                if status_value is not None:
+                    if isinstance(status_value, (int, float)):
+                        return int(status_value)
+                    elif isinstance(status_value, dict):
+                        if "state" in status_value:
+                            return int(status_value["state"])
+                        elif "status" in status_value:
+                            return int(status_value["status"])
+        return None

@@ -78,6 +78,77 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
                 }
             }
 
+        # Add global modbus lock for write operations
+        self._write_lock = asyncio.Lock()
+
+    async def async_write_modbus_registers(
+        self, battery_id: str, address: int, values: list[int], slave: int = 64
+    ) -> bool:
+        """Write to Modbus registers with proper locking to prevent conflicts."""
+        async with self._write_lock:
+            try:
+                # Add delay to avoid conflicts with other integrations
+                await asyncio.sleep(0.5)
+
+                # Use hub's write method if available, otherwise direct client access
+                if hasattr(self._hub, "write_registers"):
+                    success = await self._hub.write_registers(
+                        battery_id, address, values, slave
+                    )
+                else:
+                    # Fallback to direct client access with retries
+                    client = self.modbus_clients.get(battery_id)
+                    if not client:
+                        _LOGGER.error(
+                            "No Modbus client found for battery %s", battery_id
+                        )
+                        return False
+
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            if not client.connected:
+                                await client.connect()
+                                await asyncio.sleep(0.1)
+
+                            result = await client.write_registers(
+                                address, values, slave=slave
+                            )
+
+                            if result.isError():
+                                if attempt < max_retries - 1:
+                                    await asyncio.sleep(1.0 * (2**attempt))
+                                    continue
+                                _LOGGER.error(
+                                    "Modbus write failed after %d attempts", max_retries
+                                )
+                                return False
+
+                            _LOGGER.debug(
+                                "Successfully wrote to battery %s, address %d, values %s",
+                                battery_id,
+                                address,
+                                values,
+                            )
+                            return True
+
+                        except Exception as err:
+                            _LOGGER.warning(
+                                "Attempt %d failed for battery %s: %s",
+                                attempt + 1,
+                                battery_id,
+                                err,
+                            )
+                            if attempt == max_retries - 1:
+                                return False
+                            await asyncio.sleep(1.0 * (2**attempt))
+
+                return success if hasattr(self._hub, "write_registers") else False
+
+            except Exception as err:
+                _LOGGER.error("Error writing Modbus registers: %s", err)
+                return False
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the hub with timeout and sequential processing."""
         try:
