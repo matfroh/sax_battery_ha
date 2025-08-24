@@ -262,12 +262,18 @@ class SAXBatteryHub:
             return result.registers
 
     async def read_data(self) -> dict[str, Any]:
-        """Read data from all batteries."""
-        # Connect to all batteries first
-        if not await self.connect():
-            raise HubConnectionError("Unable to connect to any device")
+        """Read data from all batteries - ensure this is only called once at a time."""
+        # Add a simple flag to prevent concurrent reads
+        if hasattr(self, "_reading") and self._reading:
+            _LOGGER.debug("Read already in progress, skipping duplicate request")
+            return {}
 
+        self._reading = True
         try:
+            # Connect to all batteries first
+            if not await self.connect():
+                raise HubConnectionError("Unable to connect to any device")
+
             data = {}
 
             # Read data from each configured battery
@@ -298,11 +304,12 @@ class SAXBatteryHub:
                 "Successfully read data from all batteries with %d total keys",
                 len(data),
             )
+            return data
         except Exception as e:
             _LOGGER.error("Error reading data from batteries: %s", e)
             raise
-        else:
-            return data
+        finally:
+            self._reading = False
 
 
 class SAXBattery:
