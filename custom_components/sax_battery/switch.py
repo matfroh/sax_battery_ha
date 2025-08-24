@@ -99,10 +99,15 @@ class SAXBatterySolarChargingSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on (enable solar charging)."""
+        await self._update_mode_switches(solar_charging=True, manual_control=False)
+
+    async def _update_mode_switches(
+        self, solar_charging: bool, manual_control: bool
+    ) -> None:
+        """Update both mode switches atomically."""
         new_data = dict(self.coordinator.config_entry.data)
-        new_data[CONF_ENABLE_SOLAR_CHARGING] = True
-        # When solar charging is enabled, manual control must be disabled
-        new_data[CONF_MANUAL_CONTROL] = False
+        new_data[CONF_ENABLE_SOLAR_CHARGING] = solar_charging
+        new_data[CONF_MANUAL_CONTROL] = manual_control
 
         self.hass.config_entries.async_update_entry(
             self.coordinator.config_entry,
@@ -112,11 +117,13 @@ class SAXBatterySolarChargingSwitch(CoordinatorEntity, SwitchEntity):
         # Update pilot mode
         sax_data = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
         if hasattr(sax_data, "pilot") and sax_data.pilot:
-            await sax_data.pilot.set_solar_charging(True)
+            await sax_data.pilot.set_solar_charging(solar_charging)
 
-        self.async_write_ha_state()
-        # Trigger update of manual control switch
-        self.hass.async_create_task(self.coordinator.async_request_refresh())
+        # Force immediate state updates
+        self.async_schedule_update_ha_state(force_refresh=True)
+
+        # Trigger coordinator refresh
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off (disable solar charging)."""
@@ -162,10 +169,15 @@ class SAXBatteryManualControlSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on (enable manual control)."""
+        await self._update_mode_switches(solar_charging=False, manual_control=True)
+
+    async def _update_mode_switches(
+        self, solar_charging: bool, manual_control: bool
+    ) -> None:
+        """Update both mode switches atomically."""
         new_data = dict(self.coordinator.config_entry.data)
-        new_data[CONF_MANUAL_CONTROL] = True
-        # When manual control is enabled, solar charging must be disabled
-        new_data[CONF_ENABLE_SOLAR_CHARGING] = False
+        new_data[CONF_ENABLE_SOLAR_CHARGING] = solar_charging
+        new_data[CONF_MANUAL_CONTROL] = manual_control
 
         self.hass.config_entries.async_update_entry(
             self.coordinator.config_entry,
@@ -175,11 +187,13 @@ class SAXBatteryManualControlSwitch(CoordinatorEntity, SwitchEntity):
         # Update pilot mode
         sax_data = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
         if hasattr(sax_data, "pilot") and sax_data.pilot:
-            await sax_data.pilot.set_solar_charging(False)
+            await sax_data.pilot.set_solar_charging(solar_charging)
 
-        self.async_write_ha_state()
-        # Trigger update of solar charging switch
-        self.hass.async_create_task(self.coordinator.async_request_refresh())
+        # Force immediate state updates
+        self.async_schedule_update_ha_state(force_refresh=True)
+
+        # Trigger coordinator refresh
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off (disable manual control)."""

@@ -151,28 +151,37 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the hub with timeout and sequential processing."""
-        try:
-            # Add timeout to prevent coordinator timeouts
-            raw_data = await asyncio.wait_for(
-                self._hub.read_data(),  # Changed back to existing method
-                timeout=25.0,  # 25 seconds to stay under HA's 30 second limit
-            )
+        # Prevent concurrent data fetching
+        if hasattr(self, "_fetching_lock"):
+            if self._fetching_lock.locked():
+                _LOGGER.debug("Data fetch already in progress, using cached data")
+                return self.data or {}
+        else:
+            self._fetching_lock = asyncio.Lock()
 
-            # Calculate combined values for multi-battery systems
-            combined_data = self._calculate_combined_values(raw_data)
+        async with self._fetching_lock:
+            try:
+                # Reduce timeout to prevent HA coordinator timeouts
+                raw_data = await asyncio.wait_for(
+                    self._hub.read_data(),
+                    timeout=20.0,  # Reduced from 25 to 20 seconds
+                )
 
-            # Merge raw data with combined values
-            raw_data.update(combined_data)
+                # Calculate combined values for multi-battery systems
+                combined_data = self._calculate_combined_values(raw_data)
 
-            return raw_data
+                # Merge raw data with combined values
+                raw_data.update(combined_data)
 
-        except asyncio.TimeoutError:
-            _LOGGER.warning("Data fetch timed out after 25 seconds")
-            # Return last known data if available
-            return self.data or {}
-        except Exception as error:
-            _LOGGER.error("Error communicating with API: %s", error)
-            raise UpdateFailed(f"Error communicating with API: {error}") from error
+                return raw_data
+
+            except asyncio.TimeoutError:
+                _LOGGER.warning("Data fetch timed out after 20 seconds")
+                # Return last known data if available
+                return self.data or {}
+            except Exception as error:
+                _LOGGER.error("Error communicating with API: %s", error)
+                raise UpdateFailed(f"Error communicating with API: {error}") from error
 
     def _calculate_combined_values(self, data: dict[str, Any]) -> dict[str, Any]:
         """Calculate combined values from all batteries."""

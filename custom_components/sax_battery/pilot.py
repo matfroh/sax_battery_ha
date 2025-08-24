@@ -93,7 +93,6 @@ class SAXBatteryPilot:
         self._remove_interval_update: Callable[[], None] | None = None
         self._remove_config_update: Callable[[], None] | None = None
         self._running = False
-        self._modbus_lock = asyncio.Lock()
 
     def _update_config_values(self) -> None:
         """Update configuration values from entry data."""
@@ -471,6 +470,9 @@ class SAXBatteryPilot:
 
     async def send_power_command(self, power: float, power_factor: float) -> None:
         """Send power command to battery via coordinator."""
+        # Wait longer to avoid conflicts with coordinator reads
+        await asyncio.sleep(0.5)  # Increased from 0.1 to 0.5 seconds
+
         # Convert power format for two's complement
         if power < 0:
             power_int = (65536 + int(power)) & 0xFFFF
@@ -491,18 +493,27 @@ class SAXBatteryPilot:
             power_factor,
         )
 
-        # Use coordinator's write method instead of direct Modbus access
-        success = await self.sax_data.async_write_modbus_registers(
-            self.master_battery.battery_id,
-            41,  # Starting register
-            values,
-            slave=64,
-        )
+        # Add timeout protection for the write operation
+        try:
+            success = await asyncio.wait_for(
+                self.sax_data.async_write_modbus_registers(
+                    self.master_battery.battery_id,
+                    41,  # Starting register
+                    values,
+                    slave=64,
+                ),
+                timeout=10.0,  # 10 second timeout for writes
+            )
 
-        if success:
-            _LOGGER.debug("Power command sent successfully: %sW", power)
-        else:
-            _LOGGER.error("Failed to send power command: %sW", power)
+            if success:
+                _LOGGER.debug("Power command sent successfully: %sW", power)
+            else:
+                _LOGGER.error("Failed to send power command: %sW", power)
+
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout sending power command: %sW (took >10s)", power)
+        except Exception as err:
+            _LOGGER.error("Error sending power command: %sW - %s", power, err)
 
 
 class SAXBatteryPilotPowerEntity(NumberEntity):

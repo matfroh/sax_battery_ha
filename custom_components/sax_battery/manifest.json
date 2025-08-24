@@ -15,5 +15,5 @@
         "pymodbus==3.9.2",
         "voluptuous"
     ],
-    "version": "0.2.3.0"
+    "version": "0.2.3.1"
 }

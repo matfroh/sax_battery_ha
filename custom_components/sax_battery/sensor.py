@@ -411,7 +411,7 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
     def _get_sensor_name(self, key: str) -> str:
         """Get human-readable sensor name."""
         name_mapping = {
-            "soc": "State of Charge",
+            "soc": "SOC",
             "status": "Status",
             "power": "Power",
             "smartmeter": "Smart Meter",
