@@ -15,6 +15,11 @@ from pymodbus.exceptions import ConnectionException, ModbusIOException
 
 _LOGGER = logging.getLogger(__name__)
 
+# Improved timeout constants
+MODBUS_TIMEOUT = 5.0  # Reduced from 30 to 5 seconds
+MODBUS_RETRIES = 1  # Reduced from 3 to 1 retry
+READ_TIMEOUT = 3.0  # Individual register read timeout
+
 
 class HubException(HomeAssistantError):
     """Base exception for hub errors."""
@@ -40,6 +45,7 @@ class SAXBatteryHub:
         self._clients: dict[str, AsyncModbusTcpClient | None] = {}
         self._connected: dict[str, bool] = {}
         self._lock = asyncio.Lock()
+        self._reading = False  # Prevent concurrent reads
         self.batteries: dict[str, SAXBattery] = {}
 
         # Initialize batteries based on configuration
@@ -81,7 +87,7 @@ class SAXBatteryHub:
 
             for battery_id, battery in self.batteries.items():
                 try:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         "Attempting to connect to SAX Battery %s at %s:%s",
                         battery_id,
                         battery.host,
@@ -95,8 +101,8 @@ class SAXBatteryHub:
                         self._clients[battery_id] = AsyncModbusTcpClient(
                             host=battery.host,
                             port=battery.port,
-                            timeout=30,  # Increased timeout like original
-                            retries=3,  # Explicit retry count
+                            timeout=MODBUS_TIMEOUT,  # Reduced timeout
+                            retries=MODBUS_RETRIES,  # Reduced retries
                         )
 
                     client = self._clients[battery_id]
@@ -106,43 +112,36 @@ class SAXBatteryHub:
                             battery_id,
                         )
 
-                        # Add network diagnostics
-                        _LOGGER.info(
-                            "Testing network connectivity to %s:%s",
-                            battery.host,
-                            battery.port,
-                        )
+                        # Quick network test with timeout
                         try:
                             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                            sock.settimeout(5)
+                            sock.settimeout(2)  # Quick test
                             result = sock.connect_ex((battery.host, battery.port))
                             sock.close()
-                            if result == 0:
-                                _LOGGER.info(
-                                    "TCP connection to %s:%s successful",
-                                    battery.host,
-                                    battery.port,
-                                )
-                            else:
+                            if result != 0:
                                 _LOGGER.error(
                                     "TCP connection to %s:%s failed (error %s)",
                                     battery.host,
                                     battery.port,
                                     result,
                                 )
+                                all_connected = False
+                                continue
                         except OSError as e:
                             _LOGGER.error(
                                 "Network test failed for %s: %s", battery_id, e
                             )
+                            all_connected = False
+                            continue
 
-                        result = await client.connect()
-                        _LOGGER.debug(
-                            "Modbus connection result for %s: %s", battery_id, result
+                        # Add timeout to connection attempt
+                        result = await asyncio.wait_for(
+                            client.connect(), timeout=MODBUS_TIMEOUT
                         )
 
                         if not result:
                             _LOGGER.error(
-                                "Failed to connect to %s at %s:%s - connection result was False",
+                                "Failed to connect to %s at %s:%s",
                                 battery_id,
                                 battery.host,
                                 battery.port,
@@ -151,31 +150,21 @@ class SAXBatteryHub:
                             continue
 
                     self._connected[battery_id] = True
-                    _LOGGER.info(
-                        "Successfully connected to SAX Battery %s at %s:%s",
-                        battery_id,
-                        battery.host,
-                        battery.port,
+                    _LOGGER.debug(
+                        "Successfully connected to SAX Battery %s", battery_id
                     )
 
-                except (ConnectionException, OSError, TimeoutError) as e:
+                except asyncio.TimeoutError:
                     _LOGGER.error(
-                        "Connection error to %s at %s:%s: %s",
+                        "Connection timeout to %s at %s:%s",
                         battery_id,
                         battery.host,
                         battery.port,
-                        e,
                     )
                     self._connected[battery_id] = False
                     all_connected = False
-                except (ModbusIOException,) as e:
-                    _LOGGER.error(
-                        "Modbus connection error to %s at %s:%s: %s",
-                        battery_id,
-                        battery.host,
-                        battery.port,
-                        e,
-                    )
+                except (ConnectionException, OSError) as e:
+                    _LOGGER.error("Connection error to %s: %s", battery_id, e)
                     self._connected[battery_id] = False
                     all_connected = False
 
@@ -193,8 +182,7 @@ class SAXBatteryHub:
     async def modbus_read_holding_registers(
         self, address: int, count: int, slave: int = 1, battery_id: str | None = None
     ) -> list[int]:
-        """Read holding registers with pymodbus 3.9.2 compatibility."""
-        # Use first battery if no specific battery_id provided (backward compatibility)
+        """Read holding registers with timeout protection."""
         if battery_id is None:
             battery_id = list(self.batteries.keys())[0] if self.batteries else ""
 
@@ -206,110 +194,167 @@ class SAXBatteryHub:
             battery_id,
         )
 
-        # Get the specific client for this battery
         client = self._clients.get(battery_id)
         is_connected = self._connected.get(battery_id, False)
 
-        # Try to reconnect if not connected
-        if not is_connected or not client:
-            _LOGGER.warning(
-                "Battery %s not connected (connected=%s, client=%s), attempting to reconnect",
-                battery_id,
-                is_connected,
-                client is not None,
+        # Quick reconnect attempt if needed
+        if not is_connected or not client or not client.connected:
+            _LOGGER.debug(
+                "Battery %s not connected, attempting quick reconnect", battery_id
             )
-            if not await self.connect():
-                raise HubConnectionError(f"Failed to connect to battery {battery_id}")
-
-        # Get the client for this specific battery after potential reconnect
-        client = self._clients.get(battery_id)
-        if not client:
-            raise HubConnectionError(f"No client available for battery {battery_id}")
+            # Don't call full connect() here - just reconnect this specific client
+            client = self._clients.get(battery_id)
+            if client:
+                try:
+                    result = await asyncio.wait_for(
+                        client.connect(), timeout=MODBUS_TIMEOUT
+                    )
+                    if result:
+                        self._connected[battery_id] = True
+                    else:
+                        raise HubConnectionError(
+                            f"Quick reconnect failed for battery {battery_id}"
+                        )
+                except asyncio.TimeoutError:
+                    raise HubConnectionError(
+                        f"Reconnect timeout for battery {battery_id}"
+                    )
+            else:
+                raise HubConnectionError(
+                    f"No client available for battery {battery_id}"
+                )
 
         try:
-            # Use the same pattern as the working original code
-            result = await client.read_holding_registers(
-                address=address,
-                count=count,
-                slave=slave,
+            # Add timeout to individual register reads
+            result = await asyncio.wait_for(
+                client.read_holding_registers(
+                    address=address,
+                    count=count,
+                    slave=slave,
+                ),
+                timeout=READ_TIMEOUT,  # 3 second timeout per read
             )
-
-            _LOGGER.debug("Read result for battery %s: %s", battery_id, result)
 
             if result.isError():
                 _LOGGER.error(
                     "Modbus error response for battery %s: %s", battery_id, result
                 )
-                # Don't disconnect on single read errors - might be temporary
                 raise HubException(f"Modbus error for battery {battery_id}: {result}")
 
+            _LOGGER.debug(
+                "Successfully read %d registers from battery %s",
+                len(result.registers),
+                battery_id,
+            )
+            return result.registers
+
+        except asyncio.TimeoutError:
+            _LOGGER.error(
+                "Register read timeout for battery %s (address %d, took >%ds)",
+                battery_id,
+                address,
+                READ_TIMEOUT,
+            )
+            self._connected[battery_id] = False  # Mark as disconnected
+            raise HubConnectionError(
+                f"Read timeout for battery {battery_id} at address {address}"
+            )
         except (ConnectionException, ModbusIOException) as e:
             _LOGGER.error(
                 "Modbus communication error for battery %s: %s", battery_id, e
             )
-            # Only disconnect after multiple failures or specific connection issues
             if "No response received" in str(e) or "Connection" in str(e):
-                _LOGGER.warning(
-                    "Connection issue detected for battery %s, will try to reconnect on next read",
-                    battery_id,
-                )
                 self._connected[battery_id] = False
             raise HubConnectionError(
                 f"Modbus communication error for battery {battery_id}: {e}"
             ) from e
-        else:
-            _LOGGER.debug("Successfully read registers: %s", result.registers)
-            return result.registers
 
     async def read_data(self) -> dict[str, Any]:
-        """Read data from all batteries - ensure this is only called once at a time."""
-        # Add a simple flag to prevent concurrent reads
-        if hasattr(self, "_reading") and self._reading:
+        """Read data from all batteries with improved concurrency and timeout protection."""
+        # Prevent concurrent reads
+        if self._reading:
             _LOGGER.debug("Read already in progress, skipping duplicate request")
             return {}
 
         self._reading = True
         try:
-            # Connect to all batteries first
-            if not await self.connect():
-                raise HubConnectionError("Unable to connect to any device")
+            _LOGGER.debug("Starting coordinated data read from all batteries")
 
-            data = {}
-
-            # Read data from each configured battery
-            for battery_id, battery in self.batteries.items():
-                try:
-                    battery_data = await battery.read_data()
-                    if battery_data:
-                        # Add both direct keys (for backward compatibility) and battery-specific keys
-                        if (
-                            battery_id == list(self.batteries.keys())[0]
-                        ):  # First battery gets direct keys too
-                            data.update(battery_data)
-
-                        # Add battery-specific prefixed keys
-                        for key, value in battery_data.items():
-                            data[f"{battery_id}_{key}"] = value
-
-                        _LOGGER.debug(
-                            "Successfully read data from %s with %d keys",
-                            battery_id,
-                            len(battery_data),
-                        )
-                except (HubException, ConnectionException, ModbusIOException) as e:
-                    _LOGGER.error("Error reading data from %s: %s", battery_id, e)
-                    # Continue with other batteries even if one fails
-
-            _LOGGER.debug(
-                "Successfully read data from all batteries with %d total keys",
-                len(data),
+            # Add overall timeout to prevent coordinator getting stuck
+            return await asyncio.wait_for(
+                self._read_data_internal(),
+                timeout=30.0,  # Overall timeout for all batteries
             )
-            return data
-        except Exception as e:
-            _LOGGER.error("Error reading data from batteries: %s", e)
-            raise
+
+        except asyncio.TimeoutError:
+            _LOGGER.error("Overall data read timeout (>30s), aborting")
+            # Reset connection states to force reconnect
+            for battery_id in self.batteries:
+                self._connected[battery_id] = False
+            return {}
         finally:
             self._reading = False
+
+    async def _read_data_internal(self) -> dict[str, Any]:
+        """Internal data reading logic."""
+        # Quick connect check
+        if not await self.connect():
+            _LOGGER.warning("Failed to connect to batteries, returning empty data")
+            return {}
+
+        data = {}
+
+        # Read from all batteries concurrently instead of sequentially
+        battery_tasks = []
+        for battery_id, battery in self.batteries.items():
+            task = asyncio.create_task(
+                self._read_battery_data_safe(battery_id, battery)
+            )
+            battery_tasks.append((battery_id, task))
+
+        # Wait for all battery reads with timeout
+        for battery_id, task in battery_tasks:
+            try:
+                battery_data = await asyncio.wait_for(task, timeout=15.0)
+                if battery_data:
+                    # Add battery-specific keys
+                    for key, value in battery_data.items():
+                        data[f"{battery_id}_{key}"] = value
+
+                    # First battery also gets direct keys (backward compatibility)
+                    if battery_id == list(self.batteries.keys())[0]:
+                        data.update(battery_data)
+
+                    _LOGGER.debug(
+                        "Successfully read %d keys from %s",
+                        len(battery_data),
+                        battery_id,
+                    )
+            except asyncio.TimeoutError:
+                _LOGGER.error(
+                    "Battery %s read timeout (>15s), marking as disconnected",
+                    battery_id,
+                )
+                self._connected[battery_id] = False
+            except Exception as e:
+                _LOGGER.error("Error reading from %s: %s", battery_id, e)
+
+        _LOGGER.debug(
+            "Completed data read with %d total keys from %d batteries",
+            len(data),
+            len(self.batteries),
+        )
+        return data
+
+    async def _read_battery_data_safe(
+        self, battery_id: str, battery: "SAXBattery"
+    ) -> dict[str, float | int | None]:
+        """Safely read data from a single battery with error handling."""
+        try:
+            return await battery.read_data()
+        except Exception as e:
+            _LOGGER.error("Error reading data from %s: %s", battery_id, e)
+            return {}
 
 
 class SAXBattery:
