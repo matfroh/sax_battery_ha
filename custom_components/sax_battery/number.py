@@ -110,7 +110,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 self._attr_native_value == self._attr_native_max_value
                 and self._last_written_value == self._attr_native_max_value
             ):
-                # Skip periodic writes for max value
+                # Skip periodic writes for max value only if already written
                 return
             await self._write_value(self._attr_native_value)
 
@@ -129,12 +129,6 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 _LOGGER.error("Master battery data manager not available")
                 return
 
-            _LOGGER.debug("Master battery ID: %s", master_battery.battery_id)
-            _LOGGER.debug(
-                "Available modbus clients: %s",
-                list(master_battery._data_manager.modbus_clients.keys()),
-            )
-
             client = master_battery._data_manager.modbus_clients.get(
                 master_battery.battery_id
             )
@@ -145,63 +139,52 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 )
                 return
 
+            # Check connection status
+            if not client.connected:
+                _LOGGER.error("Modbus client not connected, attempting to reconnect")
+                try:
+                    await client.connect()
+                    _LOGGER.info("Reconnected to Modbus device")
+                except Exception as connect_err:
+                    _LOGGER.error("Failed to reconnect: %s", connect_err)
+                    return
+
+            # Divide by number of batteries due to manufacturer bug
+            # Each battery applies the limit individually, so we send per-battery value
+            battery_count = len(self._coordinator.batteries)
+            value_per_battery = value / battery_count if battery_count > 0 else value
+            value_int = int(value_per_battery) & 0xFFFF
+            slave_id = 64
+
             _LOGGER.debug(
-                "Modbus client found, connected: %s",
-                getattr(client, "connected", "unknown"),
+                "Writing charge limit: total_value=%s, per_battery=%s, int_value=%s to register 44 with slave=%s",
+                value,
+                value_per_battery,
+                value_int,
+                slave_id,
             )
 
-            # Use executor for async Modbus operations
-            async def _async_write_register() -> bool:
-                """Write register using async executor."""
+            # Write to register 44 (charge power limit)
+            result = await client.write_registers(
+                44,  # Charge power limit register
+                [value_int],
+                slave=slave_id,
+            )
+
+            # Check result for errors
+            if result.isError():
+                _LOGGER.error("Error writing max charge value: %s", result)
+                # Try to reconnect for next time
                 try:
-                    _LOGGER.debug(
-                        "Writing to address 49, value: %s, slave: 64", int(value)
-                    )
-
-                    # Call the write_register method
-                    result = client.write_register(
-                        address=49,  # Max charge power register
-                        value=int(value),
-                        slave=64,
-                    )
-
-                    # If it returns a coroutine, await it
-                    import asyncio
-
-                    if asyncio.iscoroutine(result):
-                        _LOGGER.debug("write_register returned coroutine, awaiting")
-                        result = await result
-                    else:
-                        _LOGGER.debug("write_register returned synchronous result")
-
-                    _LOGGER.debug("Modbus write result: %s", result)
-
-                    # Check if the write was successful
-                    if hasattr(result, "isError") and result.isError():
-                        _LOGGER.error(
-                            "Failed to write max charge value: Modbus error: %s", result
-                        )
-                        return False
-                    elif hasattr(result, "function_code"):
-                        _LOGGER.debug("Successfully wrote max charge value: %s", value)
-                        return True
-                    else:
-                        _LOGGER.error(
-                            "Failed to write max charge value: Unexpected result format: %s",
-                            type(result),
-                        )
-                        return False
-
-                except Exception as exc:
-                    _LOGGER.error("Exception in write_register: %s", exc, exc_info=True)
-                    return False
-
-            # Execute the write operation
-            success = await _async_write_register()
-
-            if success:
-                self._attr_native_value = value
+                    await client.close()
+                    await client.connect()
+                except Exception as reconnect_err:
+                    _LOGGER.debug("Failed to reconnect after error: %s", reconnect_err)
+            else:
+                _LOGGER.debug("Successfully wrote max charge value: %s", value)
+                # Only update _last_written_value on successful write
                 self._last_written_value = value
+                self._attr_native_value = value
                 self.async_write_ha_state()
 
         except Exception as err:
@@ -261,7 +244,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 self._attr_native_value == self._attr_native_max_value
                 and self._last_written_value == self._attr_native_max_value
             ):
-                # Skip periodic writes for max value
+                # Skip periodic writes for max value only if already written
                 return
             await self._write_value(self._attr_native_value)
 
@@ -280,12 +263,6 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 _LOGGER.error("Master battery data manager not available")
                 return
 
-            _LOGGER.debug("Master battery ID: %s", master_battery.battery_id)
-            _LOGGER.debug(
-                "Available modbus clients: %s",
-                list(master_battery._data_manager.modbus_clients.keys()),
-            )
-
             client = master_battery._data_manager.modbus_clients.get(
                 master_battery.battery_id
             )
@@ -296,66 +273,52 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 )
                 return
 
+            # Check connection status
+            if not client.connected:
+                _LOGGER.error("Modbus client not connected, attempting to reconnect")
+                try:
+                    await client.connect()
+                    _LOGGER.info("Reconnected to Modbus device")
+                except Exception as connect_err:
+                    _LOGGER.error("Failed to reconnect: %s", connect_err)
+                    return
+
+            # Divide by number of batteries due to manufacturer bug
+            # Each battery applies the limit individually, so we send per-battery value
+            battery_count = len(self._coordinator.batteries)
+            value_per_battery = value / battery_count if battery_count > 0 else value
+            value_int = int(value_per_battery) & 0xFFFF
+            slave_id = 64
+
             _LOGGER.debug(
-                "Modbus client found, connected: %s",
-                getattr(client, "connected", "unknown"),
+                "Writing discharge limit: total_value=%s, per_battery=%s, int_value=%s to register 43 with slave=%s",
+                value,
+                value_per_battery,
+                value_int,
+                slave_id,
             )
 
-            # Use executor for async Modbus operations
-            async def _async_write_register() -> bool:
-                """Write register using async executor."""
+            # Write to register 43 (discharge power limit)
+            result = await client.write_registers(
+                43,  # Discharge power limit register
+                [value_int],
+                slave=slave_id,
+            )
+
+            # Check result for errors
+            if result.isError():
+                _LOGGER.error("Error writing max discharge value: %s", result)
+                # Try to reconnect for next time
                 try:
-                    _LOGGER.debug(
-                        "Writing to address 50, value: %s, slave: 64", int(value)
-                    )
-
-                    # Call the write_register method
-                    result = client.write_register(
-                        address=50,  # Max discharge power register
-                        value=int(value),
-                        slave=64,
-                    )
-
-                    # If it returns a coroutine, await it
-                    import asyncio
-
-                    if asyncio.iscoroutine(result):
-                        _LOGGER.debug("write_register returned coroutine, awaiting")
-                        result = await result
-                    else:
-                        _LOGGER.debug("write_register returned synchronous result")
-
-                    _LOGGER.debug("Modbus write result: %s", result)
-
-                    # Check if the write was successful
-                    if hasattr(result, "isError") and result.isError():
-                        _LOGGER.error(
-                            "Failed to write max discharge value: Modbus error: %s",
-                            result,
-                        )
-                        return False
-                    elif hasattr(result, "function_code"):
-                        _LOGGER.debug(
-                            "Successfully wrote max discharge value: %s", value
-                        )
-                        return True
-                    else:
-                        _LOGGER.error(
-                            "Failed to write max discharge value: Unexpected result format: %s",
-                            type(result),
-                        )
-                        return False
-
-                except Exception as exc:
-                    _LOGGER.error("Exception in write_register: %s", exc, exc_info=True)
-                    return False
-
-            # Execute the write operation
-            success = await _async_write_register()
-
-            if success:
-                self._attr_native_value = value
+                    await client.close()
+                    await client.connect()
+                except Exception as reconnect_err:
+                    _LOGGER.debug("Failed to reconnect after error: %s", reconnect_err)
+            else:
+                _LOGGER.debug("Successfully wrote max discharge value: %s", value)
+                # Only update _last_written_value on successful write
                 self._last_written_value = value
+                self._attr_native_value = value
                 self.async_write_ha_state()
 
         except Exception as err:
@@ -370,10 +333,10 @@ class SAXBatteryPilotIntervalNumber(NumberEntity):
         self._coordinator = coordinator
         self._attr_unique_id = f"{DOMAIN}_pilot_interval"
         self._attr_name = "Pilot Interval"
-        self._attr_native_min_value = 1
-        self._attr_native_max_value = 60  # Max 60 minutes
+        self._attr_native_min_value = 5  # Minimum 5 seconds for local network polling
+        self._attr_native_max_value = 300  # Max 5 minutes in seconds
         self._attr_native_step = 1
-        self._attr_native_unit_of_measurement = "min"
+        self._attr_native_unit_of_measurement = "s"
         self._attr_native_value = entry.options.get(
             CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
         )
@@ -394,15 +357,19 @@ class SAXBatteryPilotIntervalNumber(NumberEntity):
 
     async def _write_value(self, value: float) -> None:
         """Write the pilot interval value to the coordinator."""
-        _LOGGER.debug("Setting pilot interval to: %s", value)
+        _LOGGER.debug("Setting pilot interval to %s seconds", value)
         self._attr_native_value = value
         self.async_write_ha_state()
 
         # Update the coordinator's auto pilot interval
         self._coordinator.auto_pilot_interval = value
 
-        # Optionally, you can also call a method on the coordinator to handle the update
-        # await self._coordinator.update_pilot_interval(value)
+        # Save the value to config entry options for persistence
+        new_options = dict(self._coordinator.config_entry.options)
+        new_options[CONF_AUTO_PILOT_INTERVAL] = value
+        self.hass.config_entries.async_update_entry(
+            self._coordinator.config_entry, options=new_options
+        )
 
 
 class SAXBatteryMinSOCNumber(NumberEntity):
@@ -435,15 +402,19 @@ class SAXBatteryMinSOCNumber(NumberEntity):
 
     async def _write_value(self, value: float) -> None:
         """Write the minimum SoC value to the coordinator."""
-        _LOGGER.debug("Setting minimum SoC to: %s", value)
+        _LOGGER.debug("Setting minimum SoC to %s", value)
         self._attr_native_value = value
         self.async_write_ha_state()
 
         # Update the coordinator's min SoC
         self._coordinator.min_soc = value
 
-        # Optionally, you can also call a method on the coordinator to handle the update
-        # await self._coordinator.update_min_soc(value)
+        # Save the value to config entry options for persistence
+        new_options = dict(self._coordinator.config_entry.options)
+        new_options[CONF_MIN_SOC] = value
+        self.hass.config_entries.async_update_entry(
+            self._coordinator.config_entry, options=new_options
+        )
 
 
 class SAXBatteryManualPowerEntity(NumberEntity):
@@ -461,7 +432,7 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         self._attr_native_max_value = (
             coordinator.batteries.__len__() * 4500
         )  # Max charge
-        self._attr_native_step = 100
+        self._attr_native_step = 10
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_native_value = 0.0  # Start at 0
         self._attr_mode = NumberMode.BOX
