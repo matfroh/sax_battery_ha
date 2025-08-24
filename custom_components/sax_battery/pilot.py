@@ -486,18 +486,33 @@ class SAXBatteryPilot:
         values = [power_int, pf_int]
 
         _LOGGER.debug(
-            "Sending power command via coordinator: Power=%s (original: %s), PF=%s (original: %s)",
+            "Sending power command via hub: Power=%s (original: %s), PF=%s (original: %s)",
             power_int,
             power,
             pf_int,
             power_factor,
         )
 
-        # Add timeout protection for the write operation
+        # Use the hub's write method instead of coordinator
         try:
+            # Get the coordinator's hub
+            hub = self.sax_data._hub if hasattr(self.sax_data, "_hub") else None
+            if not hub:
+                _LOGGER.error("No hub available for writing")
+                return
+
+            # Use master battery ID or first available battery
+            master_battery_id = getattr(self.sax_data, "master_battery_id", None)
+            if not master_battery_id and hasattr(self.sax_data, "batteries"):
+                master_battery_id = next(iter(self.sax_data.batteries.keys()))
+
+            if not master_battery_id:
+                _LOGGER.error("No master battery ID available")
+                return
+
             success = await asyncio.wait_for(
-                self.sax_data.async_write_modbus_registers(
-                    self.master_battery.battery_id,
+                hub.modbus_write_registers(
+                    master_battery_id,
                     41,  # Starting register
                     values,
                     slave=64,

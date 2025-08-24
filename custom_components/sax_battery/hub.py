@@ -45,6 +45,7 @@ class SAXBatteryHub:
         self._clients: dict[str, AsyncModbusTcpClient | None] = {}
         self._connected: dict[str, bool] = {}
         self._lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()  # Separate lock for write operations
         self._reading = False  # Prevent concurrent reads
         self.batteries: dict[str, SAXBattery] = {}
 
@@ -178,6 +179,64 @@ class SAXBatteryHub:
                     client.close()
                     self._clients[battery_id] = None
                 self._connected[battery_id] = False
+
+    async def modbus_write_registers(
+        self, battery_id: str, address: int, values: list[int], slave: int = 64
+    ) -> bool:
+        """Write to Modbus registers with proper locking."""
+        async with self._write_lock:
+            try:
+                # Add delay to avoid conflicts with reads
+                await asyncio.sleep(0.5)
+
+                client = self._clients.get(battery_id)
+                if not client:
+                    _LOGGER.error("No Modbus client found for battery %s", battery_id)
+                    return False
+
+                # Ensure connection
+                if not client.connected:
+                    await client.connect()
+                    await asyncio.sleep(0.1)
+
+                _LOGGER.debug(
+                    "Writing %d values to battery %s, address %d, slave %d: %s",
+                    len(values),
+                    battery_id,
+                    address,
+                    slave,
+                    values,
+                )
+
+                result = await asyncio.wait_for(
+                    client.write_registers(address, values, slave=slave),
+                    timeout=10.0,
+                )
+
+                if result.isError():
+                    _LOGGER.error(
+                        "Modbus write error for battery %s: %s", battery_id, result
+                    )
+                    return False
+
+                _LOGGER.debug(
+                    "Successfully wrote to battery %s, address %d", battery_id, address
+                )
+                return True
+
+            except asyncio.TimeoutError:
+                _LOGGER.error(
+                    "Write timeout to battery %s (address %d)", battery_id, address
+                )
+                return False
+            except (ConnectionException, ModbusIOException) as e:
+                _LOGGER.error("Modbus write error for battery %s: %s", battery_id, e)
+                return False
+            except Exception as e:
+                _LOGGER.error(
+                    "Unexpected error writing to battery %s: %s", battery_id, e
+                )
+                return False
 
     async def modbus_read_holding_registers(
         self, address: int, count: int, slave: int = 1, battery_id: str | None = None
@@ -372,9 +431,10 @@ class SAXBattery:
         self._data_manager: Any = None  # Will be set by coordinator
 
     def _get_register_map(self) -> dict[str, dict[str, Any]]:
-        """Get the register map for SAX Battery from original working version."""
-        # Use the exact register configuration that was working with pymodbus 3.7.3
+        """Get the complete register map for SAX Battery from original working version."""
+        # Include ALL registers from the original_init.py file
         return {
+            # Slave 64 registers (basic battery data)
             "status": {
                 "address": 45,
                 "count": 1,
@@ -411,6 +471,7 @@ class SAXBattery:
                 "offset": -16384,
                 "slave": 64,
             },
+            # Slave 40 registers (detailed battery info)
             "capacity": {
                 "address": 40115,
                 "count": 1,
@@ -451,28 +512,12 @@ class SAXBattery:
                 "name": "Energy Consumed",
                 "slave": 40,
             },
-            "voltage_l1": {
-                "address": 40081,
+            "phase_currents_sum": {
+                "address": 40073,
                 "count": 1,
-                "scale": 0.1,
-                "unit": "V",
-                "name": "Voltage L1",
-                "slave": 40,
-            },
-            "voltage_l2": {
-                "address": 40082,
-                "count": 1,
-                "scale": 0.1,
-                "unit": "V",
-                "name": "Voltage L2",
-                "slave": 40,
-            },
-            "voltage_l3": {
-                "address": 40083,
-                "count": 1,
-                "scale": 0.1,
-                "unit": "V",
-                "name": "Voltage L3",
+                "scale": 0.01,
+                "unit": "A",
+                "name": "Phase Currents Sum",
                 "slave": 40,
             },
             "current_l1": {
@@ -499,6 +544,30 @@ class SAXBattery:
                 "name": "Current L3",
                 "slave": 40,
             },
+            "voltage_l1": {
+                "address": 40081,
+                "count": 1,
+                "scale": 0.1,
+                "unit": "V",
+                "name": "Voltage L1",
+                "slave": 40,
+            },
+            "voltage_l2": {
+                "address": 40082,
+                "count": 1,
+                "scale": 0.1,
+                "unit": "V",
+                "name": "Voltage L2",
+                "slave": 40,
+            },
+            "voltage_l3": {
+                "address": 40083,
+                "count": 1,
+                "scale": 0.1,
+                "unit": "V",
+                "name": "Voltage L3",
+                "slave": 40,
+            },
             "ac_power_total": {
                 "address": 40085,
                 "count": 1,
@@ -516,12 +585,127 @@ class SAXBattery:
                 "name": "Grid Frequency",
                 "slave": 40,
             },
-            "phase_currents_sum": {
-                "address": 40073,
+            "apparent_power": {
+                "address": 40089,
+                "count": 1,
+                "scale": 10,
+                "unit": "VA",
+                "name": "Apparent Power",
+                "signed": True,
+                "slave": 40,
+            },
+            "reactive_power": {
+                "address": 40091,
+                "count": 1,
+                "scale": 10,
+                "unit": "VAR",
+                "name": "Reactive Power",
+                "signed": True,
+                "slave": 40,
+            },
+            "power_factor": {
+                "address": 40093,
+                "count": 1,
+                "scale": 0.1,
+                "unit": None,
+                "name": "Power Factor",
+                "signed": True,
+                "slave": 40,
+            },
+            "storage_status": {
+                "address": 40099,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "Storage Status",
+                "slave": 40,
+            },
+            # Smart meter readings (slave 40)
+            "smartmeter_current_l1": {
+                "address": 40100,
                 "count": 1,
                 "scale": 0.01,
                 "unit": "A",
-                "name": "Phase Currents Sum",
+                "name": "Smart Meter Current L1",
+                "signed": True,
+                "slave": 40,
+            },
+            "smartmeter_current_l2": {
+                "address": 40101,
+                "count": 1,
+                "scale": 0.01,
+                "unit": "A",
+                "name": "Smart Meter Current L2",
+                "signed": True,
+                "slave": 40,
+            },
+            "smartmeter_current_l3": {
+                "address": 40102,
+                "count": 1,
+                "scale": 0.01,
+                "unit": "A",
+                "name": "Smart Meter Current L3",
+                "signed": True,
+                "slave": 40,
+            },
+            "active_power_l1": {
+                "address": 40103,
+                "count": 1,
+                "scale": 10,
+                "unit": "W",
+                "name": "Active Power L1",
+                "signed": True,
+                "slave": 40,
+            },
+            "active_power_l2": {
+                "address": 40104,
+                "count": 1,
+                "scale": 10,
+                "unit": "W",
+                "name": "Active Power L2",
+                "signed": True,
+                "slave": 40,
+            },
+            "active_power_l3": {
+                "address": 40105,
+                "count": 1,
+                "scale": 10,
+                "unit": "W",
+                "name": "Active Power L3",
+                "signed": True,
+                "slave": 40,
+            },
+            "smartmeter_voltage_l1": {
+                "address": 40107,
+                "count": 1,
+                "scale": 1,
+                "unit": "V",
+                "name": "Smart Meter Voltage L1",
+                "slave": 40,
+            },
+            "smartmeter_voltage_l2": {
+                "address": 40108,
+                "count": 1,
+                "scale": 1,
+                "unit": "V",
+                "name": "Smart Meter Voltage L2",
+                "slave": 40,
+            },
+            "smartmeter_voltage_l3": {
+                "address": 40109,
+                "count": 1,
+                "scale": 1,
+                "unit": "V",
+                "name": "Smart Meter Voltage L3",
+                "slave": 40,
+            },
+            "smartmeter_total_power": {
+                "address": 40110,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "Smart Meter Total Power",
+                "signed": True,
                 "slave": 40,
             },
         }
