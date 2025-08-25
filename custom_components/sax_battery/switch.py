@@ -122,8 +122,6 @@ class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):
             and self.coordinator.data is not None
             and self._modbus_item.name in self.coordinator.data
         )
-        # Force final entity state update even on timeout
-        self.async_write_ha_state()
 
     @property
     def entity_category(self) -> EntityCategory | None:
