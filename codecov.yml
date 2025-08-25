@@ -1,0 +1,55 @@
+codecov:
+  branch: dev
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+      required:
+        target: auto
+        threshold: "1"
+        paths:
+          - custom_components/sax_battery/config_flow.py
+          - custom_components/sax_battery/const.py
+          - custom_components/sax_battery/coordinator.py
+          - custom_components/sax_battery/enums.py
+          - custom_components/sax_battery/items.py
+          - custom_components/sax_battery/modbusobject.py
+          - custom_components/sax_battery/models.py
+          - custom_components/sax_battery/number.py
+          - custom_components/sax_battery/pilot.py
+          - custom_components/sax_battery/sensor.py
+          - custom_components/sax_battery/switch.py
+          - custom_components/sax_battery/utils.py
+
+    patch:
+      default:
+        informational: true
+      required:
+        target: 100
+        threshold: 0
+        paths:
+          - homeassistant/components/*/config_flow.py
+          - homeassistant/components/*/device_action.py
+          - homeassistant/components/*/device_condition.py
+          - homeassistant/components/*/device_trigger.py
+          - homeassistant/components/*/diagnostics.py
+          - homeassistant/components/*/group.py
+          - homeassistant/components/*/intent.py
+          - homeassistant/components/*/logbook.py
+          - homeassistant/components/*/media_source.py
+          - homeassistant/components/*/recorder.py
+          - homeassistant/components/*/scene.py
+  gcov:
+    enable: no
+#comment: false
+# To make partial tests possible,
+# we need to carry forward.
+#flag_management:
+#  default_rules:
+#    carryforward: false
+#  individual_flags:
+#    - name: full-suite
+#      paths:
+#        - ".*"
+#      carryforward: true

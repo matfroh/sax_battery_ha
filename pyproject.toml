@@ -2,7 +2,7 @@
 name = "sax_battery"
 version = "0.2.2.4.2"
 license = "Apache-2.0"
-license-files = ["LICENSE", "LICENSE"]
+license-files = ["LICENSE"]
 description = "SAX battery pilot for HomeAssistant"
 readme = "README.md"
 authors = [
@@ -20,7 +20,7 @@ classifiers = [
 ]
 requires-python = ">=3.13.2"
 dependencies = [
-  "pymodbus==3.8.3",
+  "pymodbus==3.11.0",
   "voluptuous==0.15.2",
 
 ]
@@ -573,8 +573,12 @@ combine-as-imports = true
 split-on-trailing-comma = false
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["SLF001"]  # Allow private member access in tests
-# Temporary
+"tests/*" = [
+    "S101",    # Use of assert detected
+    "PLR2004", # Magic value used in comparison
+    "SLF001",  # Private member accessed
+    "ARG001",  # Unused function argument (common in fixtures)
+]
 "tests/**" = ["PTH"]
 
 [tool.ruff.lint.mccabe]
@@ -585,3 +589,11 @@ property-decorators = ["propcache.api.cached_property"]
 
 [tool.mypy]
 python_version = "3.13"
+files = ["custom_components/**/*.py", "tests/**/*.py"]
+warn_return_any = true
+warn_unused_configs = true
+
+# Allow more flexibility in tests
+[[tool.mypy.overrides]]
+module = "test.*"
+disable_error_code = ["misc", "attr-defined"]

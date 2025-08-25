@@ -1,566 +1,388 @@
-"""Sensor platform for SAX Battery integration."""
+"""SAX Battery sensor platform."""
 
-from datetime import datetime
+from __future__ import annotations
+
+from collections.abc import Callable
+import logging
 from typing import Any
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    PERCENTAGE,
-    UnitOfElectricCurrent,
-    UnitOfElectricPotential,
-    UnitOfEnergy,
-    UnitOfFrequency,
-    UnitOfPower,
-    UnitOfTemperature,
-)
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    SAX_AC_POWER_TOTAL,
+    SAX_COMBINED_SOC,
+    SAX_CUMULATIVE_ENERGY_CONSUMED,
+    SAX_CUMULATIVE_ENERGY_PRODUCED,
+    SAX_ENERGY_CONSUMED,
+    SAX_ENERGY_PRODUCED,
+    SAX_SOC,
+)
 from .coordinator import SAXBatteryCoordinator
+from .enums import TypeConstants
+from .items import ModbusItem, SAXItem
+from .utils import format_battery_display_name
+
+_LOGGER = logging.getLogger(__name__)
+
+
+# Calculation functions for SAXItem values
+def calculate_combined_soc(
+    coordinators: dict[str, SAXBatteryCoordinator],
+) -> float | None:
+    """Calculate combined SOC from all battery coordinators."""
+    try:
+        soc_values = []
+        for coordinator in coordinators.values():
+            if coordinator.data and SAX_SOC in coordinator.data:
+                soc_value = coordinator.data[SAX_SOC]
+                if soc_value is not None:
+                    soc_values.append(float(soc_value))
+
+        if not soc_values:
+            return None
+
+        # Return average SOC
+        return sum(soc_values) / len(soc_values)
+    except (ValueError, TypeError, ZeroDivisionError) as err:
+        _LOGGER.debug("Error calculating combined SOC: %s", err)
+        return None
+
+
+def calculate_cumulative_energy_produced(
+    coordinators: dict[str, SAXBatteryCoordinator],
+) -> float | None:
+    """Calculate cumulative energy produced from all battery coordinators."""
+    try:
+        total_energy = 0.0
+        has_data = False
+
+        for coordinator in coordinators.values():
+            if coordinator.data and SAX_ENERGY_PRODUCED in coordinator.data:
+                energy_value = coordinator.data[SAX_ENERGY_PRODUCED]
+                if energy_value is not None:
+                    total_energy += float(energy_value)
+                    has_data = True
+
+        return total_energy if has_data else None  # noqa: TRY300
+    except (ValueError, TypeError) as err:
+        _LOGGER.debug("Error calculating cumulative energy produced: %s", err)
+        return None
+
+
+def calculate_cumulative_energy_consumed(
+    coordinators: dict[str, SAXBatteryCoordinator],
+) -> float | None:
+    """Calculate cumulative energy consumed from all battery coordinators."""
+    try:
+        total_energy = 0.0
+        has_data = False
+
+        for coordinator in coordinators.values():
+            if coordinator.data and SAX_ENERGY_CONSUMED in coordinator.data:
+                energy_value = coordinator.data[SAX_ENERGY_CONSUMED]
+                if energy_value is not None:
+                    total_energy += float(energy_value)
+                    has_data = True
+
+        return total_energy if has_data else None  # noqa: TRY300
+    except (ValueError, TypeError) as err:
+        _LOGGER.debug("Error calculating cumulative energy consumed: %s", err)
+        return None
+
+
+def get_ac_power_total(coordinators: dict[str, SAXBatteryCoordinator]) -> float | None:
+    """Get AC power total from master battery coordinator."""
+    try:
+        # Find master battery coordinator (should be the first one that has AC power data)
+        for coordinator in coordinators.values():
+            if coordinator.data and SAX_AC_POWER_TOTAL in coordinator.data:
+                power_value = coordinator.data[SAX_AC_POWER_TOTAL]
+                if power_value is not None:
+                    return float(power_value)
+        return None  # noqa: TRY300
+    except (ValueError, TypeError) as err:
+        _LOGGER.debug("Error getting AC power total: %s", err)
+        return None
+
+
+# Mapping of SAXItem names to their calculation functions
+CALCULATION_FUNCTIONS: dict[
+    str, Callable[[dict[str, SAXBatteryCoordinator]], float | None]
+] = {
+    SAX_COMBINED_SOC: calculate_combined_soc,
+    SAX_CUMULATIVE_ENERGY_PRODUCED: calculate_cumulative_energy_produced,
+    SAX_CUMULATIVE_ENERGY_CONSUMED: calculate_cumulative_energy_consumed,
+    SAX_AC_POWER_TOTAL: get_ac_power_total,
+}
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the SAX Battery sensors."""
-    coordinator: SAXBatteryCoordinator = hass.data[DOMAIN][entry.entry_id]
+    """Set up SAX Battery sensor platform."""
+    integration_data = hass.data[DOMAIN][config_entry.entry_id]
+    coordinators = integration_data["coordinators"]
+    sax_data = integration_data["sax_data"]
 
     entities: list[SensorEntity] = []
 
-    # Create combined sensors first (these aggregate data from all batteries)
-    entities.extend(
-        [
-            SAXBatteryCombinedSensor(coordinator, "combined_soc", "Combined SOC"),
-            SAXBatteryCombinedSensor(coordinator, "combined_power", "Combined Power"),
-        ]
-    )
+    # Create sensor entities for each battery
+    for battery_id, coordinator in coordinators.items():
+        if not isinstance(coordinator, SAXBatteryCoordinator):
+            continue
 
-    # Add cumulative energy sensors for the system (only once per system)
-    entities.extend(
-        [
-            SAXBatteryCumulativeEnergyProducedSensor(coordinator),
-            SAXBatteryCumulativeEnergyConsumedSensor(coordinator),
-        ]
-    )
+        # Add modbus sensor items using extend
+        modbus_items = sax_data.get_modbus_items_for_battery(battery_id)
+        entities.extend(
+            SAXBatteryModbusSensor(
+                coordinator=coordinator,
+                battery_id=battery_id,
+                modbus_item=item,
+            )
+            for item in modbus_items
+            if item.mtype == TypeConstants.SENSOR
+        )
 
-    # Keep track of created sensors to avoid duplicates
-    created_sensors: set[str] = set()
+        # Add SAX sensor items (calculated sensors) using extend
+        sax_items = sax_data.get_sax_items_for_battery(battery_id)
+        entities.extend(
+            SAXBatteryCalcSensor(
+                coordinator=coordinator,
+                battery_id=battery_id,
+                sax_item=sax_item,
+                coordinators=coordinators,
+            )
+            for sax_item in sax_items
+            if sax_item.mtype == TypeConstants.SENSOR_CALC
+        )
 
-    # Create sensors for all data keys from the coordinator
-    if coordinator.data:
-        for key in coordinator.data:
-            # Skip combined keys as they're handled above
-            if key.startswith("combined_"):
-                continue
-
-            # Handle battery-specific sensors (battery_a_, battery_b_, etc.)
-            if key.startswith("battery_"):
-                for battery_prefix in ["battery_a_", "battery_b_", "battery_c_"]:
-                    if key.startswith(battery_prefix):
-                        battery_letter = battery_prefix.split("_")[1].upper()
-                        battery_name = f"Battery {battery_letter}"
-
-                        # Create unique sensor key to track duplicates
-                        sensor_key = f"battery_{battery_letter.lower()}_{key.replace(battery_prefix, '')}"
-
-                        if sensor_key not in created_sensors:
-                            entities.append(
-                                SAXBatterySensor(
-                                    coordinator, key, battery_name=battery_name
-                                )
-                            )
-                            created_sensors.add(sensor_key)
-                        break
-            else:
-                # Handle non-battery-specific keys
-                # Only create if this isn't duplicating a battery-specific sensor
-                sensor_base_key = key
-
-                # Check if this sensor would duplicate a battery-specific one
-                is_duplicate = False
-                for battery_id in ["battery_a", "battery_b", "battery_c"]:
-                    battery_specific_key = f"{battery_id}_{sensor_base_key}"
-                    if battery_specific_key in coordinator.data:
-                        is_duplicate = True
-                        break
-
-                # Only create the non-prefixed sensor if it's not a duplicate
-                if not is_duplicate and key not in created_sensors:
-                    entities.append(SAXBatterySensor(coordinator, key))
-                    created_sensors.add(key)
-
-    async_add_entities(entities)
+    if entities:
+        async_add_entities(entities, update_before_add=True)
 
 
-class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
-    """Combined sensor that aggregates data from all batteries."""
+class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
+    """SAX Battery modbus sensor entity."""
 
     def __init__(
         self,
         coordinator: SAXBatteryCoordinator,
-        sensor_type: str,
-        name: str,
+        battery_id: str,
+        modbus_item: ModbusItem,
     ) -> None:
-        """Initialize the combined sensor."""
+        """Initialize SAX Battery modbus sensor entity."""
         super().__init__(coordinator)
-        self._sensor_type = sensor_type
 
-        # Match old naming convention exactly
-        match sensor_type:
-            case "combined_soc":
-                self._attr_name = "Sax Battery Combined SOC"
-                self._attr_device_class = SensorDeviceClass.BATTERY
-                self._attr_native_unit_of_measurement = PERCENTAGE
-                self._attr_state_class = SensorStateClass.MEASUREMENT
-            case "combined_power":
-                self._attr_name = "Sax Battery Combined Power"
-                self._attr_device_class = SensorDeviceClass.POWER
-                self._attr_native_unit_of_measurement = UnitOfPower.WATT
-                self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._battery_id = battery_id
+        self._modbus_item = modbus_item
 
-        self._attr_unique_id = f"{DOMAIN}_{sensor_type}"
+        # Generate unique ID using class name pattern
+        item_name = self._modbus_item.name.removeprefix("sax_")
+        self._attr_unique_id = f"sax_{self._battery_id}_{item_name}"
 
-        # Add device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
+        # Set entity description from modbus item if available
+        if self._modbus_item.entitydescription is not None:
+            self.entity_description = self._modbus_item.entitydescription  # type: ignore[assignment] # fmt: skip
+
+        if isinstance(self.entity_description.name, str):
+            item_name = self.entity_description.name[4:]  # eliminate 'Sax ' # type: ignore[index] # fmt: skip
+
+        self.name = f"Sax {format_battery_display_name(self._battery_id)} {item_name}"
 
     @property
-    def should_poll(self) -> bool:
-        """Return True if entity has to be polled for state."""
-        return True
+    def device_info(self) -> DeviceInfo | None:
+        """Return device info."""
+        return self.coordinator.sax_data.get_device_info(self._battery_id)
 
     @property
-    def native_value(self) -> float | None:
-        """Return the combined value."""
+    def native_value(self) -> Any:
+        """Return the state of the sensor."""
         if not self.coordinator.data:
             return None
 
-        return self.coordinator.data.get(self._sensor_type)
+        return self.coordinator.data.get(self._modbus_item.name)
+
+    @property
+    def state_class(self) -> str | None:
+        """Return state class."""
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "state_class")
+        ):
+            return self.entity_description.state_class
+        return None
+
+    @property
+    def device_class(self) -> SensorDeviceClass | None:
+        """Return device class."""
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "device_class")
+        ):
+            return self.entity_description.device_class
+        return None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return unit of measurement."""
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "native_unit_of_measurement")
+        ):
+            return self.entity_description.native_unit_of_measurement
+        return None
+
+    @property
+    def entity_category(self) -> EntityCategory | None:
+        """Return entity category."""
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "entity_category")
+        ):
+            return self.entity_description.entity_category
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
+        return {
+            "battery_id": self._battery_id,
+            "modbus_address": self._modbus_item.address,
+            "last_update": getattr(self.coordinator, "last_update_success_time", None),
+        }
 
     async def async_update(self) -> None:
         """Update the sensor by recalculating combined values."""
         # Force coordinator update first
         await self.coordinator.async_request_refresh()
 
-        # Calculate combined values similar to old implementation
-        match self._sensor_type:
-            case "combined_power":
-                await self._calculate_combined_power()
-            case "combined_soc":
-                await self._calculate_combined_soc()
 
-    async def _calculate_combined_power(self) -> None:
-        """Calculate combined power from all batteries."""
-        total_power = 0.0
-
-        # Sum power from all configured batteries
-        for battery_id in self.coordinator.batteries:
-            power_key = f"{battery_id}_power"
-            if (
-                self.coordinator.data
-                and power_key in self.coordinator.data
-                and self.coordinator.data[power_key] is not None
-            ):
-                total_power += self.coordinator.data[power_key]
-
-        # Store in coordinator data for consistency
-        if not self.coordinator.data:
-            self.coordinator.data = {}
-        self.coordinator.data["combined_power"] = round(total_power, 1)
-
-        # Also store in combined_data for backward compatibility
-        if not hasattr(self.coordinator, "combined_data"):
-            self.coordinator.combined_data = {}
-        self.coordinator.combined_data["sax_battery_combined_power"] = round(
-            total_power, 1
-        )
-
-        self._attr_native_value = round(total_power, 1)
-
-    async def _calculate_combined_soc(self) -> None:
-        """Calculate average SOC from all batteries."""
-        total_soc = 0.0
-        valid_batteries = 0
-
-        # Calculate average SOC from all configured batteries
-        for battery_id in self.coordinator.batteries:
-            soc_key = f"{battery_id}_soc"
-            if (
-                self.coordinator.data
-                and soc_key in self.coordinator.data
-                and self.coordinator.data[soc_key] is not None
-            ):
-                total_soc += self.coordinator.data[soc_key]
-                valid_batteries += 1
-
-        # Calculate average if we have valid data
-        if valid_batteries > 0:
-            combined_soc = round(total_soc / valid_batteries, 1)
-
-            # Store in coordinator data
-            if not self.coordinator.data:
-                self.coordinator.data = {}
-            self.coordinator.data["combined_soc"] = combined_soc
-
-            # Also store in combined_data for backward compatibility (matching old const)
-            if not hasattr(self.coordinator, "combined_data"):
-                self.coordinator.combined_data = {}
-            self.coordinator.combined_data["sax_battery_combined_soc"] = combined_soc
-
-            self._attr_native_value = combined_soc
-        else:
-            # No valid SOC data
-            if self.coordinator.data:
-                self.coordinator.data["combined_soc"] = None
-            if hasattr(self.coordinator, "combined_data"):
-                self.coordinator.combined_data["sax_battery_combined_soc"] = None
-            self._attr_native_value = None
-
-
-class SAXBatteryCumulativeEnergyProducedSensor(CoordinatorEntity, SensorEntity):
-    """SAX Battery Cumulative Energy Produced sensor for the system."""
-
-    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = "Sax Battery Cumulative Energy Produced"
-        self._attr_unique_id = f"{DOMAIN}_cumulative_energy_produced"
-        self._last_update_time: datetime | None = None
-        self._cumulative_value = 0.0
-
-        # Add device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
-
-    @property
-    def native_value(self) -> float:
-        """Return the native value of the sensor."""
-        return self._cumulative_value
-
-    async def async_update(self) -> None:
-        """Update the sensor."""
-        # Get current time
-        current_time = datetime.now()
-
-        # Only update the cumulative value once per hour
-        if (
-            self._last_update_time is None
-            or (current_time - self._last_update_time).total_seconds() >= 3600
-        ):  # 3600 seconds = 1 hour
-            # Get the current energy produced value from master battery
-            # Use the first available energy_produced value from any battery
-            current_value = None
-
-            if self.coordinator.data:
-                # Try to get from master battery first, then from any available battery
-                current_value = self.coordinator.data.get("energy_produced")
-
-                # If not available from master, try battery-specific values
-                if current_value is None:
-                    for battery_id in ["battery_a", "battery_b", "battery_c"]:
-                        key = f"{battery_id}_energy_produced"
-                        if (
-                            key in self.coordinator.data
-                            and self.coordinator.data[key] is not None
-                        ):
-                            current_value = self.coordinator.data[key]
-                            break
-
-            if current_value is not None:
-                # Update the cumulative value
-                self._cumulative_value += current_value
-                # Update the last update time
-                self._last_update_time = current_time
-
-
-class SAXBatteryCumulativeEnergyConsumedSensor(CoordinatorEntity, SensorEntity):
-    """SAX Battery Cumulative Energy Consumed sensor for the system."""
-
-    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
-        self._attr_name = "Sax Battery Cumulative Energy Consumed"
-        self._attr_unique_id = f"{DOMAIN}_cumulative_energy_consumed"
-        self._last_update_time: datetime | None = None
-        self._cumulative_value = 0.0
-
-        # Add device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
-
-    @property
-    def native_value(self) -> float:
-        """Return the native value of the sensor."""
-        return self._cumulative_value
-
-    async def async_update(self) -> None:
-        """Update the sensor."""
-        # Get current time
-        current_time = datetime.now()
-
-        # Only update the cumulative value once per hour
-        if (
-            self._last_update_time is None
-            or (current_time - self._last_update_time).total_seconds() >= 3600
-        ):  # 3600 seconds = 1 hour
-            # Get the current energy consumed value from master battery
-            # Use the first available energy_consumed value from any battery
-            current_value = None
-
-            if self.coordinator.data:
-                # Try to get from master battery first, then from any available battery
-                current_value = self.coordinator.data.get("energy_consumed")
-
-                # If not available from master, try battery-specific values
-                if current_value is None:
-                    for battery_id in ["battery_a", "battery_b", "battery_c"]:
-                        key = f"{battery_id}_energy_consumed"
-                        if (
-                            key in self.coordinator.data
-                            and self.coordinator.data[key] is not None
-                        ):
-                            current_value = self.coordinator.data[key]
-                            break
-
-            if current_value is not None:
-                # Update the cumulative value
-                self._cumulative_value += current_value
-                # Update the last update time
-                self._last_update_time = current_time
-
-
-class SAXBatterySensor(CoordinatorEntity, SensorEntity):
-    """SAX Battery sensor using coordinator."""
+class SAXBatteryCalcSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
+    """SAX Battery calculated sensor entity."""
 
     def __init__(
         self,
         coordinator: SAXBatteryCoordinator,
-        data_key: str,
-        battery_name: str | None = None,
+        battery_id: str,
+        sax_item: SAXItem,
+        coordinators: dict[str, SAXBatteryCoordinator],
     ) -> None:
-        """Initialize the SAX Battery sensor."""
+        """Initialize SAX Battery calculated sensor entity."""
         super().__init__(coordinator)
-        self._data_key = data_key
-        self._battery_name = battery_name
 
-        # Use battery-specific name if provided
-        if battery_name:
-            # Remove battery prefix (battery_a_, battery_b_, etc.) from data key
-            sensor_key = data_key
-            for prefix in ["battery_a_", "battery_b_", "battery_c_"]:
-                if data_key.startswith(prefix):
-                    sensor_key = data_key.replace(prefix, "")
-                    break
+        self._battery_id = battery_id
+        self._sax_item = sax_item
+        self._coordinators = coordinators
 
-            sensor_base_name = self._get_sensor_name(sensor_key)
-            # Create entity name in format: SAX Battery A Sensor Name
-            battery_letter = battery_name.split()[-1].upper()
-            self._attr_name = f"Sax Battery {battery_letter} {sensor_base_name}"
-            # Update unique_id to match the naming pattern you want: sax_battery_a_sensor_key
-            self._attr_unique_id = (
-                f"{DOMAIN}_battery_{battery_letter.lower()}_{sensor_key}"
-            )
-        else:
-            self._attr_name = self._get_sensor_name(data_key)
-            self._attr_unique_id = f"{DOMAIN}_{data_key}"
+        # Generate unique ID using class name pattern (without "(Calculated)" suffix)
+        item_name = self._sax_item.name.removeprefix("sax_")
+        self._attr_unique_id = f"sax_{self._battery_id}_{item_name}"
 
-        self._attr_device_class, self._attr_native_unit_of_measurement = (
-            self._get_device_class_and_unit(data_key)
-        )
-        self._attr_state_class = self._get_state_class(data_key)
+        # Set entity description from sax item if available
+        if self._sax_item.entitydescription is not None:
+            self.entity_description = self._sax_item.entitydescription  # type: ignore[assignment] # fmt: skip
+        if isinstance(self.entity_description.name, str):
+            item_name = self.entity_description.name[4:]  # eliminate 'Sax ' # type: ignore[index] # fmt: skip
 
-        # Add device info - use coordinator device_id for consistency
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
+        self.name = f"Sax {format_battery_display_name(self._battery_id)} {item_name}"
 
-    def _get_sensor_name(self, key: str) -> str:
-        """Get human-readable sensor name."""
-        name_mapping = {
-            "soc": "SOC",
-            "status": "Status",
-            "power": "Power",
-            "smartmeter": "Smart Meter",
-            "capacity": "Capacity",
-            "cycles": "Cycles",
-            "temp": "Temperature",
-            "energy_produced": "Energy Produced",
-            "energy_consumed": "Energy Consumed",
-            "voltage_l1": "Voltage L1",
-            "voltage_l2": "Voltage L2",
-            "voltage_l3": "Voltage L3",
-            "current_l1": "Current L1",
-            "current_l2": "Current L2",
-            "current_l3": "Current L3",
-            "grid_frequency": "Grid Frequency",
-            "active_power_l1": "Active Power L1",
-            "active_power_l2": "Active Power L2",
-            "active_power_l3": "Active Power L3",
-            "apparent_power": "Apparent Power",
-            "reactive_power": "Reactive Power",
-            "power_factor": "Power Factor",
-            "phase_currents_sum": "Phase Currents Sum",
-            "ac_power_total": "AC Power Total",
-            "storage_status": "Storage Status",
-            "smartmeter_voltage_l1": "Smart Meter Voltage L1",
-            "smartmeter_voltage_l2": "Smart Meter Voltage L2",
-            "smartmeter_voltage_l3": "Smart Meter Voltage L3",
-            "smartmeter_current_l1": "Smart Meter Current L1",
-            "smartmeter_current_l2": "Smart Meter Current L2",
-            "smartmeter_current_l3": "Smart Meter Current L3",
-            "smartmeter_total_power": "Smart Meter Total Power",
-        }
-        return name_mapping.get(key, key.replace("_", " ").title())
+        # Call post-init to add "(Calculated)" suffix to display name
+        self.__post_init__()
 
-    def _get_device_class_and_unit(
-        self, key: str
-    ) -> tuple[SensorDeviceClass | None, str | None]:
-        """Get device class and unit for sensor."""
-        # Remove battery prefix for lookup
-        lookup_key = key
-        for prefix in ["battery_a_", "battery_b_", "battery_c_"]:
-            if key.startswith(prefix):
-                lookup_key = key.replace(prefix, "")
-                break
+    def __post_init__(self) -> None:
+        """Initialize compiled calculation after object creation."""
+        if self._sax_item.mtype == TypeConstants.SENSOR_CALC and isinstance(self.name, str):  # fmt: skip
+            if not self.name.endswith("(Calculated)"):
+                self.name = f"{self.name} (Calculated)"
 
-        mapping = {
-            "soc": (SensorDeviceClass.BATTERY, PERCENTAGE),
-            "power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "capacity": (SensorDeviceClass.ENERGY, UnitOfEnergy.WATT_HOUR),
-            "temp": (SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS),
-            "energy_produced": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR),
-            "energy_consumed": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR),
-            "voltage_l1": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT),
-            "voltage_l2": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT),
-            "voltage_l3": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT),
-            "current_l1": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
-            "current_l2": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
-            "current_l3": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
-            "grid_frequency": (SensorDeviceClass.FREQUENCY, UnitOfFrequency.HERTZ),
-            "active_power_l1": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "active_power_l2": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "active_power_l3": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "apparent_power": (SensorDeviceClass.APPARENT_POWER, "VA"),
-            "reactive_power": (SensorDeviceClass.REACTIVE_POWER, "VAR"),
-            "phase_currents_sum": (
-                SensorDeviceClass.CURRENT,
-                UnitOfElectricCurrent.AMPERE,
-            ),
-            "ac_power_total": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "smartmeter_voltage_l1": (
-                SensorDeviceClass.VOLTAGE,
-                UnitOfElectricPotential.VOLT,
-            ),
-            "smartmeter_voltage_l2": (
-                SensorDeviceClass.VOLTAGE,
-                UnitOfElectricPotential.VOLT,
-            ),
-            "smartmeter_voltage_l3": (
-                SensorDeviceClass.VOLTAGE,
-                UnitOfElectricPotential.VOLT,
-            ),
-            "smartmeter_current_l1": (
-                SensorDeviceClass.CURRENT,
-                UnitOfElectricCurrent.AMPERE,
-            ),
-            "smartmeter_current_l2": (
-                SensorDeviceClass.CURRENT,
-                UnitOfElectricCurrent.AMPERE,
-            ),
-            "smartmeter_current_l3": (
-                SensorDeviceClass.CURRENT,
-                UnitOfElectricCurrent.AMPERE,
-            ),
-            "smartmeter_total_power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-        }
-        return mapping.get(lookup_key, (None, None))
-
-    def _get_state_class(self, key: str) -> SensorStateClass | None:
-        """Get state class for sensor."""
-        # Remove battery prefix for lookup
-        lookup_key = key
-        for prefix in ["battery_a_", "battery_b_", "battery_c_"]:
-            if key.startswith(prefix):
-                lookup_key = key.replace(prefix, "")
-                break
-
-        if lookup_key in ["energy_produced", "energy_consumed", "cycles"]:
-            return SensorStateClass.TOTAL_INCREASING
-        if lookup_key == "capacity":  # Capacity should be TOTAL, not MEASUREMENT
-            return SensorStateClass.TOTAL
-        if lookup_key in [
-            "soc",
-            "power",
-            "temp",
-            "voltage_l1",
-            "voltage_l2",
-            "voltage_l3",
-            "current_l1",
-            "current_l2",
-            "current_l3",
-            "grid_frequency",
-            "active_power_l1",
-            "active_power_l2",
-            "active_power_l3",
-            "apparent_power",
-            "reactive_power",
-            "phase_currents_sum",
-            "ac_power_total",
-            "smartmeter_voltage_l1",
-            "smartmeter_voltage_l2",
-            "smartmeter_voltage_l3",
-            "smartmeter_current_l1",
-            "smartmeter_current_l2",
-            "smartmeter_current_l3",
-            "smartmeter_total_power",
-        ]:
-            return SensorStateClass.MEASUREMENT
-        return None
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return device info."""
+        return self.coordinator.sax_data.get_device_info(self._battery_id)
 
     @property
     def native_value(self) -> Any:
-        """Return the value of the sensor."""
-        if self.coordinator.data is None:
+        """Return the calculated state of the sensor."""
+        # Use the calculation function if available
+        calculation_func = CALCULATION_FUNCTIONS.get(self._sax_item.name)
+        if calculation_func:
+            try:
+                return calculation_func(self._coordinators)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error(
+                    "Error calculating value for %s: %s", self._sax_item.name, err
+                )
+                return None
+
+        # Fallback to coordinator data if no calculation function
+        if not self.coordinator.data:
             return None
-        return self.coordinator.data.get(self._data_key)
+
+        return self.coordinator.data.get(self._sax_item.name)
 
     @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success and self._data_key in (
-            self.coordinator.data or {}
-        )
+    def state_class(self) -> str | None:
+        """Return state class."""
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "state_class")
+        ):
+            return self.entity_description.state_class
+        return None
+
+    @property
+    def device_class(self) -> SensorDeviceClass | None:
+        """Return device class."""
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "device_class")
+        ):
+            return self.entity_description.device_class
+        return None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return unit of measurement."""
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "native_unit_of_measurement")
+        ):
+            return self.entity_description.native_unit_of_measurement
+        return None
+
+    @property
+    def entity_category(self) -> EntityCategory | None:
+        """Return entity category."""
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "entity_category")
+        ):
+            return self.entity_description.entity_category
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
+        return {
+            "battery_id": self._battery_id,
+            "calculation_type": "function_based",
+            "calculation_function": self._sax_item.name,
+            "battery_count": len(self._coordinators),
+            "last_update": getattr(self.coordinator, "last_update_success_time", None),
+        }

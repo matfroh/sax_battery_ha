@@ -1,0 +1,16 @@
+{
+   "entity": {
+        "sensor": {
+            "sax_cumulative_energy_produced": {
+                "name": "SAX cumulative energy produced"
+            },
+              "sax_cumulative_energy_consumed": {
+                "name": "SAX cumulative energy consumed"
+            },
+                "sax_combined_soc": {
+                "name": "SAX combined SOC"
+            }
+        }
+    },
+    "title": "SAX Battery"
+}
