@@ -1,11 +1,15 @@
 """Config flow for SAX Battery integration."""
 
+from __future__ import annotations
+
 from typing import Any
 import uuid
 
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
@@ -38,9 +42,18 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._battery_count: int | None = None
         self._device_id: str = str(uuid.uuid4())  # Generate unique device ID
         self._pilot_from_ha: bool = False
-        self._limit_power: bool = False
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> Any:
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> SAXBatteryOptionsFlowHandler:
+        """Create the options flow."""
+        return SAXBatteryOptionsFlowHandler(config_entry)
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -66,7 +79,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_control_options(
         self, user_input: dict[str, Any] | None = None
-    ) -> Any:
+    ) -> ConfigFlowResult:
         """Handle control options step."""
         errors: dict[str, str] = {}
 
@@ -92,52 +105,60 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_pilot_options(
         self, user_input: dict[str, Any] | None = None
-    ) -> Any:
+    ) -> ConfigFlowResult:
         """Configure pilot options."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            # Custom validation that allows us to show specific error messages
+            validation_passed = True
+
             try:
-                # Validate MIN_SOC
-                try:
-                    min_soc = int(user_input[CONF_MIN_SOC])
-                    if not 0 <= min_soc <= 100:
-                        errors[CONF_MIN_SOC] = "invalid_min_soc"
-                except (ValueError, TypeError):
+                min_soc = int(user_input.get(CONF_MIN_SOC, DEFAULT_MIN_SOC))
+                if not 0 <= min_soc <= 100:
                     errors[CONF_MIN_SOC] = "invalid_min_soc"
+                    validation_passed = False
+            except (ValueError, TypeError):
+                errors[CONF_MIN_SOC] = "invalid_min_soc"
+                validation_passed = False
 
-                # Validate AUTO_PILOT_INTERVAL
-                try:
-                    auto_pilot_interval = int(user_input[CONF_AUTO_PILOT_INTERVAL])
-                    if not 5 <= auto_pilot_interval <= 300:
-                        errors[CONF_AUTO_PILOT_INTERVAL] = "invalid_interval"
-                except (ValueError, TypeError):
+            try:
+                auto_pilot_interval = int(
+                    user_input.get(
+                        CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
+                    )
+                )
+                if not 5 <= auto_pilot_interval <= 300:
                     errors[CONF_AUTO_PILOT_INTERVAL] = "invalid_interval"
+                    validation_passed = False
+            except (ValueError, TypeError):
+                errors[CONF_AUTO_PILOT_INTERVAL] = "invalid_interval"
+                validation_passed = False
 
-                if not errors:
-                    self._data.update(user_input)
-                    return await self.async_step_sensors()
+            if validation_passed:
+                self._data.update(user_input)
+                return await self.async_step_sensors()
 
-            except vol.Invalid:
-                errors["base"] = "invalid_pilot_options"
-
+        # Create schema without strict validation to allow custom error handling
         return self.async_show_form(
             step_id="pilot_options",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_MIN_SOC, default=DEFAULT_MIN_SOC): vol.All(
-                        vol.Coerce(int), vol.Range(min=0, max=100)
+                    vol.Required(CONF_MIN_SOC, default=DEFAULT_MIN_SOC): vol.Any(
+                        int, str
                     ),
                     vol.Required(
                         CONF_AUTO_PILOT_INTERVAL, default=DEFAULT_AUTO_PILOT_INTERVAL
-                    ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
+                    ): vol.Any(int, str),
                     vol.Required(CONF_ENABLE_SOLAR_CHARGING, default=True): bool,
                 }
             ),
             errors=errors,
         )
 
-    async def async_step_sensors(self, user_input: dict[str, Any] | None = None) -> Any:
+    async def async_step_sensors(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Configure power and PF sensors."""
         errors: dict[str, str] = {}
 
@@ -145,23 +166,27 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             return await self.async_step_priority_devices()
 
-        # Only make fields required if piloting from HA
+        # Create schema based on pilot configuration
         schema = {}
         if self._pilot_from_ha:
             schema.update(
                 {
                     vol.Required(CONF_POWER_SENSOR): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain="sensor"),
+                        selector.EntitySelectorConfig(
+                            domain="sensor",
+                        )
                     ),
                     vol.Required(CONF_PF_SENSOR): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain="sensor"),
+                        selector.EntitySelectorConfig(
+                            domain="sensor",
+                        )
                     ),
                 }
             )
 
         # If no sensors are needed, skip this step
         if not schema:
-            return await self.async_step_battery_config()
+            return await self.async_step_priority_devices()
 
         return self.async_show_form(
             step_id="sensors",
@@ -171,7 +196,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_priority_devices(
         self, user_input: dict[str, Any] | None = None
-    ) -> Any:
+    ) -> ConfigFlowResult:
         """Configure priority devices."""
         errors: dict[str, str] = {}
 
@@ -184,7 +209,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Optional(CONF_PRIORITY_DEVICES): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain="sensor", multiple=True),
+                        selector.EntitySelectorConfig(
+                            multiple=True,
+                        )
                     ),
                 }
             ),
@@ -196,7 +223,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_battery_config(
         self, user_input: dict[str, Any] | None = None
-    ) -> Any:
+    ) -> ConfigFlowResult:
         """Configure individual batteries."""
         errors: dict[str, str] = {}
 
@@ -223,11 +250,80 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Coerce(int), vol.Range(min=1, max=65535)
             )
 
-        # Add master battery selection
-        schema[vol.Required(CONF_MASTER_BATTERY)] = vol.In(battery_choices)
+        # Add master battery selection only if more than 1 battery
+        if battery_count > 1:
+            schema[vol.Required(CONF_MASTER_BATTERY, default="battery_a")] = vol.In(
+                battery_choices
+            )
+        else:
+            # For single battery, automatically set battery_a as master
+            self._data[CONF_MASTER_BATTERY] = "battery_a"
 
         return self.async_show_form(
             step_id="battery_config",
             data_schema=vol.Schema(schema),
             errors=errors,
         )
+
+
+class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
+    """SAX Battery config flow options handler."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize SAX Battery options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        # Check if pilot is enabled to show appropriate options
+        pilot_enabled = self.config_entry.data.get(CONF_PILOT_FROM_HA, False)
+
+        schema = {}
+        if pilot_enabled:
+            schema.update(
+                {
+                    vol.Optional(
+                        CONF_MIN_SOC,
+                        default=self.config_entry.options.get(
+                            CONF_MIN_SOC,
+                            self.config_entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC),
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+                    vol.Optional(
+                        CONF_AUTO_PILOT_INTERVAL,
+                        default=self.config_entry.options.get(
+                            CONF_AUTO_PILOT_INTERVAL,
+                            self.config_entry.data.get(
+                                CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
+                            ),
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
+                    vol.Optional(
+                        CONF_ENABLE_SOLAR_CHARGING,
+                        default=self.config_entry.options.get(
+                            CONF_ENABLE_SOLAR_CHARGING,
+                            self.config_entry.data.get(
+                                CONF_ENABLE_SOLAR_CHARGING, True
+                            ),
+                        ),
+                    ): bool,
+                }
+            )
+
+        # Always show power limiting option
+        schema[
+            vol.Optional(
+                CONF_LIMIT_POWER,
+                default=self.config_entry.options.get(
+                    CONF_LIMIT_POWER,
+                    self.config_entry.data.get(CONF_LIMIT_POWER, False),
+                ),
+            )
+        ] = bool
+
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))

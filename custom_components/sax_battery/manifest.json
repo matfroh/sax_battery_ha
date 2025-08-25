@@ -11,8 +11,9 @@
     "documentation": "https://github.com/matfroh/sax_battery_ha",
     "iot_class": "local_polling",
     "issue_tracker": "https://github.com/matfroh/sax_battery_ha/issues",
+    "loggers": ["sax_battery","pymodbus"],
     "requirements": [
-        "pymodbus==3.9.2",
+        "pymodbus",
         "voluptuous"
     ],
     "version": "0.2.3.1"

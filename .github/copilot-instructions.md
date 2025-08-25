@@ -1,5 +1,88 @@
 # Instructions for GitHub Copilot
 
+This repository holds a custom integration of SAX battery for Home Assistant, a Python 3 based home
+automation application.
+
+## 🔋 SAX-power Home Battery System — Communication Architecture
+
+The SAX-power energy storage solution ensures precise, intelligent power management across a multi-phase installation using structured communication protocols and a coordinated control hierarchy.
+A customer system could have multiple battery units, each connected to a different grid phase (L1, L2, L3) for optimal load balancing and energy distribution. The
+
+---
+
+### 📡 Communication Interfaces
+
+Each battery unit is equipped with the following:
+
+#### Ethernet Port (Modbus TCP/IP)
+
+- Allows remote monitoring, data acquisition, and system configuration
+- Used to exchange live data and control signals with energy management systems
+
+#### RS485 Port (Modbus RTU)
+
+- Used for communication between the batteries and the smart meter
+- Facilitates grid connection measurements for synchronized system behavior
+
+---
+
+### ⚙️ Smart Meter Integration
+
+- A single smart meter is connected to all three grid phases: **L1, L2, and L3**
+- Communicates via RS485 to all battery units
+- Smart meter data is accessed through the battery units via Modbus TCP/IP
+- Provides real-time measurements of:
+  - Grid voltage and current per phase (L1, L2, L3)
+  - Import/export power levels
+  - Total energy consumption and production
+  - Grid frequency, power factor, and other electrical parameters
+- Acts as the reference point for system control and balancing logic
+
+---
+
+### 🧠 Master Battery Configuration and Data Polling
+
+- **Battery A** is configured as the master unit
+- The master battery is responsible for:
+  - Power limit coordination for charging and discharging
+  - **Smart meter data polling** - Only the master battery polls smart meter data
+  - Sharing grid measurements with slave batteries via RS485 communication
+- **Battery B and Battery C** act as slaves, following instructions from the master
+- **Polling Strategy**:
+  - Basic smart meter data (total power, frequency, etc.): Standard interval (5-10 seconds)
+  - Phase-specific data (L1/L2/L3 voltages/currents): Lower frequency (30-60 seconds)
+  - Battery-specific data: Standard interval for all batteries
+  - every battery unit polls its own data at the same interval using an individual coordinator
+  - Redundant sensor values shall only be polled by the master battery
+- All communication coordination is based on **RS485 grid values** and shared logic via **Ethernet**
+
+---
+
+### 🔌 Power Phase Mapping
+
+| Battery | Grid Phase | Role   |
+| ------- | ---------- | ------ |
+| A       | L1         | Master |
+| B       | L2         | Slave  |
+| C       | L3         | Slave  |
+
+- Each battery is connected to a dedicated grid phase (L1, L2, or L3) to balance power flow
+- Ensures equal load distribution and phase-specific control
+
+---
+
+### System Diagram
+
+A visual representation includes:
+
+- Separate **RS485** and **Ethernet** connections
+- One unified smart meter with direct connection to all three grid phases (**L1/L2/L3**)
+- Distinct power line routing
+
+![](./assets/battery_cluster.png)
+
+## Instructions for GitHub Copilot
+
 This repository holds a custom integration for Home Assistant, a Python 3 based home
 automation application.
 
@@ -15,6 +98,13 @@ automation application.
   - Linting: PyLint and Ruff
   - Type checking: MyPy
   - Testing: pytest with plain functions and fixtures
+- **Follow linting rules from `pyproject.toml`** - All code generation must adhere to the configured ruff rules including:
+  - **Import sorting** (I001): Always sort imports alphabetically and group them properly (organize imports with `ruff format`)
+  - **Exception handling** (BLE001): Never catch blind `Exception` - use specific exception types
+  - **Import cleanup** (F401): Remove unused imports immediately
+  - **Security** (S): Follow security best practices (avoid `eval`, sanitize inputs)
+  - **Complexity** (C901): Keep functions simple and readable
+  - All other rules defined in `pyproject.toml` under `[tool.ruff]` and `[tool.ruff.lint]`
 - Inline code documentation:
   - File headers should be short and concise:
     ```python
@@ -48,6 +138,12 @@ automation application.
   - For local network polling, the minimum interval is 5 seconds
   - For cloud polling, the minimum interval is 60 seconds
 - Error handling:
+  - **Never catch blind `Exception`** - always use specific exception types:
+    - `ModbusException` for Modbus communication errors
+    - `OSError` for network/connection errors
+    - `TimeoutError` for timeout situations
+    - `ValueError`, `TypeError`, `KeyError` for data processing errors
+    - `ConfigEntryNotReady`, `ConfigEntryError` for setup failures
   - Use specific exceptions from `homeassistant.exceptions`
   - Setup failures:
     - Temporary: Raise `ConfigEntryNotReady`
@@ -63,6 +159,35 @@ automation application.
     ```python
     _LOGGER.debug("This is a log message with %s", variable)
     ```
+- **Import Management**:
+
+  - Always sort imports alphabetically within their groups
+  - Group imports: standard library, third-party, local imports
+  - Remove unused imports immediately (F401 violations)
+  - Use specific imports rather than wildcard imports
+  - Import order example:
+
+    ```python
+    """Module docstring."""
+
+    from __future__ import annotations
+
+    import asyncio
+    import logging
+    from typing import Any
+
+    from pymodbus import ModbusException
+    from homeassistant.core import HomeAssistant
+
+    from .const import DOMAIN
+    from .items import ModbusItem
+    ```
+
+- **Security Considerations**:
+  - Avoid `eval()` function - use `ast.literal_eval()` or safe alternatives
+  - Validate and sanitize all user inputs
+  - Use parameterized queries for database operations
+  - Never log sensitive information
 - Entities:
   - Ensure unique IDs for state persistence:
     - Unique IDs should not contain values that are subject to user or network change.
@@ -92,9 +217,137 @@ automation application.
   - The keys of all state attributes should always be present
   - If the value is unknown, use `None`
   - Provide descriptive state attributes
-- Testing:
-  - Test location: `tests/components/{domain}/`
-  - Use pytest fixtures from `tests.common`
-  - Mock external dependencies
-  - Use snapshots for complex data
-  - Follow existing test patterns
+
+### Testing:
+
+- Test location: `tests/components/{domain}/`
+- Use pytest fixtures from `tests.common`
+- Mock external dependencies
+- Use snapshots for complex data
+- Follow existing test patterns
+
+**When to Create New Fixtures**:
+
+- If a mock is used across 3+ test files, add it to `conftest.py`
+- Use descriptive fixture names with `mock_` prefix
+- Document fixtures with proper docstrings
+
+**Test File Structure**:
+
+- Import only what's needed for the specific module under test
+- Group related tests in classes with descriptive names
+- Use fixture parameters instead of creating mocks in test methods
+
+### Code Generation Rules
+
+1. **Always suggest using existing fixtures** when generating tests
+2. **Recommend adding new fixtures to conftest.py** if mocks are repeated
+3. **Use pytest fixture dependency injection** pattern
+4. **Avoid creating Mock() objects directly in test methods** when fixtures exist
+5. **Follow all ruff linting rules** defined in `pyproject.toml`
+6. **Sort imports properly** and remove unused imports
+7. **Use specific exception handling** - never catch blind `Exception`
+8. **import** statements should be at the top-level of a file
+
+## Home Assistant Integration Patterns
+
+### Entity Testing
+
+- Use `mock_hass` and `mock_coordinator` fixtures
+- Test entity state updates and attribute changes
+- Mock device registry and entity registry interactions
+
+### Config Flow Testing
+
+- Use `mock_modbus_api` for connection testing
+- Test both successful and failed setup scenarios
+- Mock user input validation
+
+### Data Update Coordinator Testing
+
+- Use `mock_modbus_api` for data fetching
+- Test update intervals and error handling
+- Mock network timeouts and connection failures
+
+## Code Review Guidelines
+
+**When reviewing code, do NOT comment on:**
+
+- **Missing imports** - We use static analysis tooling to catch that
+- **Code formatting** - We have ruff as a formatting tool that will catch those if needed (unless specifically instructed otherwise in these instructions)
+
+**When reviewing code, DO comment on:**
+
+- **Blind exception catching** (BLE001) - Must use specific exceptions
+- **Unused imports** (F401) - Should be removed immediately
+- **Import sorting** (I001) - Must follow alphabetical grouping
+- **Security violations** (S) - Avoid unsafe patterns like `eval()`
+- **Complexity issues** (C901) - Functions should be simple and readable
+
+### Test Generation Verification
+
+**Critical Rule: Always Verify Against Actual Implementation**
+
+When generating test files, you MUST:
+
+1. **Read the actual implementation file first** before writing any tests
+2. **Verify class constructors, method signatures, and return types** match the implementation
+3. **Check import paths and class names** exist in the actual codebase
+4. **Validate method parameters** - especially required vs optional parameters
+5. **Confirm exception types** used in the actual implementation
+
+**Before submitting test code:**
+
+- [ ] All imported classes/functions exist in the specified modules
+- [ ] Constructor calls match the actual required parameters (no defaults assumed)
+- [ ] Method signatures match the implementation (async/sync, parameters, return types)
+- [ ] Exception handling uses the same exception types as the implementation
+- [ ] Test assertions match actual method behavior and return values
+
+**Example Verification Process:**
+
+```python
+# ❌ WRONG - Assuming defaults exist
+api = ModbusAPI()  # Error: constructor requires host, port, battery_id
+
+# ✅ CORRECT - After checking actual implementation
+api = ModbusAPI(host="192.168.1.100", port=502, battery_id="battery_a")
+```
+
+**If implementation doesn't match expectations:**
+
+- Update tests to match actual implementation
+- Do NOT assume or suggest changes to the implementation
+- Use the actual method signatures, parameters, and behavior as-is
+
+This rule prevents generating invalid tests that fail due to incorrect assumptions about the codebase structure.
+
+## Additional Rule: Unique Fixture Naming
+
+- **Fixture Naming:**
+  - All pytest fixture names must be unique within the test suite.
+  - Do not reuse fixture names across different scopes (module, class, function) to avoid PyLint `redefined-outer-name (W0621)` errors.
+  - If a fixture is reused or shared, use a descriptive and unique name (e.g., `mock_modbus_api_obj`, `mock_modbus_client_instance`).
+  - When overriding a fixture for a specific test or class, always use a new name rather than shadowing an outer fixture.
+  - If a fixture is defined in `conftest.py`, do not redefine it in a test file with the same name—use a different name or import it directly.
+
+**Example:**
+
+```python
+# conftest.py
+@pytest.fixture
+def mock_modbus_api():
+    ...
+
+# test_modbusobject.py
+@pytest.fixture
+def mock_modbus_api_obj(mock_modbus_api):
+    ...
+```
+
+- Always update references in test functions to use the unique fixture name.
+
+**Summary:**
+
+- Unique fixture names prevent scope shadowing and PyLint errors.
+- Prefer descriptive names for clarity and maintainability.
