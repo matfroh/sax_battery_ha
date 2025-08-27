@@ -44,18 +44,20 @@ class SAXBatteryHub:
         self._battery_configs = battery_configs
         self._clients: dict[str, AsyncModbusTcpClient | None] = {}
         self._connected: dict[str, bool] = {}
-        self._lock = asyncio.Lock()
-        self._write_lock = asyncio.Lock()  # Separate lock for write operations
+        self._lock = asyncio.Lock()  # Global lock for all operations
+        self._battery_locks: dict[str, asyncio.Lock] = {}  # Per-battery locks
+        self._write_lock = asyncio.Lock()  # Add missing write lock
         self._reading = False  # Prevent concurrent reads
         self.batteries: dict[str, SAXBattery] = {}
 
-        # Initialize batteries based on configuration
+        # Initialize batteries and per-battery locks
         for config in battery_configs:
             battery_id = config["battery_id"]
             battery = SAXBattery(self, battery_id, config["host"], config["port"])
             self.batteries[battery_id] = battery
             self._clients[battery_id] = None
             self._connected[battery_id] = False
+            self._battery_locks[battery_id] = asyncio.Lock()  # One lock per battery
 
     @property
     def host(self) -> str:
@@ -184,7 +186,8 @@ class SAXBatteryHub:
         self, battery_id: str, address: int, values: list[int], slave: int = 64
     ) -> bool:
         """Write to Modbus registers with proper locking."""
-        async with self._write_lock:
+        # Use per-battery lock instead of global write lock for consistency
+        async with self._battery_locks[battery_id]:
             try:
                 # Add delay to avoid conflicts with reads
                 await asyncio.sleep(0.5)
