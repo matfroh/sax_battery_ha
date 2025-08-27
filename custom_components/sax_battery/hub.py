@@ -432,7 +432,6 @@ class SAXBattery:
 
     def _get_register_map(self) -> dict[str, dict[str, Any]]:
         """Get the complete register map for SAX Battery from original working version."""
-        # Include ALL registers from the original_init.py file
         return {
             # Slave 64 registers (basic battery data)
             "status": {
@@ -499,16 +498,16 @@ class SAXBattery:
             "energy_produced": {
                 "address": 40096,
                 "count": 1,
-                "scale": 1,
-                "unit": "kWh",
+                "scale": 0.001,  # Convert Wh to kWh (divide by 1000)
+                "unit": "kWh",  # Keep unit as kWh since we're scaling to kWh
                 "name": "Energy Produced",
                 "slave": 40,
             },
             "energy_consumed": {
                 "address": 40097,
                 "count": 1,
-                "scale": 1,
-                "unit": "kWh",
+                "scale": 0.001,  # Convert Wh to kWh (divide by 1000)
+                "unit": "kWh",  # Keep unit as kWh since we're scaling to kWh
                 "name": "Energy Consumed",
                 "slave": 40,
             },
@@ -606,10 +605,9 @@ class SAXBattery:
             "power_factor": {
                 "address": 40093,
                 "count": 1,
-                "scale": 0.1,
-                "unit": None,
+                "scale": 1000,
+                "unit": "%",
                 "name": "Power Factor",
-                "signed": True,
                 "slave": 40,
             },
             "storage_status": {
@@ -678,7 +676,7 @@ class SAXBattery:
             "smartmeter_voltage_l1": {
                 "address": 40107,
                 "count": 1,
-                "scale": 1,
+                "scale": 0.1,
                 "unit": "V",
                 "name": "Smart Meter Voltage L1",
                 "slave": 40,
@@ -686,7 +684,7 @@ class SAXBattery:
             "smartmeter_voltage_l2": {
                 "address": 40108,
                 "count": 1,
-                "scale": 1,
+                "scale": 0.1,
                 "unit": "V",
                 "name": "Smart Meter Voltage L2",
                 "slave": 40,
@@ -694,7 +692,7 @@ class SAXBattery:
             "smartmeter_voltage_l3": {
                 "address": 40109,
                 "count": 1,
-                "scale": 1,
+                "scale": 0.1,
                 "unit": "V",
                 "name": "Smart Meter Voltage L3",
                 "slave": 40,
@@ -742,6 +740,23 @@ class SAXBattery:
         scale = config.get("scale", 1)
         if scale != 1:
             return float(value * scale)
+
+        # Special cases for specific sensor types
+        register_name = config.get("name", "").lower()
+
+        # Status sensors should remain as integers
+        if "status" in register_name:
+            return int(value)
+
+        # Special case for power factor - always return as float even with scale 1
+        # This ensures percentage values are properly handled
+        if config.get("unit") == "%":
+            return float(value)
+
+        # Other registers with scale=1 and no unit should remain as integers
+        # (like cycles, which are count values)
+        if config.get("unit") is None and scale == 1:
+            return int(value)
 
         return float(value)
 

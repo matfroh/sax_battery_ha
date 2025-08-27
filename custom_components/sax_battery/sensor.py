@@ -1,5 +1,8 @@
 """Sensor platform for SAX Battery integration."""
 
+from __future__ import annotations
+
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -11,19 +14,26 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
-    UnitOfElectricCurrent,
-    UnitOfElectricPotential,
     UnitOfEnergy,
-    UnitOfFrequency,
     UnitOfPower,
     UnitOfTemperature,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfFrequency,
+    UnitOfApparentPower,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    CONF_MASTER_BATTERY,  # Import from local const.py, not homeassistant.const
+    DOMAIN,
+    # Add any other constants you need from const.py
+)
 from .coordinator import SAXBatteryCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -34,6 +44,35 @@ async def async_setup_entry(
     """Set up the SAX Battery sensors."""
     coordinator: SAXBatteryCoordinator = hass.data[DOMAIN][entry.entry_id]
 
+    # Debug: Show the full config entry data
+    _LOGGER.info(
+        "Config entry data: %s",
+        {k: v for k, v in entry.data.items() if "password" not in k.lower()},
+    )
+
+    # Get master battery from config entry data (stored during config flow)
+    master_battery_id = entry.data.get(CONF_MASTER_BATTERY)
+
+    _LOGGER.info("Master battery from config: %s", master_battery_id)
+
+    # Fallback logic if not found in config
+    if not master_battery_id and hasattr(coordinator.hub, "batteries"):
+        available_batteries = list(coordinator.hub.batteries.keys())
+        master_battery_id = available_batteries[0] if available_batteries else None
+        _LOGGER.warning(
+            "No master battery in config, using fallback: %s from available: %s",
+            master_battery_id,
+            available_batteries,
+        )
+
+    _LOGGER.info(
+        "Final master battery selection: %s, Available batteries: %s",
+        master_battery_id,
+        list(coordinator.hub.batteries.keys())
+        if hasattr(coordinator.hub, "batteries") and coordinator.hub.batteries
+        else "None",
+    )
+
     entities: list[SensorEntity] = []
 
     # Create combined sensors first (these aggregate data from all batteries)
@@ -41,14 +80,6 @@ async def async_setup_entry(
         [
             SAXBatteryCombinedSensor(coordinator, "combined_soc", "Combined SOC"),
             SAXBatteryCombinedSensor(coordinator, "combined_power", "Combined Power"),
-        ]
-    )
-
-    # Add cumulative energy sensors for the system (only once per system)
-    entities.extend(
-        [
-            SAXBatteryCumulativeEnergyProducedSensor(coordinator),
-            SAXBatteryCumulativeEnergyConsumedSensor(coordinator),
         ]
     )
 
@@ -97,6 +128,25 @@ async def async_setup_entry(
                 if not is_duplicate and key not in created_sensors:
                     entities.append(SAXBatterySensor(coordinator, key))
                     created_sensors.add(key)
+
+    # Add cumulative energy sensors with the configured master battery
+    if master_battery_id:
+        entities.extend(
+            [
+                SAXBatteryCumulativeEnergyProducedSensor(
+                    coordinator, master_battery_id
+                ),
+                SAXBatteryCumulativeEnergyConsumedSensor(
+                    coordinator, master_battery_id
+                ),
+            ]
+        )
+
+        _LOGGER.debug(
+            "Added cumulative sensors using master battery: %s", master_battery_id
+        )
+    else:
+        _LOGGER.warning("No master battery configured, skipping cumulative sensors")
 
     async_add_entities(entities)
 
@@ -232,18 +282,27 @@ class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
 
 
 class SAXBatteryCumulativeEnergyProducedSensor(CoordinatorEntity, SensorEntity):
-    """SAX Battery Cumulative Energy Produced sensor for the system."""
+    """SAX Battery Cumulative Energy Produced sensor - accumulates charging energy."""
 
-    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
+    def __init__(
+        self, coordinator: SAXBatteryCoordinator, master_battery_id: str | None
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
+        self._master_battery_id = master_battery_id
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._attr_name = "Sax Battery Cumulative Energy Produced"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_produced"
         self._last_update_time: datetime | None = None
         self._cumulative_value = 0.0
+
+        # Log initialization details
+        _LOGGER.info(
+            "Cumulative Energy Produced sensor initialized with master battery: %s",
+            self._master_battery_id,
+        )
 
         # Add device info
         self._attr_device_info = {
@@ -257,53 +316,98 @@ class SAXBatteryCumulativeEnergyProducedSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float:
         """Return the native value of the sensor."""
+        # Update cumulative value when requested
+        self._update_cumulative_value()
         return self._cumulative_value
 
-    async def async_update(self) -> None:
-        """Update the sensor."""
-        # Get current time
+    def _update_cumulative_value(self) -> None:
+        """Update the cumulative value if enough time has passed."""
         current_time = datetime.now()
 
         # Only update the cumulative value once per hour
-        if (
+        should_update = (
             self._last_update_time is None
             or (current_time - self._last_update_time).total_seconds() >= 3600
-        ):  # 3600 seconds = 1 hour
+        )
+
+        if should_update:
+            _LOGGER.debug(
+                "Cumulative Energy Produced: Time condition met, checking data"
+            )
+
             # Get the current energy produced value from master battery
-            # Use the first available energy_produced value from any battery
-            current_value = None
+            if self.coordinator.data and self._master_battery_id:
+                # Look for the master battery's energy produced sensor data
+                master_key = f"{self._master_battery_id}_energy_produced"
+                current_value = self.coordinator.data.get(master_key)
 
-            if self.coordinator.data:
-                # Try to get from master battery first, then from any available battery
-                current_value = self.coordinator.data.get("energy_produced")
+                # Debug: Show what master battery we're using and what keys are available
+                available_keys = (
+                    list(self.coordinator.data.keys()) if self.coordinator.data else []
+                )
+                energy_produced_keys = [
+                    k for k in available_keys if "energy_produced" in k
+                ]
 
-                # If not available from master, try battery-specific values
-                if current_value is None:
-                    for battery_id in ["battery_a", "battery_b", "battery_c"]:
-                        key = f"{battery_id}_energy_produced"
-                        if (
-                            key in self.coordinator.data
-                            and self.coordinator.data[key] is not None
-                        ):
-                            current_value = self.coordinator.data[key]
-                            break
+                _LOGGER.info(
+                    "Cumulative Energy Produced: Master battery ID: %s, "
+                    "Looking for key: '%s', Found value: %s, "
+                    "Available energy_produced keys: %s, "
+                    "All available keys: %s",
+                    self._master_battery_id,
+                    master_key,
+                    current_value,
+                    energy_produced_keys,
+                    available_keys[:10],  # Show first 10 keys to avoid log spam
+                )
 
-            if current_value is not None:
-                # Update the cumulative value
-                self._cumulative_value += current_value
-                # Update the last update time
-                self._last_update_time = current_time
+                if current_value is not None and current_value > 0:
+                    # Update the cumulative value (accumulate charging energy)
+                    old_cumulative = self._cumulative_value
+                    self._cumulative_value += current_value
+                    # Update the last update time
+                    self._last_update_time = current_time
+
+                    _LOGGER.info(
+                        "Cumulative Energy Produced: Master battery %s - Added %s kWh to cumulative total. "
+                        "Old: %s kWh, New: %s kWh",
+                        self._master_battery_id,
+                        current_value,
+                        old_cumulative,
+                        self._cumulative_value,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Cumulative Energy Produced: Current value is None or <= 0: %s",
+                        current_value,
+                    )
+            else:
+                _LOGGER.debug(
+                    "Cumulative Energy Produced: No coordinator data or master battery ID. "
+                    "Data exists: %s, Master ID: %s",
+                    self.coordinator.data is not None,
+                    self._master_battery_id,
+                )
+        else:
+            time_diff = (current_time - self._last_update_time).total_seconds()
+            _LOGGER.debug(
+                "Cumulative Energy Produced: Too soon to update. Time since last update: %s seconds",
+                time_diff,
+            )
 
 
 class SAXBatteryCumulativeEnergyConsumedSensor(CoordinatorEntity, SensorEntity):
-    """SAX Battery Cumulative Energy Consumed sensor for the system."""
+    """SAX Battery Cumulative Energy Consumed sensor - accumulates discharging energy."""
 
-    def __init__(self, coordinator: SAXBatteryCoordinator) -> None:
+    def __init__(
+        self, coordinator: SAXBatteryCoordinator, master_battery_id: str | None
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
+        self._master_battery_id = master_battery_id
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._attr_name = "Sax Battery Cumulative Energy Consumed"
         self._attr_unique_id = f"{DOMAIN}_cumulative_energy_consumed"
         self._last_update_time: datetime | None = None
@@ -321,42 +425,90 @@ class SAXBatteryCumulativeEnergyConsumedSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float:
         """Return the native value of the sensor."""
+        # Update cumulative value when requested
+        self._update_cumulative_value()
         return self._cumulative_value
 
-    async def async_update(self) -> None:
-        """Update the sensor."""
-        # Get current time
+    def _update_cumulative_value(self) -> None:
+        """Update the cumulative value if enough time has passed."""
         current_time = datetime.now()
 
+        _LOGGER.debug(
+            "Cumulative Energy Consumed: Checking update conditions. "
+            "Last update: %s, Current time: %s, Master battery: %s",
+            self._last_update_time,
+            current_time,
+            self._master_battery_id,
+        )
+
         # Only update the cumulative value once per hour
-        if (
+        should_update = (
             self._last_update_time is None
             or (current_time - self._last_update_time).total_seconds() >= 3600
-        ):  # 3600 seconds = 1 hour
+        )
+
+        if should_update:
+            _LOGGER.debug(
+                "Cumulative Energy Consumed: Time condition met, checking data"
+            )
+
             # Get the current energy consumed value from master battery
-            # Use the first available energy_consumed value from any battery
-            current_value = None
+            if self.coordinator.data and self._master_battery_id:
+                # Look for the master battery's energy consumed sensor data
+                master_key = f"{self._master_battery_id}_energy_consumed"
+                current_value = self.coordinator.data.get(master_key)
 
-            if self.coordinator.data:
-                # Try to get from master battery first, then from any available battery
-                current_value = self.coordinator.data.get("energy_consumed")
+                _LOGGER.debug(
+                    "Cumulative Energy Consumed: Looking for key '%s', found value: %s (type: %s)",
+                    master_key,
+                    current_value,
+                    type(current_value).__name__
+                    if current_value is not None
+                    else "None",
+                )
 
-                # If not available from master, try battery-specific values
-                if current_value is None:
-                    for battery_id in ["battery_a", "battery_b", "battery_c"]:
-                        key = f"{battery_id}_energy_consumed"
-                        if (
-                            key in self.coordinator.data
-                            and self.coordinator.data[key] is not None
-                        ):
-                            current_value = self.coordinator.data[key]
-                            break
+                # Debug: Show all available keys
+                available_keys = (
+                    list(self.coordinator.data.keys()) if self.coordinator.data else []
+                )
+                energy_keys = [k for k in available_keys if "energy" in k.lower()]
+                _LOGGER.debug(
+                    "Available energy-related keys in coordinator data: %s",
+                    energy_keys,
+                )
 
-            if current_value is not None:
-                # Update the cumulative value
-                self._cumulative_value += current_value
-                # Update the last update time
-                self._last_update_time = current_time
+                if current_value is not None and current_value > 0:
+                    # Update the cumulative value (accumulate discharging energy)
+                    old_cumulative = self._cumulative_value
+                    self._cumulative_value += current_value
+                    # Update the last update time
+                    self._last_update_time = current_time
+
+                    _LOGGER.info(
+                        "Cumulative Energy Consumed: Added %s kWh to cumulative total. "
+                        "Old: %s kWh, New: %s kWh",
+                        current_value,
+                        old_cumulative,
+                        self._cumulative_value,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Cumulative Energy Consumed: Current value is None or <= 0: %s",
+                        current_value,
+                    )
+            else:
+                _LOGGER.debug(
+                    "Cumulative Energy Consumed: No coordinator data or master battery ID. "
+                    "Data exists: %s, Master ID: %s",
+                    self.coordinator.data is not None,
+                    self._master_battery_id,
+                )
+        else:
+            time_diff = (current_time - self._last_update_time).total_seconds()
+            _LOGGER.debug(
+                "Cumulative Energy Consumed: Too soon to update. Time since last update: %s seconds",
+                time_diff,
+            )
 
 
 class SAXBatterySensor(CoordinatorEntity, SensorEntity):
@@ -412,7 +564,6 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
         """Get human-readable sensor name."""
         name_mapping = {
             "soc": "SOC",
-            "status": "Status",
             "power": "Power",
             "smartmeter": "Smart Meter",
             "capacity": "Capacity",
@@ -475,7 +626,11 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "active_power_l2": (SensorDeviceClass.POWER, UnitOfPower.WATT),
             "active_power_l3": (SensorDeviceClass.POWER, UnitOfPower.WATT),
             "apparent_power": (SensorDeviceClass.APPARENT_POWER, "VA"),
-            "reactive_power": (SensorDeviceClass.REACTIVE_POWER, "VAR"),
+            "reactive_power": (
+                SensorDeviceClass.REACTIVE_POWER,
+                "var",
+            ),  # Fixed: was "VAR"
+            "power_factor": (SensorDeviceClass.POWER_FACTOR, PERCENTAGE),
             "phase_currents_sum": (
                 SensorDeviceClass.CURRENT,
                 UnitOfElectricCurrent.AMPERE,
@@ -538,6 +693,7 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "active_power_l3",
             "apparent_power",
             "reactive_power",
+            "power_factor",  # Added missing power_factor
             "phase_currents_sum",
             "ac_power_total",
             "smartmeter_voltage_l1",
