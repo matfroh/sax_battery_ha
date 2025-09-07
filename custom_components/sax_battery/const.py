@@ -10,7 +10,6 @@ CONF_DEVICE_ID = "device_id"
 
 SAX_STATUS = "sax_status"
 SAX_SOC = "sax_soc"
-SAX_POWER = "sax_power"
 SAX_SMARTMETER = "sax_smartmeter"
 SAX_CAPACITY = "sax_capacity"
 SAX_CYCLES = "sax_cycles"

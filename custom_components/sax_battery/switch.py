@@ -289,13 +289,13 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
                             is_on,
                         )
                         return is_on
-                    elif isinstance(status_value, dict):
+                    if isinstance(status_value, dict):
                         # If status is a dict, look for relevant keys
                         if "state" in status_value:
                             return int(status_value["state"]) == state_on
-                        elif "status" in status_value:
+                        if "status" in status_value:
                             return int(status_value["status"]) == state_on
-                        elif "is_on" in status_value:
+                        if "is_on" in status_value:
                             return bool(status_value["is_on"])
                     elif isinstance(status_value, bool):
                         return status_value
@@ -304,7 +304,7 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
                 if isinstance(status_value, (int, float)):
                     # Assume non-zero means on (adjust based on your battery behavior)
                     return status_value != 0
-                elif isinstance(status_value, bool):
+                if isinstance(status_value, bool):
                     return status_value
 
         _LOGGER.debug("No valid status found for battery %s", self.battery_id)
@@ -345,7 +345,7 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
             expected_state = self._registers.get("state_on", 3)
 
             _LOGGER.debug(
-                "Turning ON battery %s - Writing %s to register %s with slave %s",
+                "Turning ON battery %s - Writing %s to register %s with device_id %s",
                 self.battery_id,
                 command_on,
                 address,
@@ -356,7 +356,7 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
                 self.battery_id,
                 address,
                 [command_on],
-                slave=slave_id,
+                device_id=slave_id,
             )
 
             if success:
@@ -396,7 +396,7 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
             expected_state = self._registers.get("state_off", 1)
 
             _LOGGER.debug(
-                "Turning OFF battery %s - Writing %s to register %s with slave %s",
+                "Turning OFF battery %s - Writing %s to register %s with device_id %s",
                 self.battery_id,
                 command_off,
                 address,
@@ -407,7 +407,7 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
                 self.battery_id,
                 address,
                 [command_off],
-                slave=slave_id,
+                device_id=slave_id,
             )
 
             if success:
@@ -505,9 +505,9 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
                 if status_value is not None:
                     if isinstance(status_value, (int, float)):
                         return int(status_value)
-                    elif isinstance(status_value, dict):
+                    if isinstance(status_value, dict):
                         if "state" in status_value:
                             return int(status_value["state"])
-                        elif "status" in status_value:
+                        if "status" in status_value:
                             return int(status_value["status"])
         return None

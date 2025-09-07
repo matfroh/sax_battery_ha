@@ -1,6 +1,10 @@
 """Integration for SAX Battery."""
 
+from __future__ import annotations
+
 import logging
+
+import pymodbus
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -14,6 +18,42 @@ from .hub import create_hub
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
+
+
+def get_device_id_parameter(unit_id: int) -> dict[str, int]:
+    """Get the correct parameter name for device/slave ID based on pymodbus version.
+
+    This provides backwards compatibility between pymodbus 3.10 and 3.11+.
+    In 3.11+, 'slave' parameter was renamed to 'device_id'.
+    """
+    try:
+        version = pymodbus.__version__
+        major, minor = map(int, version.split(".")[:2])
+    except (AttributeError, ValueError):
+        # Fallback to old parameter name if version detection fails
+        return {"slave": unit_id}
+    else:
+        if major > 3 or (major == 3 and minor >= 11):
+            return {"device_id": unit_id}
+        return {"slave": unit_id}
+
+
+async def read_holding_registers_compat(client, address: int, count: int, unit_id: int):
+    """Backwards compatible wrapper for reading holding registers.
+
+    Handles the parameter name change from 'slave' to 'device_id' in pymodbus 3.11+.
+    """
+    params = get_device_id_parameter(unit_id)
+    return await client.read_holding_registers(address, count, **params)
+
+
+async def write_registers_compat(client, address: int, values, unit_id: int):
+    """Backwards compatible wrapper for writing registers.
+
+    Handles the parameter name change from 'slave' to 'device_id' in pymodbus 3.11+.
+    """
+    params = get_device_id_parameter(unit_id)
+    return await client.write_registers(address, values, **params)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

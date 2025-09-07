@@ -515,7 +515,7 @@ class SAXBatteryPilot:
                     master_battery_id,
                     41,  # Starting register
                     values,
-                    slave=64,
+                    slave=64,  # Device ID for SAX battery system
                 ),
                 timeout=10.0,  # 10 second timeout for writes
             )
