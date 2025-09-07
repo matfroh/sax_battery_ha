@@ -15,7 +15,6 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import (
     CONF_AUTO_PILOT_INTERVAL,
     CONF_LIMIT_POWER,
-    CONF_MANUAL_CONTROL,
     CONF_MIN_SOC,
     CONF_PILOT_FROM_HA,
     DEFAULT_AUTO_PILOT_INTERVAL,
@@ -157,7 +156,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
             slave_id = 64
 
             _LOGGER.debug(
-                "Writing charge limit: total_value=%s, per_battery=%s, int_value=%s to register 44 with slave=%s",
+                "Writing charge limit: total_value=%s, per_battery=%s, int_value=%s to register 44 with device_id=%s",
                 value,
                 value_per_battery,
                 value_int,
@@ -168,7 +167,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
             result = await client.write_registers(
                 44,  # Charge power limit register
                 [value_int],
-                slave=slave_id,
+                device_id=slave_id,
             )
 
             # Check result for errors
@@ -291,7 +290,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
             slave_id = 64
 
             _LOGGER.debug(
-                "Writing discharge limit: total_value=%s, per_battery=%s, int_value=%s to register 43 with slave=%s",
+                "Writing discharge limit: total_value=%s, per_battery=%s, int_value=%s to register 43 with device_id=%s",
                 value,
                 value_per_battery,
                 value_int,
@@ -302,7 +301,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
             result = await client.write_registers(
                 43,  # Discharge power limit register
                 [value_int],
-                slave=slave_id,
+                device_id=slave_id,
             )
 
             # Check result for errors
@@ -465,7 +464,7 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         current_value = self.native_value or 0
         if current_value > 0:
             return "mdi:battery-charging"
-        elif current_value < 0:
+        if current_value < 0:
             return "mdi:battery-minus"
         return "mdi:battery"
 

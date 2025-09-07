@@ -9,11 +9,10 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import CONF_DEVICE_ID
-from .hub import SAXBatteryHub, HubException, HubConnectionError
+from .hub import HubConnectionError, HubException, SAXBatteryHub
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,7 +81,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
         self._write_lock = asyncio.Lock()
 
     async def async_write_modbus_registers(
-        self, battery_id: str, address: int, values: list[int], slave: int = 64
+        self, battery_id: str, address: int, values: list[int], device_id: int = 64
     ) -> bool:
         """Write to Modbus registers with proper locking to prevent conflicts."""
         async with self._write_lock:
@@ -93,7 +92,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
                 # Use hub's write method if available, otherwise direct client access
                 if hasattr(self._hub, "write_registers"):
                     success = await self._hub.write_registers(
-                        battery_id, address, values, slave
+                        battery_id, address, values, device_id
                     )
                 else:
                     # Fallback to direct client access with retries
@@ -112,7 +111,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
                                 await asyncio.sleep(0.1)
 
                             result = await client.write_registers(
-                                address, values, slave=slave
+                                address, values, device_id=device_id
                             )
 
                             if result.isError():
@@ -175,7 +174,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
 
                 return raw_data
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _LOGGER.warning("Data fetch timed out after 20 seconds")
                 # Return last known data if available
                 return self.data or {}
@@ -248,7 +247,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
                 data = await self._hub.read_data()  # Changed back to existing method
             except (HubException, HubConnectionError) as err:
                 if i == limit - 1:  # Last attempt
-                    raise ex_type(f"Error refreshing data: %s", err) from err
+                    raise ex_type("Error refreshing data: %s", err) from err
                 _LOGGER.warning(
                     "Retry %s/%s - Error refreshing data: %s", i + 1, limit, err
                 )

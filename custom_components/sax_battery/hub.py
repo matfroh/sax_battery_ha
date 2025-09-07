@@ -1,4 +1,4 @@
-"""SAX Battery Modbus Hub for pymodbus 3.9.2 compatibility."""
+"""SAX Battery Modbus Hub for pymodbus 3.11.1+ compatibility."""
 
 from __future__ import annotations
 
@@ -7,11 +7,12 @@ import logging
 import socket
 from typing import Any
 
+from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.exceptions import ConnectionException, ModbusIOException
+
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from pymodbus.client import AsyncModbusTcpClient
-from pymodbus.exceptions import ConnectionException, ModbusIOException
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ class SAXBatteryHub:
                         "Successfully connected to SAX Battery %s", battery_id
                     )
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     _LOGGER.error(
                         "Connection timeout to %s at %s:%s",
                         battery_id,
@@ -203,7 +204,7 @@ class SAXBatteryHub:
                     await asyncio.sleep(0.1)
 
                 _LOGGER.debug(
-                    "Writing %d values to battery %s, address %d, slave %d: %s",
+                    "Writing %d values to battery %s, address %d, device_id %d: %s",
                     len(values),
                     battery_id,
                     address,
@@ -211,8 +212,9 @@ class SAXBatteryHub:
                     values,
                 )
 
+                # Use device_id parameter for pymodbus 3.11.1+
                 result = await asyncio.wait_for(
-                    client.write_registers(address, values, slave=slave),
+                    client.write_registers(address, values, device_id=slave),
                     timeout=10.0,
                 )
 
@@ -227,7 +229,7 @@ class SAXBatteryHub:
                 )
                 return True
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _LOGGER.error(
                     "Write timeout to battery %s (address %d)", battery_id, address
                 )
@@ -277,7 +279,7 @@ class SAXBatteryHub:
                         raise HubConnectionError(
                             f"Quick reconnect failed for battery {battery_id}"
                         )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     raise HubConnectionError(
                         f"Reconnect timeout for battery {battery_id}"
                     )
@@ -290,9 +292,7 @@ class SAXBatteryHub:
             # Add timeout to individual register reads
             result = await asyncio.wait_for(
                 client.read_holding_registers(
-                    address=address,
-                    count=count,
-                    slave=slave,
+                    address, count=count, device_id=slave
                 ),
                 timeout=READ_TIMEOUT,  # 3 second timeout per read
             )
@@ -310,7 +310,7 @@ class SAXBatteryHub:
             )
             return result.registers
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _LOGGER.error(
                 "Register read timeout for battery %s (address %d, took >%ds)",
                 battery_id,
@@ -348,7 +348,7 @@ class SAXBatteryHub:
                 timeout=30.0,  # Overall timeout for all batteries
             )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _LOGGER.error("Overall data read timeout (>30s), aborting")
             # Reset connection states to force reconnect
             for battery_id in self.batteries:
@@ -392,7 +392,7 @@ class SAXBatteryHub:
                         len(battery_data),
                         battery_id,
                     )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _LOGGER.error(
                     "Battery %s read timeout (>15s), marking as disconnected",
                     battery_id,
@@ -409,7 +409,7 @@ class SAXBatteryHub:
         return data
 
     async def _read_battery_data_safe(
-        self, battery_id: str, battery: "SAXBattery"
+        self, battery_id: str, battery: SAXBattery
     ) -> dict[str, float | int | None]:
         """Safely read data from a single battery with error handling."""
         try:
