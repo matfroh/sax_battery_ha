@@ -1,0 +1,17 @@
+set_choking_power:
+  name: Set battery choking power
+  description: Sets the battery power setpoint using choking control (slave ID 123)
+  target:
+    device:
+      integration: sax_battery
+  fields:
+    power_percentage:
+      name: Power percentage
+      description: Battery power percentage (-100 to 100, where negative is charging and positive is discharging)
+      required: true
+      selector:
+        number:
+          min: -100
+          max: 100
+          step: 1
+          unit_of_measurement: "%"

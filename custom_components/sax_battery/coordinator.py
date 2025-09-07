@@ -149,38 +149,22 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
                 return False
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from the hub with timeout and sequential processing."""
-        # Prevent concurrent data fetching
-        if hasattr(self, "_fetching_lock"):
-            if self._fetching_lock.locked():
-                _LOGGER.debug("Data fetch already in progress, using cached data")
-                return self.data or {}
-        else:
-            self._fetching_lock = asyncio.Lock()
-
-        async with self._fetching_lock:
-            try:
-                # Reduce timeout to prevent HA coordinator timeouts
-                raw_data = await asyncio.wait_for(
-                    self._hub.read_data(),
-                    timeout=20.0,  # Reduced from 25 to 20 seconds
-                )
-
-                # Calculate combined values for multi-battery systems
-                combined_data = self._calculate_combined_values(raw_data)
-
-                # Merge raw data with combined values
-                raw_data.update(combined_data)
-
-                return raw_data
-
-            except TimeoutError:
-                _LOGGER.warning("Data fetch timed out after 20 seconds")
-                # Return last known data if available
-                return self.data or {}
-            except Exception as error:
-                _LOGGER.error("Error communicating with API: %s", error)
-                raise UpdateFailed(f"Error communicating with API: {error}") from error
+        """Fetch data from SAX Battery system."""
+        try:
+            data = {}
+            
+            # Get existing battery data
+            if battery_data := await self.hub.async_get_battery_data():
+                data["battery"] = battery_data
+                
+            # Get choking control data
+            choking_data = await self.hub.async_get_choking_data()
+            data["choking"] = choking_data
+            
+            return data
+            
+        except Exception as err:
+            raise UpdateFailed(f"Error communicating with device: {err}") from err
 
     def _calculate_combined_values(self, data: dict[str, Any]) -> dict[str, Any]:
         """Calculate combined values from all batteries."""

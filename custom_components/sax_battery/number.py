@@ -1,14 +1,21 @@
 """Number platform for SAX Battery integration."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from datetime import timedelta
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import (
+    NumberEntity,
+    NumberEntityDescription,
+    NumberMode,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfPower
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 
@@ -22,14 +29,34 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import SAXBatteryCoordinator
+from .entity import SAXBatteryEntity
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
+NUMBERS: tuple[NumberEntityDescription, ...] = (
+    NumberEntityDescription(
+        key="choking_power_setpoint",
+        translation_key="choking_power_setpoint",
+        icon="mdi:battery-arrow-up-outline",
+        native_min_value=-100,
+        native_max_value=100,
+        native_step=1,
+        native_unit_of_measurement="%",
+    ),
+)
+
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the SAX Battery number entities."""
+    """Set up SAX Battery number entities."""
+    from . import DOMAIN
+
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities = []
@@ -53,7 +80,47 @@ async def async_setup_entry(
             ]
         )
 
-    async_add_entities(entities)
+    async_add_entities(
+        SAXBatteryNumberEntity(coordinator, description) for description in NUMBERS
+    )
+
+
+class SAXBatteryNumberEntity(SAXBatteryEntity, NumberEntity):
+    """Number entity for battery power setpoint control."""
+
+    def __init__(
+        self,
+        coordinator,
+        description: NumberEntityDescription,
+    ) -> None:
+        """Initialize the number entity."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{description.key}"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current power setpoint percentage."""
+        if (choking_data := self.coordinator.data.get("choking")) and (
+            choking_data.get("power_setpoint") is not None
+        ):
+            # Convert from scaled value back to percentage
+            return choking_data["power_setpoint"] / 100
+        return None
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the power setpoint value."""
+        try:
+            await self.coordinator.hub.async_write_choking_power(value)
+            await self.coordinator.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Error setting choking power setpoint: %s", err)
+            raise HomeAssistantError(f"Failed to set power setpoint: {err}") from err
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
 
 
 class SAXBatteryMaxChargeNumber(NumberEntity):

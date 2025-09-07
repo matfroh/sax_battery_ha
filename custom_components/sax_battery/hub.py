@@ -14,6 +14,14 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+from .const import (
+    CHOKING_CONTROL_MODE_REG,
+    CHOKING_FACTOR,
+    CHOKING_POWER_SETPOINT_REG,
+    CONTROL_MODE_SETPOINT,
+    SLAVE_ID_CHOKING,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
 # Improved timeout constants
@@ -35,7 +43,7 @@ class HubInitFailed(HubException):
 
 
 class SAXBatteryHub:
-    """Main hub for SAX Battery communication."""
+    """Hub for SAX Battery communication."""
 
     def __init__(
         self, hass: HomeAssistant, battery_configs: list[dict[str, Any]]
@@ -291,9 +299,7 @@ class SAXBatteryHub:
         try:
             # Add timeout to individual register reads
             result = await asyncio.wait_for(
-                client.read_holding_registers(
-                    address, count=count, device_id=slave
-                ),
+                client.read_holding_registers(address, count=count, device_id=slave),
                 timeout=READ_TIMEOUT,  # 3 second timeout per read
             )
 
@@ -417,6 +423,106 @@ class SAXBatteryHub:
         except Exception as e:
             _LOGGER.error("Error reading data from %s: %s", battery_id, e)
             return {}
+
+    async def async_get_choking_data(self) -> dict[str, Any]:
+        """Get choking control data from the battery system."""
+        _LOGGER.debug("Reading choking data from slave ID %s", SLAVE_ID_CHOKING)
+
+        data = {
+            "power_setpoint": None,
+            "control_mode": None,
+            "is_active": False,
+        }
+
+        try:
+            # Read power setpoint
+            power_result = await self._modbus_hub.async_pymodbus_call(
+                unit=SLAVE_ID_CHOKING,
+                address=CHOKING_POWER_SETPOINT_REG,
+                count=1,
+                call_type="holding",
+            )
+
+            # Read control mode
+            mode_result = await self._modbus_hub.async_pymodbus_call(
+                unit=SLAVE_ID_CHOKING,
+                address=CHOKING_CONTROL_MODE_REG,
+                count=1,
+                call_type="holding",
+            )
+
+            if not power_result.isError():
+                power_setpoint = power_result.registers[0]
+                # Handle signed 16-bit values
+                if power_setpoint > 32767:
+                    power_setpoint -= 65536
+                data["power_setpoint"] = power_setpoint
+
+            if not mode_result.isError():
+                control_mode = mode_result.registers[0]
+                data["control_mode"] = control_mode
+                data["is_active"] = control_mode == CONTROL_MODE_SETPOINT
+
+        except Exception as err:
+            _LOGGER.debug("Error reading choking data: %s", err)
+
+        return data
+
+    async def async_write_choking_power(self, power_percentage: float) -> None:
+        """Write power setpoint to choking control."""
+        scaled_value = int(power_percentage * CHOKING_FACTOR)
+
+        _LOGGER.debug(
+            "Writing choking power setpoint: %s%% (scaled: %s)",
+            power_percentage,
+            scaled_value,
+        )
+
+        # First set control mode to setpoint control
+        mode_result = await self._modbus_hub.async_pymodbus_call(
+            unit=SLAVE_ID_CHOKING,
+            address=CHOKING_CONTROL_MODE_REG,
+            value=CONTROL_MODE_SETPOINT,
+            call_type="write_register",
+        )
+
+        if mode_result.isError():
+            msg = f"Failed to set control mode: {mode_result}"
+            raise HomeAssistantError(msg)
+
+        # Then write the power setpoint
+        power_result = await self._modbus_hub.async_pymodbus_call(
+            unit=SLAVE_ID_CHOKING,
+            address=CHOKING_POWER_SETPOINT_REG,
+            value=scaled_value,
+            call_type="write_register",
+        )
+
+        if power_result.isError():
+            msg = f"Failed to set power setpoint: {power_result}"
+            raise HomeAssistantError(msg)
+
+    async def async_set_control_mode(self, mode: int) -> None:
+        """Set the control mode for the battery system."""
+        _LOGGER.debug("Setting control mode to %d", mode)
+
+        try:
+            result = await self._modbus_hub.async_pymodbus_call(
+                unit=SLAVE_ID_CHOKING,
+                address=CHOKING_CONTROL_MODE_REG,
+                value=mode,
+                call_type="write_register",
+            )
+
+            if result.isError():
+                msg = f"Failed to set control mode: {result}"
+                raise HomeAssistantError(msg)
+
+            _LOGGER.info("Control mode set to %d", mode)
+
+        except Exception as err:
+            _LOGGER.error("Error setting control mode: %s", err)
+            raise HomeAssistantError(f"Error setting control mode: {err}") from err
 
 
 class SAXBattery:

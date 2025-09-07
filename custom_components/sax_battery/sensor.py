@@ -28,6 +28,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_MASTER_BATTERY,  # Import from local const.py, not homeassistant.const
+    CONTROL_MODE_SETPOINT,
+    CONTROL_MODE_SMARTMETER,
     DOMAIN,
     # Add any other constants you need from const.py
 )
@@ -147,6 +149,8 @@ async def async_setup_entry(
         )
     else:
         _LOGGER.warning("No master battery configured, skipping cumulative sensors")
+
+    entities.append(SAXBatteryChokingControlModeSensor(coordinator, entry))
 
     async_add_entities(entities)
 
@@ -719,4 +723,34 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
         """Return True if entity is available."""
         return self.coordinator.last_update_success and self._data_key in (
             self.coordinator.data or {}
+        )
+
+
+class SAXBatteryChokingControlModeSensor(SAXBatteryEntity, SensorEntity):
+    """Sensor for battery control mode."""
+
+    def __init__(self, coordinator, entry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Battery Control Mode"
+        self._attr_unique_id = f"{entry.entry_id}_choking_control_mode"
+        self._attr_icon = "mdi:cog"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the current control mode."""
+        if choking_data := self.coordinator.data.get("choking"):
+            match choking_data.get("control_mode"):
+                case 1:  # CONTROL_MODE_SETPOINT
+                    return "setpoint"
+                case 0:  # CONTROL_MODE_SMARTMETER
+                    return "smartmeter"
+        return None
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            self.coordinator.last_update_success
+            and self.coordinator.data.get("choking") is not None
         )

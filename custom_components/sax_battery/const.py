@@ -65,3 +65,25 @@ SAX_SMARTMETER_VOLTAGE_L2 = "smartmeter_voltage_l2"
 SAX_SMARTMETER_VOLTAGE_L3 = "smartmeter_voltage_l3"
 SAX_SMARTMETER_TOTAL_POWER = "smartmeter_total_power"
 SAX_STORAGE_STATUS = "storage_status"
+
+# Modbus configuration
+SLAVE_ID_SMARTMETER = 1
+SLAVE_ID_BATTERY = 120
+SLAVE_ID_CHOKING = 123  # New slave ID for choking control
+
+# Register addresses for choking control
+CHOKING_POWER_SETPOINT_REG = 348  # Register for power setpoint (40349)
+CHOKING_CONTROL_MODE_REG = 352    # Register for control mode (40353)
+
+# Choking control constants
+CHOKING_FACTOR = 100
+CHOKING_MIN_VALUE = -10000
+CHOKING_MAX_VALUE = 10000
+CHOKING_TIMEOUT_MINUTES = 5
+
+# Control modes
+CONTROL_MODE_SMARTMETER = 0
+CONTROL_MODE_SETPOINT = 1
+
+# Services
+SERVICE_SET_CHOKING_POWER = "set_choking_power"
