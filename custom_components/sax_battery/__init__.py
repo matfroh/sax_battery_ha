@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import logging
 
-import pymodbus
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -17,9 +15,45 @@ from .hub import create_hub
 
 _LOGGER = logging.getLogger(__name__)
 
-# Reduce pymodbus logging noise for transaction ID mismatches
-logging.getLogger("pymodbus.logging").setLevel(logging.WARNING)
-logging.getLogger("pymodbus.client.tcp").setLevel(logging.WARNING)
+
+def setup_pymodbus_logging() -> None:
+    """Set up aggressive PyModbus logging suppression."""
+    # Disable pymodbus logging completely
+    logging.getLogger("pymodbus.logging").disabled = True
+    logging.getLogger("pymodbus.client.tcp").disabled = True
+    logging.getLogger("pymodbus.client").disabled = True
+    logging.getLogger("pymodbus.transaction").disabled = True
+    logging.getLogger("pymodbus").setLevel(logging.CRITICAL + 10)  # Above CRITICAL
+
+    # Add a filter to catch any remaining pymodbus messages
+    class PyModbusFilter(logging.Filter):
+        """Filter to block pymodbus transaction ID and other noise."""
+
+        def filter(self, record) -> bool:
+            """Filter out pymodbus noise messages."""
+            if hasattr(record, "name") and "pymodbus" in record.name:
+                return False
+            message = getattr(record, "msg", "") or getattr(record, "message", "")
+            if isinstance(message, str):
+                return not any(
+                    phrase in message.lower()
+                    for phrase in [
+                        "transaction_id",
+                        "request ask for",
+                        "but got id",
+                        "skipping",
+                        "recv:",
+                        "send:",
+                        "extra data",
+                    ]
+                )
+            return True
+
+    # Apply the filter to root logger to catch everything
+    root_logger = logging.getLogger()
+    pymodbus_filter = PyModbusFilter()
+    root_logger.addFilter(pymodbus_filter)
+
 
 PLATFORMS = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
 
@@ -30,6 +64,8 @@ def get_device_id_parameter(unit_id: int) -> dict[str, int]:
     This provides backwards compatibility between pymodbus 3.10 and 3.11+.
     In 3.11+, 'slave' parameter was renamed to 'device_id'.
     """
+    import pymodbus
+
     try:
         version = pymodbus.__version__
         major, minor = map(int, version.split(".")[:2])
@@ -62,6 +98,9 @@ async def write_registers_compat(client, address: int, values, unit_id: int):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up SAX Battery from a config entry."""
+    # Set up aggressive PyModbus logging suppression to reduce noise
+    setup_pymodbus_logging()
+
     try:
         # Create the hub
         hub = await create_hub(hass, dict(entry.data))
