@@ -17,6 +17,10 @@ from .hub import create_hub
 
 _LOGGER = logging.getLogger(__name__)
 
+# Reduce pymodbus logging noise for transaction ID mismatches
+logging.getLogger("pymodbus.logging").setLevel(logging.WARNING)
+logging.getLogger("pymodbus.client.tcp").setLevel(logging.WARNING)
+
 PLATFORMS = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
 
 
@@ -63,7 +67,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hub = await create_hub(hass, dict(entry.data))
 
         # Create the coordinator
-        coordinator = SAXBatteryCoordinator(hass, hub, 30, entry)
+        coordinator = SAXBatteryCoordinator(hass, hub, 60, entry)
 
         # Initial data fetch
         await coordinator.async_config_entry_first_refresh()
