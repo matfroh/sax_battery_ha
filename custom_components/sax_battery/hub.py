@@ -16,11 +16,13 @@ from homeassistant.exceptions import HomeAssistantError
 
 _LOGGER = logging.getLogger(__name__)
 
-# Improved timeout constants
-MODBUS_TIMEOUT = 8.0  # Increased from 5 to 8 seconds
-MODBUS_RETRIES = 2  # Increased from 1 to 2 retries
-READ_TIMEOUT = 5.0  # Increased from 3 to 5 seconds
-RETRY_DELAY = 0.5  # Add delay between retries
+# Improved timeout constants for multi-device coordination
+MODBUS_TIMEOUT = 10.0  # Increased from 8 to 10 seconds
+MODBUS_RETRIES = 3  # Increased from 2 to 3 retries
+READ_TIMEOUT = 8.0  # Increased from 5 to 8 seconds
+RETRY_DELAY = 1.0  # Increased from 0.5 to 1.0 second
+WRITE_DELAY = 2.0  # New: Delay before writes to avoid conflicts
+GLOBAL_DELAY = 0.1  # New: Small delay between all operations
 
 
 class HubException(HomeAssistantError):
@@ -187,12 +189,12 @@ class SAXBatteryHub:
     async def modbus_write_registers(
         self, battery_id: str, address: int, values: list[int], slave: int = 64
     ) -> bool:
-        """Write to Modbus registers with proper locking."""
+        """Write to Modbus registers with proper locking and coordination."""
         # Use per-battery lock instead of global write lock for consistency
         async with self._battery_locks[battery_id]:
             try:
-                # Add delay to avoid conflicts with reads
-                await asyncio.sleep(0.5)
+                # Increased delay to avoid conflicts with reads and other devices
+                await asyncio.sleep(WRITE_DELAY)
 
                 client = self._clients.get(battery_id)
                 if not client:
@@ -202,7 +204,7 @@ class SAXBatteryHub:
                 # Ensure connection
                 if not client.connected:
                     await client.connect()
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(GLOBAL_DELAY)
 
                 _LOGGER.debug(
                     "Writing %d values to battery %s, address %d, device_id %d: %s",
@@ -216,7 +218,7 @@ class SAXBatteryHub:
                 # Use device_id parameter for pymodbus 3.11.1+
                 result = await asyncio.wait_for(
                     client.write_registers(address, values, device_id=slave),
-                    timeout=10.0,
+                    timeout=12.0,  # Increased timeout for writes
                 )
 
                 if result.isError():
@@ -228,6 +230,9 @@ class SAXBatteryHub:
                 _LOGGER.debug(
                     "Successfully wrote to battery %s, address %d", battery_id, address
                 )
+
+                # Add small delay after successful write
+                await asyncio.sleep(GLOBAL_DELAY)
                 return True
 
             except TimeoutError:
@@ -293,12 +298,16 @@ class SAXBatteryHub:
             # Add retry logic with exponential backoff for transaction ID issues
             for attempt in range(MODBUS_RETRIES + 1):
                 try:
+                    # Add small delay between operations to reduce conflicts
+                    if attempt > 0:
+                        await asyncio.sleep(GLOBAL_DELAY)
+
                     # Add timeout to individual register reads
                     result = await asyncio.wait_for(
                         client.read_holding_registers(
                             address, count=count, device_id=slave
                         ),
-                        timeout=READ_TIMEOUT,  # 5 second timeout per read
+                        timeout=READ_TIMEOUT,  # 8 second timeout per read
                     )
 
                     if result.isError():
