@@ -202,7 +202,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
 
         # Calculate dynamic max value based on battery count
         battery_count = len(coordinator.batteries)
-        self._attr_native_max_value = battery_count * 3500  # 3.5kW per battery
+        self._attr_native_max_value = battery_count * 4600  # 4.6kW per battery
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_native_value = self._attr_native_max_value  # Start at max

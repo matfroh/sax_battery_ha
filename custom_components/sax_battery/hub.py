@@ -291,9 +291,7 @@ class SAXBatteryHub:
         try:
             # Add timeout to individual register reads
             result = await asyncio.wait_for(
-                client.read_holding_registers(
-                    address, count=count, device_id=slave
-                ),
+                client.read_holding_registers(address, count=count, device_id=slave),
                 timeout=READ_TIMEOUT,  # 3 second timeout per read
             )
 
