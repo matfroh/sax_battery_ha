@@ -3,7 +3,9 @@
 from collections.abc import Callable
 from datetime import timedelta
 import asyncio
+import inspect
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberMode
@@ -160,6 +162,19 @@ class SAXBatteryPilot:
 
     async def _async_update_pilot(self, now: Any = None) -> None:
         """Update the pilot calculations and send to battery."""
+        # Enhanced logging to track what's calling this method
+        caller_frame = inspect.currentframe()
+        caller_info = "unknown"
+        if caller_frame and caller_frame.f_back:
+            caller_info = f"{caller_frame.f_back.f_code.co_filename}:{caller_frame.f_back.f_lineno}"
+            caller_info = caller_info.split('/')[-1] if '/' in caller_info else caller_info
+
+        _LOGGER.info(
+            "Pilot update called from: %s, now parameter: %s",
+            caller_info,
+            now
+        )
+
         try:
             # Check if in manual mode - if so, skip automatic calculations entirely
             if self.entry.data.get(CONF_MANUAL_CONTROL, False):
@@ -470,6 +485,21 @@ class SAXBatteryPilot:
 
     async def send_power_command(self, power: float, power_factor: float) -> None:
         """Send power command to battery via coordinator."""
+        current_time = time.time()
+
+        # Enhanced logging to track frequency
+        if hasattr(self, '_last_power_command_time'):
+            time_since_last = current_time - self._last_power_command_time
+            _LOGGER.info(
+                "Power command frequency: %.1fs since last command (target: %ss interval)",
+                time_since_last,
+                self.update_interval
+            )
+        else:
+            _LOGGER.info("First power command sent")
+
+        self._last_power_command_time = current_time
+
         # Wait longer to avoid conflicts with coordinator reads
         await asyncio.sleep(0.5)  # Increased from 0.1 to 0.5 seconds
 
