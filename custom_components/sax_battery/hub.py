@@ -17,9 +17,10 @@ from homeassistant.exceptions import HomeAssistantError
 _LOGGER = logging.getLogger(__name__)
 
 # Improved timeout constants
-MODBUS_TIMEOUT = 5.0  # Reduced from 30 to 5 seconds
-MODBUS_RETRIES = 1  # Reduced from 3 to 1 retry
-READ_TIMEOUT = 3.0  # Individual register read timeout
+MODBUS_TIMEOUT = 8.0  # Increased from 5 to 8 seconds
+MODBUS_RETRIES = 2  # Increased from 1 to 2 retries
+READ_TIMEOUT = 5.0  # Increased from 3 to 5 seconds
+RETRY_DELAY = 0.5  # Add delay between retries
 
 
 class HubException(HomeAssistantError):
@@ -105,8 +106,8 @@ class SAXBatteryHub:
                         self._clients[battery_id] = AsyncModbusTcpClient(
                             host=battery.host,
                             port=battery.port,
-                            timeout=MODBUS_TIMEOUT,  # Reduced timeout
-                            retries=MODBUS_RETRIES,  # Reduced retries
+                            timeout=MODBUS_TIMEOUT,  # Increased timeout
+                            retries=MODBUS_RETRIES,  # Moderate retries
                         )
 
                     client = self._clients[battery_id]
@@ -289,40 +290,112 @@ class SAXBatteryHub:
                 )
 
         try:
-            # Add timeout to individual register reads
-            result = await asyncio.wait_for(
-                client.read_holding_registers(address, count=count, device_id=slave),
-                timeout=READ_TIMEOUT,  # 3 second timeout per read
-            )
+            # Add retry logic with exponential backoff for transaction ID issues
+            for attempt in range(MODBUS_RETRIES + 1):
+                try:
+                    # Add timeout to individual register reads
+                    result = await asyncio.wait_for(
+                        client.read_holding_registers(
+                            address, count=count, device_id=slave
+                        ),
+                        timeout=READ_TIMEOUT,  # 5 second timeout per read
+                    )
 
-            if result.isError():
-                _LOGGER.error(
-                    "Modbus error response for battery %s: %s", battery_id, result
-                )
-                raise HubException(f"Modbus error for battery {battery_id}: {result}")
+                    if result.isError():
+                        if attempt < MODBUS_RETRIES:
+                            _LOGGER.warning(
+                                "Modbus error response for battery %s (attempt %d/%d): %s",
+                                battery_id,
+                                attempt + 1,
+                                MODBUS_RETRIES + 1,
+                                result,
+                            )
+                            await asyncio.sleep(
+                                RETRY_DELAY * (attempt + 1)
+                            )  # Exponential backoff
+                            continue
+                        else:
+                            _LOGGER.error(
+                                "Modbus error response for battery %s after %d attempts: %s",
+                                battery_id,
+                                MODBUS_RETRIES + 1,
+                                result,
+                            )
+                            raise HubException(
+                                f"Modbus error for battery {battery_id}: {result}"
+                            )
 
-            _LOGGER.debug(
-                "Successfully read %d registers from battery %s",
-                len(result.registers),
-                battery_id,
-            )
-            return result.registers
+                    _LOGGER.debug(
+                        "Successfully read %d registers from battery %s (attempt %d)",
+                        len(result.registers),
+                        battery_id,
+                        attempt + 1,
+                    )
+                    return result.registers
 
-        except TimeoutError:
-            _LOGGER.error(
-                "Register read timeout for battery %s (address %d, took >%ds)",
-                battery_id,
-                address,
-                READ_TIMEOUT,
-            )
-            self._connected[battery_id] = False  # Mark as disconnected
-            raise HubConnectionError(
-                f"Read timeout for battery {battery_id} at address {address}"
-            )
+                except TimeoutError:
+                    if attempt < MODBUS_RETRIES:
+                        _LOGGER.warning(
+                            "Register read timeout for battery %s (attempt %d/%d, address %d)",
+                            battery_id,
+                            attempt + 1,
+                            MODBUS_RETRIES + 1,
+                            address,
+                        )
+                        await asyncio.sleep(
+                            RETRY_DELAY * (attempt + 1)
+                        )  # Exponential backoff
+                        continue
+                    else:
+                        _LOGGER.error(
+                            "Register read timeout for battery %s after %d attempts (address %d)",
+                            battery_id,
+                            MODBUS_RETRIES + 1,
+                            address,
+                        )
+                        self._connected[battery_id] = False  # Mark as disconnected
+                        raise HubConnectionError(
+                            f"Read timeout for battery {battery_id} at address {address}"
+                        ) from None
+
+                except (ConnectionException, ModbusIOException) as err:
+                    if attempt < MODBUS_RETRIES:
+                        _LOGGER.warning(
+                            "Modbus communication error for battery %s (attempt %d/%d): %s",
+                            battery_id,
+                            attempt + 1,
+                            MODBUS_RETRIES + 1,
+                            err,
+                        )
+                        self._connected[battery_id] = False
+                        await asyncio.sleep(
+                            RETRY_DELAY * (attempt + 1)
+                        )  # Exponential backoff
+                        continue
+                    else:
+                        _LOGGER.error(
+                            "Modbus communication error for battery %s after %d attempts: %s",
+                            battery_id,
+                            MODBUS_RETRIES + 1,
+                            err,
+                        )
+                        self._connected[battery_id] = False
+                        raise HubConnectionError(
+                            f"Modbus communication error for battery {battery_id}: {err}"
+                        ) from err
+
         except (ConnectionException, ModbusIOException) as e:
-            _LOGGER.error(
-                "Modbus communication error for battery %s: %s", battery_id, e
-            )
+            # Use WARNING for common recoverable issues instead of ERROR
+            if "Request cancelled outside pymodbus" in str(
+                e
+            ) or "No response received" in str(e):
+                _LOGGER.warning(
+                    "Modbus communication error for battery %s: %s", battery_id, e
+                )
+            else:
+                _LOGGER.error(
+                    "Modbus communication error for battery %s: %s", battery_id, e
+                )
             if "No response received" in str(e) or "Connection" in str(e):
                 self._connected[battery_id] = False
             raise HubConnectionError(
