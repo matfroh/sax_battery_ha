@@ -2,6 +2,11 @@
   "name": "SAX battery",
   "context": "..",
   "dockerFile": "../Dockerfile.dev",
+  "containerEnv": {
+    "CODECOV_TOKEN": "${localEnv:CODECOV_TOKEN}",
+    "BASH_DEFAULT_TIMEOUT_MS": "300000",
+    "BASH_MAX_TIMEOUT_MS": "300000"
+  },
   "postCreateCommand": "scripts/post-create.sh",
   "customizations": {
     "vscode": {
@@ -12,8 +17,8 @@
         "ms-python.vscode-pylance",
         "visualstudioexptteam.vscodeintellicode",
         "ms-python.mypy-type-checker",
+        "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
-        "esbenp.prettier-vscode",
         "github.vscode-github-actions",
         "GitHub.vscode-pull-request-github",
         "GitHub.copilot",
@@ -24,7 +29,9 @@
         "njpwerner.autodocstring",
         "batisteo.vscode-django",
         "ryanluker.vscode-coverage-gutters",
-        "streetsidesoftware.code-spell-checker"
+        "streetsidesoftware.code-spell-checker",
+        "keesschollaart.vscode-home-assistant",
+        "timheuer.awesome-copilot"
       ],
       "settings": {
         "python.experiments.optOutFrom": [
@@ -67,17 +74,25 @@
         "json.schemas": [
           {
             "fileMatch": [
-              "${containerWorkspaceFolder}/custom_components/sax_battery/manifest.json"
+              "${containerWorkspaceFolder}/components/*/manifest.json"
             ],
-            "url": "${containerWorkspaceFolder}/script/json_schemas/manifest_schema.json"
+            "url": "${containerWorkspaceFolder}/scripts/json_schemas/manifest_schema.json"
+          },
+          {
+            "fileMatch": [
+              "${containerWorkspaceFolder}/custom_components/*/manifest.json"
+            ],
+            "url": "${containerWorkspaceFolder}/scripts/json_schemas/hacs_manifest_schema.json"
           }
-        ]
+        ],
+        "yaml.schemas": {
+          "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.{yml,yaml}",
+          "https://json.schemastore.org/dependabot-2.0.json": ".github/dependabot.yml"
+        },
+        "awesome-copilot.mcp.enabled": true,
+        "awesome-copilot.mcp.configFile": "/workspaces/sax_battery_ha/.github/mcp-config.json"
       }
     }
   },
-  "remoteUser": "vscode",
-  "containerEnv": {
-    "BASH_DEFAULT_TIMEOUT_MS": "300000",
-    "BASH_MAX_TIMEOUT_MS": "300000"
-  }
+  "remoteUser": "vscode"
 }
