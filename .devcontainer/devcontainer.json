@@ -2,7 +2,19 @@
   "name": "SAX battery",
   "context": "..",
   "dockerFile": "../Dockerfile.dev",
+  // Enable Docker-in-Docker
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "enableNonRootDocker": "true"
+    }
+  },
+  // Mount Docker socket (alternative approach)
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
   "containerEnv": {
+    "PYTHONASYNCIODEBUG": "1",
     "CODECOV_TOKEN": "${localEnv:CODECOV_TOKEN}",
     "BASH_DEFAULT_TIMEOUT_MS": "300000",
     "BASH_MAX_TIMEOUT_MS": "300000"
@@ -12,8 +24,8 @@
     "vscode": {
       "extensions": [
         "charliermarsh.ruff",
-        "ms-python.pylint",
         "ms-python.python",
+        "ms-python.pylint",
         "ms-python.vscode-pylance",
         "visualstudioexptteam.vscodeintellicode",
         "ms-python.mypy-type-checker",
@@ -22,6 +34,7 @@
         "github.vscode-github-actions",
         "GitHub.vscode-pull-request-github",
         "GitHub.copilot",
+        "GitHub.copilot-chat",
         "bierner.markdown-preview-github-styles",
         "DavidAnson.vscode-markdownlint",
         "mhutchie.git-graph",
@@ -33,6 +46,7 @@
         "keesschollaart.vscode-home-assistant",
         "timheuer.awesome-copilot"
       ],
+      // Please keep this file in sync with settings in home-assistant/.vscode/settings.default.json
       "settings": {
         "python.experiments.optOutFrom": [
           "pythonTestAdapter"
@@ -71,6 +85,17 @@
           }
         },
         "terminal.integrated.defaultProfile.linux": "bash",
+        "yaml.customTags": [
+          "!input scalar",
+          "!secret scalar",
+          "!include_dir_named scalar",
+          "!include_dir_list scalar",
+          "!include_dir_merge_list scalar",
+          "!include_dir_merge_named scalar"
+        ],
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
         "json.schemas": [
           {
             "fileMatch": [
