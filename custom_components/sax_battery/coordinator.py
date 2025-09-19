@@ -12,12 +12,14 @@ from pymodbus import ModbusException
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     BATTERY_POLL_INTERVAL,
     BATTERY_POLL_SLAVE_INTERVAL,
     CONF_BATTERY_IS_MASTER,
+    DOMAIN,
 )
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
@@ -124,24 +126,20 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             sax_item.set_coordinators(self.sax_data.coordinators)
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from SAX Battery with improved error handling.
+        """Fetch data from SAX Battery with entity registry awareness.
 
-        Returns:
-            dict: Updated battery data
-
-        Security: Comprehensive error handling with input validation
-        Performance: Optimized update flow with connection health monitoring
+        Performance: Only polls entities that are enabled in entity registry
+        Security: Validates entity registry access and handles missing entities
         """
         start_time = time.time()
 
         try:
-            # Check connection health before proceeding
+            # Check connection health before proceeding (existing code)
             if self.modbus_api and self.modbus_api.should_force_reconnect():
                 _LOGGER.warning(
                     "Battery %s connection health is poor, forcing reconnection",
                     self.battery_id,
                 )
-                # Force close and recreate connection
                 self.modbus_api.close()
                 if not await self.modbus_api.connect():
                     raise UpdateFailed(  # noqa: TRY301
@@ -150,24 +148,24 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             data: dict[str, Any] = {}
 
-            # Update smart meter data (master only)
+            # Get entity registry for enabled state checking
+            entity_registry = async_get_entity_registry(self.hass)
+
+            # Update smart meter data (master only) - with registry awareness
             if self.is_master:
                 try:
-                    await self._update_smart_meter_data(data)
+                    await self._update_smart_meter_data_registry_aware(
+                        data, entity_registry
+                    )
                 except OSError as err:
-                    if err.errno in {
-                        32,
-                        104,
-                        110,
-                        111,
-                    }:  # Broken pipe, connection reset, timeout, refused
+                    # Existing error handling unchanged
+                    if err.errno in {32, 104, 110, 111}:
                         _LOGGER.warning(
                             "Smart meter connection error for %s: [Errno %d] %s - will retry",
                             self.battery_id,
                             err.errno,
                             err,
                         )
-                        # Don't fail the entire update for smart meter issues
                     else:
                         _LOGGER.error(
                             "Smart meter communication error for %s: %s",
@@ -179,13 +177,13 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     _LOGGER.error(
                         "Unexpected smart meter error for %s: %s", self.battery_id, err
                     )
-                    # Continue with battery data even if smart meter fails
 
-            # Update battery data
+            # Update battery data with registry awareness
             try:
-                await self._update_battery_data(data)
+                await self._update_battery_data_registry_aware(data, entity_registry)
             except OSError as err:
-                if err.errno in {32, 104, 110, 111}:  # Network connection errors
+                # Existing error handling unchanged
+                if err.errno in {32, 104, 110, 111}:
                     _LOGGER.warning(
                         "Battery connection error for %s: [Errno %d] %s - attempting recovery",
                         self.battery_id,
@@ -193,14 +191,14 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         err,
                     )
 
-                    # Attempt immediate recovery
                     if self.modbus_api and await self.modbus_api.reconnect_on_error():
                         _LOGGER.info(
                             "Successfully recovered connection to %s", self.battery_id
                         )
-                        # Retry battery data collection once
                         try:
-                            await self._update_battery_data(data)
+                            await self._update_battery_data_registry_aware(
+                                data, entity_registry
+                            )
                         except Exception as retry_err:
                             _LOGGER.error(
                                 "Retry failed for %s: %s", self.battery_id, retry_err
@@ -225,13 +223,13 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     f"Error communicating with battery {self.battery_id}"
                 ) from err
 
-            # Update calculated values
+            # Update calculated values (unchanged)
             self._update_calculated_values(data)
 
             # Security: Set success timestamp after successful update
             self.last_update_success_time = datetime.now()
 
-            # Log successful update with connection health
+            # Log successful update with polling statistics
             duration = time.time() - start_time
             health = self.modbus_api.connection_health if self.modbus_api else {}
 
@@ -245,7 +243,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return data  # noqa: TRY300
 
         except UpdateFailed:
-            # Re-raise UpdateFailed exceptions
+            # Existing error handling unchanged
             duration = time.time() - start_time
             _LOGGER.debug(
                 "Finished fetching SAX Battery %s data in %.3f seconds (success: False)",
@@ -263,26 +261,167 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
-    async def _update_smart_meter_data(self, data: dict[str, Any]) -> None:
-        """Update smart meter data (only for master battery).
+    async def _get_enabled_modbus_items(self, entity_registry: Any) -> list[ModbusItem]:
+        """Get list of ModbusItems that have enabled entities.
+
+        Args:
+            entity_registry: Home Assistant entity registry
+
+        Returns:
+            list[ModbusItem]: Items with at least one enabled entity
+
+        Performance: Efficient filtering using entity registry lookups
+        Security: Input validation and safe entity registry access
+        """
+        try:
+            all_items = [
+                item
+                for item in self.sax_data.get_modbus_items_for_battery(self.battery_id)
+                if isinstance(item, ModbusItem)
+            ]
+
+            enabled_items = []
+
+            for item in all_items:
+                # Generate the unique_id that would be used for this item
+                item_name = item.name.removeprefix("sax_")
+                unique_id = f"sax_{self.battery_id}_{item_name}"
+
+                # Check if entity exists and is enabled in registry
+                entity_id = (
+                    entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+                    or entity_registry.async_get_entity_id("number", DOMAIN, unique_id)
+                    or entity_registry.async_get_entity_id("switch", DOMAIN, unique_id)
+                )
+
+                if entity_id:
+                    entity_entry = entity_registry.async_get(entity_id)
+                    if entity_entry and not entity_entry.disabled:
+                        enabled_items.append(item)
+                        _LOGGER.debug("Including enabled entity: %s", unique_id)
+                    else:
+                        _LOGGER.debug("Skipping disabled entity: %s", unique_id)
+                else:
+                    # Entity not in registry - include by default for new entities
+                    enabled_items.append(item)
+                    _LOGGER.debug("Including new entity: %s", unique_id)
+
+            _LOGGER.debug(
+                "Filtered %d enabled items from %d total items for %s",
+                len(enabled_items),
+                len(all_items),
+                self.battery_id,
+            )
+
+            return enabled_items  # noqa: TRY300
+
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "Error checking entity registry for %s, polling all items: %s",
+                self.battery_id,
+                exc,
+            )
+            # Security: Fallback to polling all items if registry check fails
+            return [
+                item
+                for item in self.sax_data.get_modbus_items_for_battery(self.battery_id)
+                if isinstance(item, ModbusItem)
+            ]
+
+    async def _update_battery_data_registry_aware(
+        self, data: dict[str, Any], entity_registry: Any
+    ) -> None:
+        """Update battery data from enabled modbus items only.
 
         Args:
             data: Dictionary to store the updated values
+            entity_registry: Home Assistant entity registry
 
-        Security: Error handling for network communication
-        Performance: Efficient item iteration and value setting
+        Security: Error handling for communication failures
+        Performance: Only polls enabled entities, efficient item iteration
         """
         try:
-            # Performance: Get smart meter items once
-            smart_meter_items = [
+            # Performance optimization: Get only enabled modbus items
+            enabled_items = await self._get_enabled_modbus_items(entity_registry)
+
+            _LOGGER.debug(
+                "Polling %d enabled modbus items for %s",
+                len(enabled_items),
+                self.battery_id,
+            )
+
+            # Update data from each enabled modbus item
+            for item in enabled_items:
+                # Performance: Skip items that don't support reading
+                if hasattr(item, "is_read_only") and item.is_read_only():
+                    _LOGGER.debug("Skipping read-only item %s", item.name)
+                    continue
+
+                await self._read_battery_item(item, data)
+
+        except (ModbusException, OSError, TimeoutError) as err:
+            _LOGGER.error(
+                "Error updating battery data for %s: %s", self.battery_id, err
+            )
+            raise
+
+    async def _update_smart_meter_data_registry_aware(
+        self, data: dict[str, Any], entity_registry: Any
+    ) -> None:
+        """Update smart meter data for enabled entities only.
+
+        Args:
+            data: Dictionary to store the updated values
+            entity_registry: Home Assistant entity registry
+
+        Security: Error handling for network communication
+        Performance: Only polls enabled smart meter entities
+        """
+        try:
+            # Get all smart meter items
+            all_smart_meter_items = [
                 item
                 for item in self.sax_data.get_smart_meter_items()
                 if isinstance(item, ModbusItem)
             ]
 
-            # Performance optimization: Use list comprehension for reads
+            # Filter to enabled items only
+            enabled_smart_meter_items = []
+
+            for item in all_smart_meter_items:
+                # Generate the unique_id that would be used for this item (smart meter items use master battery ID)
+                item_name = item.name.removeprefix("sax_")
+                unique_id = f"sax_{self.battery_id}_{item_name}"
+
+                # Check if entity is enabled
+                entity_id = entity_registry.async_get_entity_id(
+                    "sensor", DOMAIN, unique_id
+                )
+
+                if entity_id:
+                    entity_entry = entity_registry.async_get(entity_id)
+                    if entity_entry and not entity_entry.disabled:
+                        enabled_smart_meter_items.append(item)
+                        _LOGGER.debug(
+                            "Including enabled smart meter entity: %s", unique_id
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "Skipping disabled smart meter entity: %s", unique_id
+                        )
+                else:
+                    # New entities - include by default
+                    enabled_smart_meter_items.append(item)
+
+            _LOGGER.debug(
+                "Polling %d enabled smart meter items from %d total",
+                len(enabled_smart_meter_items),
+                len(all_smart_meter_items),
+            )
+
+            # Performance optimization: Use list comprehension for concurrent reads
             read_tasks = []
-            for item in smart_meter_items:
+            for item in enabled_smart_meter_items:
                 # Security: Ensure API reference is set
                 if item.modbus_api is None:
                     item.modbus_api = self.modbus_api

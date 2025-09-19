@@ -30,7 +30,6 @@ from .entity_keys import (
     MANUAL_CONTROL_SWITCH,
     SAX_AC_POWER_TOTAL,
     SAX_APPARENT_POWER,
-    SAX_BATTERY_SWITCH,
     SAX_CAPACITY,
     SAX_COMBINED_SOC,
     SAX_CUMULATIVE_ENERGY_CONSUMED,
@@ -187,8 +186,8 @@ DESCRIPTION_SAX_NOMINAL_FACTOR = NumberEntityDescription(
 )
 
 # Number Entity descriptions - Battery switches
-DESCRIPTION_SAX_BATTERY_SWITCH = SwitchEntityDescription(
-    key=SAX_BATTERY_SWITCH,
+DESCRIPTION_SAX_STATUS_SWITCH = SwitchEntityDescription(
+    key=SAX_STATUS,
     name="Sax On/Off",
     icon="mdi:battery",
     # Add extra context for tri-state switch
@@ -528,7 +527,7 @@ MODBUS_BATTERY_POWER_LIMIT_ITEMS: list[ModbusItem] = [
 ]
 # Battery items - switch
 MODBUS_BATTERY_SWITCH_ITEMS: list[ModbusItem] = [
-    ModbusItem(battery_slave_id=64, address=45, name=SAX_STATUS, mtype=TypeConstants.SWITCH, data_type=ModbusClientMixin.DATATYPE.UINT16, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_BATTERY_SWITCH,),
+    ModbusItem(battery_slave_id=64, address=45, name=SAX_STATUS, mtype=TypeConstants.SWITCH, data_type=ModbusClientMixin.DATATYPE.UINT16, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_STATUS_SWITCH,),
 ]
 # Battery items read-only versions
 MODBUS_BATTERY_REALTIME_ITEMS: list[ModbusItem] = [

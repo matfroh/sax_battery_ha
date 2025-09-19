@@ -13,7 +13,7 @@ from custom_components.sax_battery.const import (
     CONF_BATTERY_IS_MASTER,
     CONF_BATTERY_PHASE,
     CONF_BATTERY_PORT,
-    DESCRIPTION_SAX_BATTERY_SWITCH,
+    DESCRIPTION_SAX_STATUS_SWITCH,
     DOMAIN,
 )
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
@@ -59,7 +59,7 @@ class TestSAXBatterySwitch:
             address=1000,  # Use valid Modbus address instead of 0
             battery_slave_id=1,
             factor=1.0,
-            entitydescription=DESCRIPTION_SAX_BATTERY_SWITCH,
+            entitydescription=DESCRIPTION_SAX_STATUS_SWITCH,
         )
 
     @pytest.fixture
