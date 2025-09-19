@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -16,14 +17,14 @@ from .const import (
     MODBUS_BATTERY_SMARTMETER_ITEMS,
     MODBUS_BATTERY_STATIC_ITEMS,
     MODBUS_BATTERY_SWITCH_ITEMS,
-    MODBUS_SMARTMETER_BASIC_ITEMS,
-    MODBUS_SMARTMETER_PHASE_ITEMS,
     PILOT_ITEMS,
     SAX_SMARTMETER_TOTAL_POWER,
 )
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
 from .utils import create_register_access_config, get_battery_realtime_items
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -85,7 +86,14 @@ class BatteryModel(BaseModel):
         )
 
     def get_modbus_items(self) -> list[ModbusItem]:
-        """Get modbus items based on battery role."""
+        """Get modbus items based on battery role.
+
+        Returns:
+            list[ModbusItem]: Appropriate items for this battery's role
+
+        Security: Role-based access control for different battery types
+        Performance: Optimized item lists based on battery function
+        """
         # Create access config to determine appropriate entity types
         access_config = create_register_access_config(self.config_data, self.is_master)
 
@@ -94,9 +102,15 @@ class BatteryModel(BaseModel):
         items.extend(MODBUS_BATTERY_STATIC_ITEMS)
         items.extend(MODBUS_BATTERY_SWITCH_ITEMS)
 
-        # Master battery also gets smart meter items
+        # Master battery also gets consolidated smart meter items
         if self.is_master:
+            # MODBUS_BATTERY_SMARTMETER_ITEMS already includes all smart meter data
+            # Including basic items, phase items, and battery-accessible smart meter data
             items.extend(MODBUS_BATTERY_SMARTMETER_ITEMS)
+            _LOGGER.debug(
+                "Added %d smart meter items to master battery",
+                len(MODBUS_BATTERY_SMARTMETER_ITEMS),
+            )
 
         return items
 
@@ -161,8 +175,20 @@ class SmartMeterModel(BaseModel):
         return []  # No calculated items specific to smart meter
 
     def get_smart_meter_items(self) -> list[ModbusItem]:
-        """Get smart meter modbus items."""
-        return list(MODBUS_SMARTMETER_BASIC_ITEMS) + list(MODBUS_SMARTMETER_PHASE_ITEMS)
+        """Get smart meter modbus items.
+
+        Returns:
+            Empty list - smart meter items are handled through master battery
+
+        Security: Prevents duplicate entity registration
+        Performance: Eliminates redundant polling of same registers
+        """
+        # Smart meter items are already included in MODBUS_BATTERY_SMARTMETER_ITEMS
+        # for the master battery. Returning empty list prevents duplicates.
+        _LOGGER.debug(
+            "Smart meter items handled through master battery - preventing duplicates"
+        )
+        return []
 
     @property
     def total_power(self) -> float | None:
@@ -212,15 +238,31 @@ class SAXBatteryData:
 
             self.batteries[battery_id] = battery
 
-    # async def async_initialize(self) -> None:
-    #     """Initialize the SAX Battery data."""
-    #     # Initialize modbus connections and data structures
-    #     pass
-
     def should_poll_smart_meter(self, battery_id: str) -> bool:
-        """Check if this battery should poll smart meter data."""
+        """Check if this battery should poll smart meter data.
+
+        Args:
+            battery_id: Battery identifier to check
+
+        Returns:
+            bool: True only if this is the master battery
+
+        Security: Ensures only master battery polls smart meter data
+        Performance: Prevents multiple polling of same smart meter registers
+        """
         battery = self.batteries.get(battery_id)
-        return battery.is_master if battery else False
+        is_master = battery.is_master if battery else False
+
+        if is_master:
+            _LOGGER.debug(
+                "Battery %s is master - will poll smart meter data", battery_id
+            )
+        else:
+            _LOGGER.debug(
+                "Battery %s is slave - skipping smart meter polling", battery_id
+            )
+
+        return is_master
 
     def get_modbus_items_for_battery(self, battery_id: str) -> list[ModbusItem]:
         """Get modbus items for a specific battery."""
@@ -233,8 +275,20 @@ class SAXBatteryData:
         return battery.get_sax_items() if battery else []
 
     def get_smart_meter_items(self) -> list[ModbusItem]:
-        """Get smart meter modbus items."""
-        return list(MODBUS_SMARTMETER_BASIC_ITEMS) + list(MODBUS_SMARTMETER_PHASE_ITEMS)
+        """Get smart meter modbus items.
+
+        Returns:
+            Empty list - smart meter items are handled through master battery
+
+        Security: Prevents duplicate entity registration
+        Performance: Eliminates redundant polling of same registers
+        """
+        # Smart meter items are already included in MODBUS_BATTERY_SMARTMETER_ITEMS
+        # for the master battery. Returning empty list prevents duplicates.
+        _LOGGER.debug(
+            "Smart meter items handled through master battery - preventing duplicates"
+        )
+        return []
 
     # def get_modbus_api(self) -> ModbusAPI | None:
     #     """Get the modbus API instance."""

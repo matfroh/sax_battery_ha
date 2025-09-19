@@ -482,7 +482,6 @@ DESCRIPTION_SAX_CUMULATIVE_ENERGY_CONSUMED = SensorEntityDescription(
     native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
 )
 
-
 # fmt: off
 
 ##############################################################################################################################

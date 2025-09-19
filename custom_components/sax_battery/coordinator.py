@@ -502,80 +502,31 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Update smart meter data for enabled entities only.
 
+        Smart meter data is polled through master battery's MODBUS_BATTERY_SMARTMETER_ITEMS,
+        not through separate smart meter item lists to prevent duplicates.
+
         Args:
             data: Dictionary to store the updated values
             entity_registry: Home Assistant entity registry
 
         Security: Error handling for network communication
-        Performance: Only polls enabled smart meter entities
+        Performance: Only polls enabled smart meter entities, prevents duplicates
         """
-        try:
-            # Get all smart meter items
-            all_smart_meter_items = [
-                item
-                for item in self.sax_data.get_smart_meter_items()
-                if isinstance(item, ModbusItem)
-            ]
-
-            # Filter to enabled items only
-            enabled_smart_meter_items = []
-
-            for item in all_smart_meter_items:
-                # Check if item is enabled by default
-                enabled_by_default = getattr(item, "enabled_by_default", True)
-
-                # Generate the unique_id that would be used for this item (smart meter items use master battery ID)
-                item_name = item.name.removeprefix("sax_")
-                unique_id = f"sax_{self.battery_id}_{item_name}"
-
-                # Check if entity is enabled
-                entity_id = entity_registry.async_get_entity_id(
-                    "sensor", DOMAIN, unique_id
-                )
-
-                if entity_id:
-                    entity_entry = entity_registry.async_get(entity_id)
-                    if entity_entry and not entity_entry.disabled:
-                        enabled_smart_meter_items.append(item)
-                        _LOGGER.debug(
-                            "Including enabled smart meter entity: %s", unique_id
-                        )
-                    else:
-                        _LOGGER.debug(
-                            "Skipping disabled smart meter entity: %s", unique_id
-                        )
-                elif enabled_by_default:
-                    enabled_smart_meter_items.append(item)
-                    _LOGGER.debug(
-                        "Including new smart meter entity (enabled by default): %s",
-                        unique_id,
-                    )
-                else:
-                    _LOGGER.debug(
-                        "Skipping new smart meter entity (disabled by default): %s",
-                        unique_id,
-                    )
-
+        if not self.is_master:
             _LOGGER.debug(
-                "Polling %d enabled smart meter items from %d total",
-                len(enabled_smart_meter_items),
-                len(all_smart_meter_items),
+                "Skipping smart meter update for slave battery %s", self.battery_id
+            )
+            return
+
+        try:
+            # Smart meter items are already included in the battery's modbus items
+            # for master battery, so no separate polling needed
+            _LOGGER.debug(
+                "Smart meter data included in master battery polling - no separate update needed"
             )
 
-            # Performance optimization: Use list comprehension for concurrent reads
-            read_tasks = []
-            for item in enabled_smart_meter_items:
-                # Security: Ensure API reference is set
-                if item.modbus_api is None:
-                    item.modbus_api = self.modbus_api
-                read_tasks.append(self._read_smart_meter_item(item, data))
-
-            # Performance: Execute reads concurrently
-            if read_tasks:
-                await asyncio.gather(*read_tasks, return_exceptions=True)
-
         except (ModbusException, OSError, TimeoutError) as err:
-            _LOGGER.error("Error updating smart meter data: %s", err)
+            _LOGGER.error("Error in smart meter data handling: %s", err)
             raise
 
     async def _read_smart_meter_item(

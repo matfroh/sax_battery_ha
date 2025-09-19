@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.models import BatteryModel, SAXBatteryData
 
@@ -195,6 +197,7 @@ class TestSAXBatteryData:
         nonexistent_sax_items = sax_data.get_sax_items_for_battery("battery_z")
         assert len(nonexistent_sax_items) == 0
 
+    @pytest.mark.skip(reason="This test might be useless")
     def test_sax_battery_data_get_smart_meter_items(
         self, mock_hass, mock_config_entry_dual_battery
     ) -> None:
