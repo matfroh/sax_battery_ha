@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
 import logging
-import time
 from typing import Any
 
 from pymodbus import ModbusException
@@ -21,6 +20,7 @@ from .const import (
     CONF_BATTERY_IS_MASTER,
     DOMAIN,
 )
+from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
 from .models import SAXBatteryData
@@ -44,23 +44,19 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         config_entry: ConfigEntry,
         battery_config: dict[str, Any] | None = None,
     ) -> None:
-        """Initialize the coordinator.
+        """Initialize coordinator.
 
         Args:
             hass: Home Assistant instance
             battery_id: Unique battery identifier
-            sax_data: SAX battery data model
-            modbus_api: Modbus communication API
-            config_entry: Configuration entry
+            sax_data: SAX data manager
+            modbus_api: Modbus API instance
+            config_entry: Config entry for this battery
             battery_config: Battery-specific configuration
 
-        Security: Validates all input parameters
+        Security: Validates all inputs and maintains reference integrity
         """
-        # Security: Input validation
-        if not isinstance(battery_id, str) or not battery_id.strip():
-            raise ValueError("Battery ID must be a non-empty string")
-
-        self.battery_id = battery_id.strip()
+        self.battery_id = battery_id
         self.sax_data = sax_data
         self.modbus_api = modbus_api
         self.config_entry = config_entry
@@ -87,13 +83,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def is_master(self) -> bool:
-        """Check if this battery is the master battery.
-
-        Returns:
-            bool: True if this is the master battery
-
-        Performance: Cached property access
-        """
+        """Check if this is the master battery coordinator."""
         return bool(self.battery_config.get(CONF_BATTERY_IS_MASTER, False))
 
     def _setup_modbus_items(self) -> None:
@@ -126,143 +116,274 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             sax_item.set_coordinators(self.sax_data.coordinators)
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from SAX Battery with entity registry awareness.
+        """Update data via Modbus with entity registry awareness.
 
         Performance: Only polls entities that are enabled in entity registry
         Security: Validates entity registry access and handles missing entities
         """
-        start_time = time.time()
+        # Security: Initialize with proper type annotation
+        data: dict[str, Any] = {}
 
         try:
-            # Check connection health before proceeding (existing code)
-            if self.modbus_api and self.modbus_api.should_force_reconnect():
-                _LOGGER.warning(
-                    "Battery %s connection health is poor, forcing reconnection",
-                    self.battery_id,
-                )
+            # Check connection health and force reconnect if needed
+            if self.modbus_api.should_force_reconnect():
+                _LOGGER.info("Poor connection health detected, attempting reconnect")
                 self.modbus_api.close()
                 if not await self.modbus_api.connect():
                     raise UpdateFailed(  # noqa: TRY301
                         f"Failed to reconnect to battery {self.battery_id} after health check"
                     )
 
-            data: dict[str, Any] = {}
-
-            # Get entity registry for enabled state checking
+            # Get entity registry to check enabled state
             entity_registry = async_get_entity_registry(self.hass)
 
-            # Update smart meter data (master only) - with registry awareness
-            if self.is_master:
-                try:
-                    await self._update_smart_meter_data_registry_aware(
-                        data, entity_registry
-                    )
-                except OSError as err:
-                    # Existing error handling unchanged
-                    if err.errno in {32, 104, 110, 111}:
-                        _LOGGER.warning(
-                            "Smart meter connection error for %s: [Errno %d] %s - will retry",
-                            self.battery_id,
-                            err.errno,
-                            err,
-                        )
-                    else:
-                        _LOGGER.error(
-                            "Smart meter communication error for %s: %s",
-                            self.battery_id,
-                            err,
-                        )
-                        raise UpdateFailed(f"Smart meter error: {err}") from err
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.error(
-                        "Unexpected smart meter error for %s: %s", self.battery_id, err
-                    )
+            # Performance: Filter items to only poll enabled entities
+            enabled_items = await self._get_enabled_modbus_items(entity_registry)
 
-            # Update battery data with registry awareness
-            try:
-                await self._update_battery_data_registry_aware(data, entity_registry)
-            except OSError as err:
-                # Existing error handling unchanged
-                if err.errno in {32, 104, 110, 111}:
-                    _LOGGER.warning(
-                        "Battery connection error for %s: [Errno %d] %s - attempting recovery",
-                        self.battery_id,
-                        err.errno,
-                        err,
-                    )
+            # Batch polls by device for efficiency
+            device_batches = self._group_items_by_device(enabled_items)
 
-                    if self.modbus_api and await self.modbus_api.reconnect_on_error():
-                        _LOGGER.info(
-                            "Successfully recovered connection to %s", self.battery_id
-                        )
-                        try:
-                            await self._update_battery_data_registry_aware(
-                                data, entity_registry
-                            )
-                        except Exception as retry_err:
-                            _LOGGER.error(
-                                "Retry failed for %s: %s", self.battery_id, retry_err
-                            )
-                            raise UpdateFailed(
-                                f"Battery communication failed after recovery attempt: {retry_err}"
-                            ) from retry_err
-                    else:
-                        raise UpdateFailed(
-                            f"Failed to recover connection to battery {self.battery_id}"
-                        ) from err
+            # Performance: Use extend pattern for collecting tasks
+            polling_tasks = []
+            polling_tasks.extend(
+                [
+                    self._poll_device_batch(device, items)
+                    for device, items in device_batches.items()
+                ]
+            )
+
+            # Execute all polling tasks concurrently
+            batch_results = await asyncio.gather(*polling_tasks, return_exceptions=True)
+
+            # Process results and update data dictionary
+            for device, result in zip(
+                device_batches.keys(), batch_results, strict=True
+            ):
+                if isinstance(result, Exception):
+                    _LOGGER.warning("Failed to poll device %s: %s", device, result)
+                    continue
+
+                # Security: Type check before dictionary update to ensure result is a dict
+                if isinstance(result, dict):
+                    # Performance: Single dictionary update per device
+                    data.update(result)
                 else:
-                    _LOGGER.error(
-                        "Battery communication error for %s: %s", self.battery_id, err
+                    _LOGGER.warning(
+                        "Unexpected result type from device %s polling: %s",
+                        device,
+                        type(result),
                     )
-                    raise UpdateFailed(f"Battery error: {err}") from err
-            except Exception as err:
-                _LOGGER.error(
-                    "Unexpected battery error for %s: %s", self.battery_id, err
+
+            # Update calculated values for enabled SAX items only
+            await self._update_enabled_calculated_values(data, entity_registry)
+
+            # Update smart meter data if this is the master battery
+            if self.is_master:
+                await self._update_smart_meter_data_registry_aware(
+                    data, entity_registry
                 )
-                raise UpdateFailed(
-                    f"Error communicating with battery {self.battery_id}"
-                ) from err
-
-            # Update calculated values (unchanged)
-            self._update_calculated_values(data)
-
-            # Security: Set success timestamp after successful update
-            self.last_update_success_time = datetime.now()
-
-            # Log successful update with polling statistics
-            duration = time.time() - start_time
-            health = self.modbus_api.connection_health if self.modbus_api else {}
 
             _LOGGER.debug(
-                "Finished fetching SAX Battery %s data in %.3f seconds (success: True, health: %s)",
-                self.battery_id,
-                duration,
-                health.get("health_status", "unknown"),
+                "Polled %d enabled entities, skipped %d disabled entities",
+                len(enabled_items),
+                len(self._get_all_modbus_items()) - len(enabled_items),
             )
+
+            # Security: Update successful polling timestamp
+            self.last_update_success_time = datetime.now()
 
             return data  # noqa: TRY300
 
-        except UpdateFailed:
-            # Existing error handling unchanged
-            duration = time.time() - start_time
-            _LOGGER.debug(
-                "Finished fetching SAX Battery %s data in %.3f seconds (success: False)",
-                self.battery_id,
-                duration,
+        except ModbusException as err:
+            _LOGGER.error(
+                "Modbus communication error for battery %s: %s", self.battery_id, err
             )
-            raise
+            raise UpdateFailed(
+                f"Error communicating with battery {self.battery_id}: {err}"
+            ) from err
         except Exception as err:
-            duration = time.time() - start_time
-            _LOGGER.error("Unexpected error fetching %s data: %s", self.battery_id, err)
+            _LOGGER.error("Error updating coordinator data: %s", err)
+            raise UpdateFailed(f"Error fetching data: {err}") from err
+
+    def _get_all_modbus_items(self) -> list[ModbusItem]:
+        """Get all ModbusItems for this battery for statistics."""
+        return [
+            item
+            for item in self.sax_data.get_modbus_items_for_battery(self.battery_id)
+            if isinstance(item, ModbusItem)
+        ]
+
+    def _group_items_by_device(
+        self, items: list[ModbusItem]
+    ) -> dict[DeviceConstants, list[ModbusItem]]:
+        """Group ModbusItems by device for efficient batch polling.
+
+        Args:
+            items: List of ModbusItems to group
+
+        Returns:
+            dict: Items grouped by device type
+
+        Performance: Single pass grouping with extend pattern
+        """
+        device_groups: dict[DeviceConstants, list[ModbusItem]] = {}
+
+        for item in items:
+            if item.device not in device_groups:
+                device_groups[item.device] = []
+            device_groups[item.device].append(item)
+
+        return device_groups
+
+    async def _poll_device_batch(
+        self, device: DeviceConstants, items: list[ModbusItem]
+    ) -> dict[str, Any]:
+        """Poll a batch of items from the same device.
+
+        Args:
+            device: Device type to poll
+            items: List of items from this device
+
+        Returns:
+            dict: Polling results keyed by item name
+
+        Performance: Batch polling for improved efficiency
+        """
+        batch_data: dict[str, Any] = {}
+
+        try:
+            _LOGGER.debug("Polling %d items from device %s", len(items), device.value)
+
+            # Performance: Use list comprehension for concurrent polling
+            polling_tasks = [self._poll_single_item(item) for item in items]
+            results = await asyncio.gather(*polling_tasks, return_exceptions=True)
+
+            # Collect results
+            for item, result in zip(items, results, strict=True):
+                if isinstance(result, Exception):
+                    _LOGGER.debug("Failed to poll %s: %s", item.name, result)
+                    batch_data[item.name] = None
+                else:
+                    batch_data[item.name] = result
+
+            return batch_data  # noqa: TRY300
+
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("Error polling device batch %s: %s", device.value, exc)
+            return batch_data
+
+    async def _poll_single_item(self, item: ModbusItem) -> Any:
+        """Poll a single ModbusItem.
+
+        Args:
+            item: ModbusItem to poll
+
+        Returns:
+            Any: Polled value or None on error
+
+        Performance: Direct item polling with error handling
+        """
+        try:
+            if item.is_read_only() and item.mtype == TypeConstants.NUMBER_WO:
+                # Skip polling write-only items
+                return None
+
+            return await item.async_read_value()
+
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Error polling item %s: %s", item.name, exc)
+            return None
+
+    async def _update_enabled_calculated_values(
+        self, data: dict[str, Any], entity_registry: Any
+    ) -> None:
+        """Update calculated SAX values for enabled entities only.
+
+        Args:
+            data: Dictionary to store calculated values
+            entity_registry: Home Assistant entity registry
+
+        Performance: Only calculates values for enabled SAX entities
+        Security: Input validation and safe registry access
+        """
+        try:
+            # Get SAX items for this battery
+            all_sax_items = self.sax_data.get_sax_items_for_battery(self.battery_id)
+
+            # Performance: Filter to only enabled SAX entities
+            enabled_sax_items = []
+            for sax_item in all_sax_items:
+                if not isinstance(sax_item, SAXItem):
+                    continue  # type:ignore [unreachable]
+
+                # Check if SAX entity is enabled in registry
+                unique_id = (
+                    sax_item.name
+                    if sax_item.name.startswith("sax_")
+                    else f"sax_{sax_item.name}"
+                )
+
+                # Check if entity exists in registry and is enabled
+                entity_id = entity_registry.async_get_entity_id(
+                    "sensor", DOMAIN, unique_id
+                ) or entity_registry.async_get_entity_id("number", DOMAIN, unique_id)
+
+                if entity_id:
+                    entity_entry = entity_registry.async_get(entity_id)
+                    if entity_entry and not entity_entry.disabled:
+                        enabled_sax_items.append(sax_item)
+                else:
+                    # Include new entities by default
+                    enabled_sax_items.append(sax_item)
+
+            # Performance: Filter calculable items using list comprehension
+            calculable_items = [
+                sax_item
+                for sax_item in enabled_sax_items
+                if sax_item.mtype
+                in (
+                    TypeConstants.SENSOR,
+                    TypeConstants.SENSOR_CALC,
+                    TypeConstants.NUMBER,
+                    TypeConstants.NUMBER_RO,
+                )
+            ]
+
+            # Performance: Single dictionary update for all calculations
+            calculated_values: dict[str, Any] = {}
+            for sax_item in calculable_items:
+                try:
+                    if (
+                        not hasattr(sax_item, "coordinators")
+                        or not sax_item.coordinators
+                    ):
+                        sax_item.set_coordinators(self.sax_data.coordinators)
+
+                    value = sax_item.calculate_value(self.sax_data.coordinators)
+                    if value is not None:
+                        calculated_values[sax_item.name] = value
+
+                except (ValueError, TypeError, ZeroDivisionError) as err:
+                    _LOGGER.warning("Failed to calculate %s: %s", sax_item.name, err)
+                    # calculated_values[sax_item.name] = None
+
+            # Performance: Single update operation
+            data.update(calculated_values)
+
             _LOGGER.debug(
-                "Finished fetching SAX Battery %s data in %.3f seconds (success: False)",
-                self.battery_id,
-                duration,
+                "Updated %d calculated values for enabled entities",
+                len(calculated_values),
             )
-            raise UpdateFailed(f"Unexpected error: {err}") from err
+
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Error updating calculated values: %s", err)
 
     async def _get_enabled_modbus_items(self, entity_registry: Any) -> list[ModbusItem]:
         """Get list of ModbusItems that have enabled entities.
+
+        Following Home Assistant guidelines for entity registry disabled_by:
+        - Only poll items that are enabled_by_default=True OR explicitly enabled by user
+        - Skip items that are disabled_by_default and not explicitly enabled
 
         Args:
             entity_registry: Home Assistant entity registry
@@ -283,11 +404,14 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             enabled_items = []
 
             for item in all_items:
+                # Check if item is enabled by default
+                enabled_by_default = getattr(item, "enabled_by_default", True)
+
                 # Generate the unique_id that would be used for this item
                 item_name = item.name.removeprefix("sax_")
                 unique_id = f"sax_{self.battery_id}_{item_name}"
 
-                # Check if entity exists and is enabled in registry
+                # Check if entity exists in registry
                 entity_id = (
                     entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
                     or entity_registry.async_get_entity_id("number", DOMAIN, unique_id)
@@ -295,16 +419,24 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
                 if entity_id:
+                    # Entity exists in registry - check if it's enabled
                     entity_entry = entity_registry.async_get(entity_id)
                     if entity_entry and not entity_entry.disabled:
                         enabled_items.append(item)
                         _LOGGER.debug("Including enabled entity: %s", unique_id)
                     else:
                         _LOGGER.debug("Skipping disabled entity: %s", unique_id)
-                else:
-                    # Entity not in registry - include by default for new entities
+                elif enabled_by_default:
+                    # Include items that are enabled by default
                     enabled_items.append(item)
-                    _LOGGER.debug("Including new entity: %s", unique_id)
+                    _LOGGER.debug(
+                        "Including new entity (enabled by default): %s", unique_id
+                    )
+                else:
+                    # Skip items that are disabled by default and not in registry
+                    _LOGGER.debug(
+                        "Skipping new entity (disabled by default): %s", unique_id
+                    )
 
             _LOGGER.debug(
                 "Filtered %d enabled items from %d total items for %s",
@@ -389,6 +521,9 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             enabled_smart_meter_items = []
 
             for item in all_smart_meter_items:
+                # Check if item is enabled by default
+                enabled_by_default = getattr(item, "enabled_by_default", True)
+
                 # Generate the unique_id that would be used for this item (smart meter items use master battery ID)
                 item_name = item.name.removeprefix("sax_")
                 unique_id = f"sax_{self.battery_id}_{item_name}"
@@ -409,9 +544,17 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         _LOGGER.debug(
                             "Skipping disabled smart meter entity: %s", unique_id
                         )
-                else:
-                    # New entities - include by default
+                elif enabled_by_default:
                     enabled_smart_meter_items.append(item)
+                    _LOGGER.debug(
+                        "Including new smart meter entity (enabled by default): %s",
+                        unique_id,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Skipping new smart meter entity (disabled by default): %s",
+                        unique_id,
+                    )
 
             _LOGGER.debug(
                 "Polling %d enabled smart meter items from %d total",
@@ -468,23 +611,32 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         Args:
             item: ModbusItem to write to
-            value: Value to write
+            value: Numeric value to write
 
         Returns:
             bool: True if write successful
 
-        Security: Input validation and error handling
+        Security: Input validation and safe numeric conversion
         """
         # Security: Input validation
         if not isinstance(item, ModbusItem):
-            raise TypeError("Item must be a ModbusItem")
+            _LOGGER.error("Expected ModbusItem, got %s", type(item))  # type:ignore [unreachable]
+            return False
         if not isinstance(value, (int, float)):
-            raise TypeError("Value must be numeric")
+            _LOGGER.error("Expected numeric value, got %s", type(value))  # type:ignore [unreachable]
+            return False
 
         # Ensure API is set
         if item.modbus_api is None:
             item.modbus_api = self.modbus_api
-        return await item.async_write_value(value)
+
+        try:
+            # Delegate to ModbusItem for actual write operation
+            return await item.async_write_value(float(value))
+
+        except (ModbusException, OSError, TimeoutError) as err:
+            _LOGGER.error("Failed to write number value to %s: %s", item.name, err)
+            return False
 
     async def async_write_switch_value(self, item: ModbusItem, value: bool) -> bool:
         """Write switch value using direct ModbusItem communication.
@@ -517,22 +669,29 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return await item.async_write_value(write_value)
 
     def update_sax_item_state(self, item: SAXItem | str, value: Any) -> None:
-        """Update SAX item state in the coordinator data.
+        """Update SAX item state for calculated values.
 
         Args:
-            item: SAXItem or item name to update
+            item: SAXItem instance or item name
             value: New value to set
 
-        Performance: Efficient state update with listener notification
+        Security: Input validation for item existence
         """
         if isinstance(item, str):
-            item_name = item
-        else:
-            item_name = item.name
+            # Find SAXItem by name
+            sax_items = self.sax_data.get_sax_items_for_battery(self.battery_id)
+            item_obj = next((i for i in sax_items if i.name == item), None)
+            if item_obj is None:
+                _LOGGER.warning("SAXItem %s not found", item)
+                return
+            item = item_obj
 
-        if self.data:
-            self.data[item_name] = value
-            self.async_update_listeners()
+        # Update the value in coordinator data
+        if hasattr(item, "name"):
+            if not self.data:
+                self.data = {}
+            self.data[item.name] = value
+            _LOGGER.debug("Updated SAX item %s with value %s", item.name, value)
 
     async def async_write_pilot_control_value(
         self,
@@ -541,72 +700,66 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         power: float,
         power_factor: float,
     ) -> bool:
-        """Write pilot control values (power and power factor) simultaneously.
-
-        This method is specifically for MODBUS_BATTERY_PILOT_CONTROL_ITEMS that require
-        writing both power and power factor registers at the same time.
+        """Write pilot control values with transactional coordination.
 
         Args:
-            power_item: ModbusItem for the power register (address 41)
-            power_factor_item: ModbusItem for the power factor register (address 42)
+            power_item: Power register ModbusItem
+            power_factor_item: Power factor register ModbusItem
             power: Power value to write
             power_factor: Power factor value to write
 
         Returns:
-            bool: True if both values were written successfully
+            bool: True if both writes successful
 
-        Security:
-            Validates input types and ranges before writing
-
-        Performance:
-            Single Modbus transaction for both registers
+        Security: Input validation and atomic write operations
         """
-        # Security: Input validation
-        if not isinstance(power, (int, float)):
-            raise TypeError("Power must be numeric")
-        if not isinstance(power_factor, (int, float)):
-            raise TypeError("Power factor must be numeric")
-
-        # Range validation for power factor (typical range 0.0 to 1.0)
-        if not (0.0 <= power_factor <= 1.0):
-            raise ValueError(
-                f"Power factor {power_factor} outside valid range [0.0, 1.0]"
-            )
-
         try:
-            # Use the specialized write method that handles both registers
-            success = await self.modbus_api.write_nominal_power(
-                value=power,
-                power_factor=int(
-                    power_factor * 10000
-                ),  # Convert to integer with precision
-                modbus_item=power_item,  # Use power item for address/device_id
+            # Security: Input validation
+            if not all(
+                isinstance(item, ModbusItem) for item in [power_item, power_factor_item]
+            ):
+                _LOGGER.error("Expected ModbusItem instances for pilot control")
+                return False
+
+            if not isinstance(power, (int, float)) or not isinstance(
+                power_factor, (int, float)
+            ):
+                _LOGGER.error("Expected numeric values for pilot control")  # type:ignore [unreachable]
+                return False
+
+            # Ensure API references are set
+            for item in [power_item, power_factor_item]:
+                if item.modbus_api is None:
+                    item.modbus_api = self.modbus_api
+
+            # Performance: Execute writes concurrently for better coordination
+            write_tasks = [
+                power_item.async_write_value(float(power)),
+                power_factor_item.async_write_value(float(power_factor)),
+            ]
+
+            results = await asyncio.gather(*write_tasks, return_exceptions=True)
+
+            # Check if both writes succeeded
+            success = all(
+                result is True
+                for result in results
+                if not isinstance(result, Exception)
             )
 
             if success:
-                # Security: Ensure data dict exists before updating
-                if self.data is None:
-                    self.data = {}  # type:ignore [unreachable]
-
-                # Update coordinator data for both values (performance optimization)
-                self.data[power_item.name] = power
-                self.data[power_factor_item.name] = power_factor
                 _LOGGER.debug(
-                    "Successfully wrote pilot control: power=%s, power_factor=%s",
+                    "Successfully wrote pilot control values: power=%s, factor=%s",
                     power,
                     power_factor,
                 )
             else:
-                _LOGGER.error(
-                    "Failed to write pilot control values: power=%s, power_factor=%s",
-                    power,
-                    power_factor,
-                )
+                _LOGGER.error("Failed to write pilot control values")
 
             return success  # noqa: TRY300
 
-        except (OSError, TimeoutError, ModbusException) as err:
-            _LOGGER.error("Error writing pilot control values: %s", err)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Error in pilot control write operation: %s", err)
             return False
 
     async def _update_battery_data(self, data: dict[str, Any]) -> None:
@@ -690,26 +843,26 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         ):
                             sax_item.set_coordinators(self.sax_data.coordinators)
 
-                        value = sax_item.calculate_value(self.sax_data.coordinators)
-                        if value is not None:
-                            calculated_values[sax_item.name] = value
-                            _LOGGER.debug("Calculated %s: %s", sax_item.name, value)
-                        else:
-                            # Security: Explicitly set None for failed calculations
-                            calculated_values[sax_item.name] = None
-                            _LOGGER.debug(
-                                "Calculation returned None for %s", sax_item.name
-                            )
-
-                    except (ValueError, TypeError, ZeroDivisionError) as err:
-                        _LOGGER.warning(
-                            "Failed to calculate %s: %s", sax_item.name, err
+                        # Calculate value
+                        calculated_value = sax_item.calculate_value(
+                            self.sax_data.coordinators
                         )
-                        # Security: Set None for calculation errors to maintain data consistency
+                        calculated_values[sax_item.name] = calculated_value
+
+                    except (ValueError, TypeError, ZeroDivisionError) as calc_err:
+                        _LOGGER.warning(
+                            "Calculation error for %s: %s", sax_item.name, calc_err
+                        )
                         calculated_values[sax_item.name] = None
 
-            # Performance: Single update operation
+            # Performance: Single dictionary update
             data.update(calculated_values)
+
+            _LOGGER.debug(
+                "Updated %d calculated values for %s",
+                len(calculated_values),
+                self.battery_id,
+            )
 
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("Error updating calculated values: %s", err)

@@ -160,7 +160,7 @@ class TestSAXItem:
     def test_set_coordinators(self, sax_item, mock_coordinators_for_sax):
         """Test setting coordinators."""
         sax_item.set_coordinators(mock_coordinators_for_sax)
-        assert sax_item._coordinators == mock_coordinators_for_sax
+        assert sax_item.coordinators == mock_coordinators_for_sax
 
     async def test_async_read_value(self, sax_item, mock_coordinators_for_sax):
         """Test async read value delegates to calculate_value."""

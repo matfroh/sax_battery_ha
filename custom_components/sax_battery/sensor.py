@@ -128,6 +128,11 @@ class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEnt
         if self._modbus_item.entitydescription is not None:
             self.entity_description = self._modbus_item.entitydescription  # type: ignore[assignment]
 
+        # Set entity registry enabled state from ModbusItem
+        self._attr_entity_registry_enabled_default = getattr(
+            self._modbus_item, "enabled_by_default", True
+        )
+
         if (
             hasattr(self, "entity_description")
             and self.entity_description

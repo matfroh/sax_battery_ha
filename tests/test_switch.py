@@ -151,8 +151,8 @@ class TestSAXBatterySwitch:
         mock_coordinator_switch.data = {"test_switch": 2}
 
         # Security: Ensure ModbusItem has proper switch methods
-        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)
-        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)
+        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)  # type: ignore[method-assign]
 
         switch = SAXBatterySwitch(
             coordinator=mock_coordinator_switch,
@@ -174,8 +174,8 @@ class TestSAXBatterySwitch:
         mock_coordinator_switch.data = {"test_switch": 1}
 
         # Security: Ensure ModbusItem has proper switch methods
-        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)
-        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)
+        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)  # type: ignore[method-assign]
 
         switch = SAXBatterySwitch(
             coordinator=mock_coordinator_switch,
@@ -291,11 +291,11 @@ class TestSAXBatterySwitch:
         mock_coordinator_switch.data = {"test_switch": 3}
 
         # Security: Ensure ModbusItem has proper switch methods
-        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)
-        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)
-        modbus_item_switch.get_switch_connected_value = MagicMock(return_value=3)
-        modbus_item_switch.get_switch_standby_value = MagicMock(return_value=4)
-        modbus_item_switch.get_switch_state_name = MagicMock(return_value="connected")
+        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_connected_value = MagicMock(return_value=3)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_standby_value = MagicMock(return_value=4)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_state_name = MagicMock(return_value="connected")  # type: ignore[method-assign]
 
         switch = SAXBatterySwitch(
             coordinator=mock_coordinator_switch,
@@ -317,11 +317,11 @@ class TestSAXBatterySwitch:
         mock_coordinator_switch.data = {"test_switch": 4}
 
         # Security: Ensure ModbusItem has proper switch methods
-        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)
-        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)
-        modbus_item_switch.get_switch_connected_value = MagicMock(return_value=3)
-        modbus_item_switch.get_switch_standby_value = MagicMock(return_value=4)
-        modbus_item_switch.get_switch_state_name = MagicMock(return_value="standby")
+        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_connected_value = MagicMock(return_value=3)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_standby_value = MagicMock(return_value=4)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_state_name = MagicMock(return_value="standby")  # type: ignore[method-assign]
 
         switch = SAXBatterySwitch(
             coordinator=mock_coordinator_switch,
@@ -340,11 +340,11 @@ class TestSAXBatterySwitch:
         mock_coordinator_switch.data = {"test_switch": 3}
 
         # Mock switch methods
-        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)
-        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)
-        modbus_item_switch.get_switch_connected_value = MagicMock(return_value=3)
-        modbus_item_switch.get_switch_standby_value = MagicMock(return_value=4)
-        modbus_item_switch.get_switch_state_name = MagicMock(return_value="connected")
+        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_connected_value = MagicMock(return_value=3)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_standby_value = MagicMock(return_value=4)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_state_name = MagicMock(return_value="connected")  # type: ignore[method-assign]
 
         switch = SAXBatterySwitch(
             coordinator=mock_coordinator_switch,
@@ -366,10 +366,10 @@ class TestSAXBatterySwitch:
     ) -> None:
         """Test switch with string values including connected state."""
         # Ensure ModbusItem has proper switch methods
-        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)
-        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)
-        modbus_item_switch.get_switch_connected_value = MagicMock(return_value=3)
-        modbus_item_switch.get_switch_standby_value = MagicMock(return_value=4)
+        modbus_item_switch.get_switch_on_value = MagicMock(return_value=2)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_off_value = MagicMock(return_value=1)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_connected_value = MagicMock(return_value=3)  # type: ignore[method-assign]
+        modbus_item_switch.get_switch_standby_value = MagicMock(return_value=4)  # type: ignore[method-assign]
 
         test_cases = [
             ("on", True),

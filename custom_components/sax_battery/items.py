@@ -88,6 +88,7 @@ class ModbusItem(BaseItem):
     address: int = 0
     battery_slave_id: int = 1
     data_type: ModbusClientMixin.DATATYPE = ModbusClientMixin.DATATYPE.UINT16
+    enabled_by_default: bool = True
     factor: float = 1.0
     offset: int = 0
     _modbus_api: Any = field(default=None, init=False)  # Will be set via set_api()
@@ -101,10 +102,6 @@ class ModbusItem(BaseItem):
     def modbus_api(self, modbus_api: Any) -> None:
         """Set the ModbusAPI instance."""
         self._modbus_api = modbus_api
-
-    # def set_api(self, modbus_api: Any) -> None:
-    #     """Set the ModbusAPI instance for this item."""
-    #     self._modbus_api = modbus_api
 
     async def async_read_value(self) -> int | float | bool | None:
         """Read value from physical modbus register."""
@@ -332,11 +329,11 @@ class SAXItem(BaseItem):
 
     def set_coordinators(self, coordinators: dict[str, Any]) -> None:
         """Set coordinators for multi-battery calculations."""
-        self._coordinators = coordinators
+        self.coordinators = coordinators
 
     async def async_read_value(self) -> int | float | bool | None:
         """Calculate system-wide value from multiple battery coordinators."""
-        return self.calculate_value(self._coordinators)
+        return self.calculate_value(self.coordinators)
 
     async def async_write_value(self, value: float) -> bool:
         """Write system configuration value."""

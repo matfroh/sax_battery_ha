@@ -135,6 +135,11 @@ class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):
 
         self._attr_unique_id = f"sax_{battery_id}_{item_name}"
 
+        # Set entity registry enabled state
+        self._attr_entity_registry_enabled_default = getattr(
+            self._modbus_item, "enabled_by_default", True
+        )
+
         # Set entity description from modbus item if available
         if self._modbus_item.entitydescription is not None:
             self.entity_description = self._modbus_item.entitydescription  # type: ignore[assignment]

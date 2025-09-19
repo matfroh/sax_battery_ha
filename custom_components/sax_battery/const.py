@@ -190,8 +190,7 @@ DESCRIPTION_SAX_STATUS_SWITCH = SwitchEntityDescription(
     key=SAX_STATUS,
     name="Sax On/Off",
     icon="mdi:battery",
-    # Add extra context for tri-state switch
-    entity_registry_enabled_default=True,
+
 )
 
 DESCRIPTION_SOLAR_CHARGING_SWITCH = SwitchEntityDescription(
@@ -387,7 +386,6 @@ DESCRIPTION_SAX_SMARTMETER_CURRENT_L1 = SensorEntityDescription(
     device_class=SensorDeviceClass.CURRENT,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
-    entity_registry_enabled_default=False,  # Disable by default
 )
 
 DESCRIPTION_SAX_SMARTMETER_CURRENT_L2 = SensorEntityDescription(
@@ -396,7 +394,6 @@ DESCRIPTION_SAX_SMARTMETER_CURRENT_L2 = SensorEntityDescription(
     device_class=SensorDeviceClass.CURRENT,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
-    entity_registry_enabled_default=False,  # Disable by default
 )
 
 DESCRIPTION_SAX_SMARTMETER_CURRENT_L3 = SensorEntityDescription(
@@ -405,7 +402,6 @@ DESCRIPTION_SAX_SMARTMETER_CURRENT_L3 = SensorEntityDescription(
     device_class=SensorDeviceClass.CURRENT,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
-    entity_registry_enabled_default=False,  # Disable by default
 )
 
 DESCRIPTION_SAX_SMARTMETER_POWER_L1 = SensorEntityDescription(
@@ -437,7 +433,6 @@ DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L1 = SensorEntityDescription(
     device_class=SensorDeviceClass.VOLTAGE,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-    entity_registry_enabled_default=False,  # Disable by default
 )
 DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L2 = SensorEntityDescription(
     key=SAX_SMARTMETER_VOLTAGE_L2,
@@ -445,7 +440,6 @@ DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L2 = SensorEntityDescription(
     device_class=SensorDeviceClass.VOLTAGE,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-    entity_registry_enabled_default=False,  # Disable by default
 )
 
 DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L3 = SensorEntityDescription(
@@ -454,7 +448,6 @@ DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L3 = SensorEntityDescription(
     device_class=SensorDeviceClass.VOLTAGE,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-    entity_registry_enabled_default=False,  # Disable by default
 )
 
 DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER = SensorEntityDescription(
@@ -558,18 +551,18 @@ MODBUS_BATTERY_SMARTMETER_ITEMS: list[ModbusItem] = [
     ModbusItem(battery_slave_id=40, address=40089, name=SAX_APPARENT_POWER, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=10.0, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_APPARENT_POWER),
     ModbusItem(battery_slave_id=40, address=40091, name=SAX_REACTIVE_POWER, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=10.0, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_REACTIVE_POWER),
     ModbusItem(battery_slave_id=40, address=40093, name=SAX_POWER_FACTOR, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.1, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_POWER_FACTOR),
-    ModbusItem(battery_slave_id=40, address=40103, name=SAX_SMARTMETER_POWER_L1, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_POWER_L1),
-    ModbusItem(battery_slave_id=40, address=40104, name=SAX_SMARTMETER_POWER_L2, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_POWER_L2),
-    ModbusItem(battery_slave_id=40, address=40105, name=SAX_SMARTMETER_POWER_L3, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_POWER_L3),
 ]
 # Smartmeter items - phase-specific data (polled at lower frequency)
 MODBUS_SMARTMETER_PHASE_ITEMS: list[ModbusItem] = [
-    ModbusItem(battery_slave_id=40, address=40100, name=SAX_SMARTMETER_CURRENT_L1, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_CURRENT_L1),
-    ModbusItem(battery_slave_id=40, address=40101, name=SAX_SMARTMETER_CURRENT_L2, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_CURRENT_L2),
-    ModbusItem(battery_slave_id=40, address=40102, name=SAX_SMARTMETER_CURRENT_L3, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_CURRENT_L3),
-    ModbusItem(battery_slave_id=40, address=40107, name=SAX_SMARTMETER_VOLTAGE_L1, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.1, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L1),
-    ModbusItem(battery_slave_id=40, address=40108, name=SAX_SMARTMETER_VOLTAGE_L2, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.1, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L2),
-    ModbusItem(battery_slave_id=40, address=40109, name=SAX_SMARTMETER_VOLTAGE_L3, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.1, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L3),
+    ModbusItem(battery_slave_id=40, address=40100, name=SAX_SMARTMETER_CURRENT_L1, enabled_by_default=False, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_CURRENT_L1),
+    ModbusItem(battery_slave_id=40, address=40101, name=SAX_SMARTMETER_CURRENT_L2, enabled_by_default=False, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_CURRENT_L2),
+    ModbusItem(battery_slave_id=40, address=40102, name=SAX_SMARTMETER_CURRENT_L3, enabled_by_default=False, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_CURRENT_L3),
+    ModbusItem(battery_slave_id=40, address=40103, name=SAX_SMARTMETER_POWER_L1, enabled_by_default=False, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_POWER_L1),
+    ModbusItem(battery_slave_id=40, address=40104, name=SAX_SMARTMETER_POWER_L2, enabled_by_default=False, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_POWER_L2),
+    ModbusItem(battery_slave_id=40, address=40105, name=SAX_SMARTMETER_POWER_L3, enabled_by_default=False, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.01, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_POWER_L3),
+    ModbusItem(battery_slave_id=40, address=40107, name=SAX_SMARTMETER_VOLTAGE_L1, enabled_by_default=False, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.1, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L1),
+    ModbusItem(battery_slave_id=40, address=40108, name=SAX_SMARTMETER_VOLTAGE_L2, enabled_by_default=False, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.1, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L2),
+    ModbusItem(battery_slave_id=40, address=40109, name=SAX_SMARTMETER_VOLTAGE_L3, enabled_by_default=False, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=0.1, device=DeviceConstants.SM, entitydescription=DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L3),
 ]
 # Smartmeter items - basic data (polled at standard interval)
 MODBUS_SMARTMETER_BASIC_ITEMS: list[ModbusItem] = [

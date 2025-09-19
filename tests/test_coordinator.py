@@ -254,13 +254,14 @@ class TestSAXBatteryCoordinator:
             side_effect=ModbusException("Write failed")
         )
 
-        # Test that the coordinator allows the ModbusException to propagate
+        # Test that the coordinator catches the exception and returns False
         # Security: Using specific exception type (ModbusException) instead of broad Exception
-        with pytest.raises(ModbusException, match="Write failed"):
-            await sax_battery_coordinator_instance.async_write_number_value(
-                real_number_item_coord_unique, 3500.0
-            )
+        result = await sax_battery_coordinator_instance.async_write_number_value(
+            real_number_item_coord_unique, 3500.0
+        )
 
+        # Verify the coordinator handles the exception gracefully and returns False
+        assert result is False
         # Verify the ModbusItem's async_write_value method was called
         real_number_item_coord_unique.async_write_value.assert_called_once_with(3500.0)
 
@@ -546,19 +547,20 @@ class TestSAXBatteryCoordinator:
         # Mock entity registry
         mock_entity_registry = MagicMock()
         mock_entity_registry.entities = {}
+        # Add mock methods that the coordinator expects
+        mock_entity_registry.async_get_entity_id = MagicMock(return_value=None)
+        mock_entity_registry.async_get = MagicMock(return_value=None)
 
-        with (  # noqa: SIM117
-            patch(
-                "homeassistant.helpers.entity_registry.async_get",
-                return_value=mock_entity_registry,
-            ),
-            patch.object(
-                sax_battery_coordinator_instance,
-                "_update_battery_data_registry_aware",
-                side_effect=ModbusException("Modbus communication error"),
-            ),
+        # Mock the modbus API to raise ModbusException during connection health check
+        sax_battery_coordinator_instance.modbus_api.should_force_reconnect.side_effect = ModbusException(
+            "Modbus communication error"
+        )
+
+        with patch(  # noqa: SIM117
+            "homeassistant.helpers.entity_registry.async_get",
+            return_value=mock_entity_registry,
         ):
-            # Test update should raise UpdateFailed
+            # Test update should raise UpdateFailed when ModbusException occurs during health check
             with pytest.raises(
                 UpdateFailed, match="Error communicating with battery battery_a"
             ):

@@ -257,7 +257,7 @@ class TestSAXBatteryConfigNumber:
         assert sax_min_soc_item is not None, "SAX_MIN_SOC not found in PILOT_ITEMS"
 
         # Mock the SAXItem's async_write_value method to return success
-        sax_min_soc_item.async_write_value = AsyncMock(return_value=True)
+        sax_min_soc_item.async_write_value = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
         # Create number entity - ensure it has proper hass reference
         number = SAXBatteryConfigNumber(
