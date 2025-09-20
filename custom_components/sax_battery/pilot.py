@@ -1,8 +1,8 @@
 """Battery pilot service for SAX Battery integration."""
 
+import asyncio
 from collections.abc import Callable
 from datetime import timedelta
-import asyncio
 import inspect
 import logging
 import time
@@ -28,7 +28,6 @@ from .const import (
     DEFAULT_MIN_SOC,
     DOMAIN,
     SAX_COMBINED_SOC,
-    SAX_COMBINED_POWER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -167,12 +166,12 @@ class SAXBatteryPilot:
         caller_info = "unknown"
         if caller_frame and caller_frame.f_back:
             caller_info = f"{caller_frame.f_back.f_code.co_filename}:{caller_frame.f_back.f_lineno}"
-            caller_info = caller_info.split('/')[-1] if '/' in caller_info else caller_info
+            caller_info = (
+                caller_info.split("/")[-1] if "/" in caller_info else caller_info
+            )
 
         _LOGGER.info(
-            "Pilot update called from: %s, now parameter: %s",
-            caller_info,
-            now
+            "Pilot update called from: %s, now parameter: %s", caller_info, now
         )
 
         try:
@@ -488,12 +487,12 @@ class SAXBatteryPilot:
         current_time = time.time()
 
         # Enhanced logging to track frequency
-        if hasattr(self, '_last_power_command_time'):
+        if hasattr(self, "_last_power_command_time"):
             time_since_last = current_time - self._last_power_command_time
             _LOGGER.info(
                 "Power command frequency: %.1fs since last command (target: %ss interval)",
                 time_since_last,
-                self.update_interval
+                self.update_interval,
             )
         else:
             _LOGGER.info("First power command sent")
@@ -526,7 +525,7 @@ class SAXBatteryPilot:
         # Use the hub's write method instead of coordinator
         try:
             # Get the coordinator's hub
-            hub = self.sax_data._hub if hasattr(self.sax_data, "_hub") else None
+            hub = self.sax_data._hub if hasattr(self.sax_data, "_hub") else None  # noqa: SLF001
             if not hub:
                 _LOGGER.error("No hub available for writing")
                 return
@@ -555,9 +554,9 @@ class SAXBatteryPilot:
             else:
                 _LOGGER.error("Failed to send power command: %sW", power)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _LOGGER.error("Timeout sending power command: %sW (took >10s)", power)
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             _LOGGER.error("Error sending power command: %sW - %s", power, err)
 
 
@@ -621,7 +620,7 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
         # If we're in manual mode, send the command immediately
         if self._pilot.entry.data.get(CONF_MANUAL_CONTROL, False):
             # Apply SOC constraints
-            constrained_value = await self._pilot._apply_soc_constraints(value)
+            constrained_value = await self._pilot._apply_soc_constraints(value)  # noqa: SLF001
             await self._pilot.send_power_command(constrained_value, 1.0)
 
             # Log what actually happened

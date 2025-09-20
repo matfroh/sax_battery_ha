@@ -233,7 +233,7 @@ class SAXBatteryHub:
 
                 # Add small delay after successful write
                 await asyncio.sleep(GLOBAL_DELAY)
-                return True
+                return True  # noqa: TRY300
 
             except TimeoutError:
                 _LOGGER.error(
@@ -243,7 +243,7 @@ class SAXBatteryHub:
             except (ConnectionException, ModbusIOException) as e:
                 _LOGGER.error("Modbus write error for battery %s: %s", battery_id, e)
                 return False
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 _LOGGER.error(
                     "Unexpected error writing to battery %s: %s", battery_id, e
                 )
@@ -286,7 +286,7 @@ class SAXBatteryHub:
                             f"Quick reconnect failed for battery {battery_id}"
                         )
                 except TimeoutError:
-                    raise HubConnectionError(
+                    raise HubConnectionError(  # noqa: B904
                         f"Reconnect timeout for battery {battery_id}"
                     )
             else:
@@ -323,16 +323,15 @@ class SAXBatteryHub:
                                 RETRY_DELAY * (attempt + 1)
                             )  # Exponential backoff
                             continue
-                        else:
-                            _LOGGER.error(
-                                "Modbus error response for battery %s after %d attempts: %s",
-                                battery_id,
-                                MODBUS_RETRIES + 1,
-                                result,
-                            )
-                            raise HubException(
-                                f"Modbus error for battery {battery_id}: {result}"
-                            )
+                        _LOGGER.error(
+                            "Modbus error response for battery %s after %d attempts: %s",
+                            battery_id,
+                            MODBUS_RETRIES + 1,
+                            result,
+                        )
+                        raise HubException(
+                            f"Modbus error for battery {battery_id}: {result}"
+                        )
 
                     _LOGGER.debug(
                         "Successfully read %d registers from battery %s (attempt %d)",
@@ -340,7 +339,7 @@ class SAXBatteryHub:
                         battery_id,
                         attempt + 1,
                     )
-                    return result.registers
+                    return result.registers  # noqa: TRY300
 
                 except TimeoutError:
                     if attempt < MODBUS_RETRIES:
@@ -355,17 +354,16 @@ class SAXBatteryHub:
                             RETRY_DELAY * (attempt + 1)
                         )  # Exponential backoff
                         continue
-                    else:
-                        _LOGGER.error(
-                            "Register read timeout for battery %s after %d attempts (address %d)",
-                            battery_id,
-                            MODBUS_RETRIES + 1,
-                            address,
-                        )
-                        self._connected[battery_id] = False  # Mark as disconnected
-                        raise HubConnectionError(
-                            f"Read timeout for battery {battery_id} at address {address}"
-                        ) from None
+                    _LOGGER.error(
+                        "Register read timeout for battery %s after %d attempts (address %d)",
+                        battery_id,
+                        MODBUS_RETRIES + 1,
+                        address,
+                    )
+                    self._connected[battery_id] = False  # Mark as disconnected
+                    raise HubConnectionError(
+                        f"Read timeout for battery {battery_id} at address {address}"
+                    ) from None
 
                 except (ConnectionException, ModbusIOException) as err:
                     if attempt < MODBUS_RETRIES:
@@ -381,17 +379,16 @@ class SAXBatteryHub:
                             RETRY_DELAY * (attempt + 1)
                         )  # Exponential backoff
                         continue
-                    else:
-                        _LOGGER.error(
-                            "Modbus communication error for battery %s after %d attempts: %s",
-                            battery_id,
-                            MODBUS_RETRIES + 1,
-                            err,
-                        )
-                        self._connected[battery_id] = False
-                        raise HubConnectionError(
-                            f"Modbus communication error for battery {battery_id}: {err}"
-                        ) from err
+                    _LOGGER.error(
+                        "Modbus communication error for battery %s after %d attempts: %s",
+                        battery_id,
+                        MODBUS_RETRIES + 1,
+                        err,
+                    )
+                    self._connected[battery_id] = False
+                    raise HubConnectionError(
+                        f"Modbus communication error for battery {battery_id}: {err}"
+                    ) from err
 
         except (ConnectionException, ModbusIOException) as e:
             # Use WARNING for common recoverable issues instead of ERROR
@@ -438,7 +435,7 @@ class SAXBatteryHub:
             self._reading = False
 
     async def _read_data_internal(self) -> dict[str, Any]:
-        """Internal data reading logic."""
+        """Read internal data logic."""
         # Quick connect check
         if not await self.connect():
             _LOGGER.warning("Failed to connect to batteries, returning empty data")
@@ -478,7 +475,7 @@ class SAXBatteryHub:
                     battery_id,
                 )
                 self._connected[battery_id] = False
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 _LOGGER.error("Error reading from %s: %s", battery_id, e)
 
         _LOGGER.debug(
@@ -494,7 +491,7 @@ class SAXBatteryHub:
         """Safely read data from a single battery with error handling."""
         try:
             return await battery.read_data()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _LOGGER.error("Error reading data from %s: %s", battery_id, e)
             return {}
 

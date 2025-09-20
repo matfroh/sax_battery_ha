@@ -47,7 +47,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
         for battery_id, battery in hub.batteries.items():
             self.batteries[battery_id] = battery
             # Set each battery's _data_manager reference to this coordinator
-            battery._data_manager = self
+            battery._data_manager = self  # noqa: SLF001
 
         # Add master_battery attribute for compatibility (use first battery)
         self.master_battery = (
@@ -55,7 +55,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
         )
 
         # Add other attributes that might be expected
-        self.modbus_clients = hub._clients
+        self.modbus_clients = hub._clients  # noqa: SLF001
 
         # Add more compatibility attributes that might be expected
         self.last_updates: dict[str, Any] = {}
@@ -129,9 +129,9 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
                                 address,
                                 values,
                             )
-                            return True
+                            return True  # noqa: TRY300
 
-                        except Exception as err:
+                        except Exception as err:  # noqa: BLE001
                             _LOGGER.warning(
                                 "Attempt %d failed for battery %s: %s",
                                 attempt + 1,
@@ -144,7 +144,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
 
                 return success if hasattr(self._hub, "write_registers") else False
 
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Error writing Modbus registers: %s", err)
                 return False
 
@@ -172,7 +172,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator):
                 # Merge raw data with combined values
                 raw_data.update(combined_data)
 
-                return raw_data
+                return raw_data  # noqa: TRY300
 
             except TimeoutError:
                 _LOGGER.warning("Data fetch timed out after 20 seconds")

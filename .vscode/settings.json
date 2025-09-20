@@ -1,22 +1,82 @@
 {
-    "files.associations": {
-        "*.yaml": "home-assistant"
-    },
+  "chat.modeFilesLocations": {
+    "chatmodes": true
+  },
+  "chat.promptFilesLocations": {
+    "prompts": true
+  },
+  "chat.instructionsFilesLocations": {
+    "instructions": true
+  },
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false,
+    "editor.formatOnSave": true
+  },
+  "files.associations": {
+    "*.yaml": "home-assistant",
+    "*.chatmode.md": "markdown",
+    "*.instructions.md": "markdown",
+    "*.prompt.md": "markdown",
+  },
+  "editor.formatOnSave": true,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.defaultInterpreterPath": "/home/vscode/.local/ha-venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true,
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportIncompatibleMethodOverride": false
+  },
+  "python.linting.enabled": true,
+  "python.linting.ruffEnabled": true,
+  "python.formatting.provider": "ruff",
+  "[python]": {
     "editor.formatOnSave": true,
-    "python.testing.pytestArgs": [
-        "tests"
-    ],
-    "python.defaultInterpreterPath": "/home/vscode/.local/ha-venv/bin/python",
-    "python.terminal.activateEnvironment": true,
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true,
-    "cSpell.words": [
-        "asyncio",
-        "codeowners",
-        "pymodbus",
-        "pytest"
-    ],
-    "python.analysis.diagnosticSeverityOverrides": {
-        "reportIncompatibleMethodOverride": false
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "cSpell.words": [
+    "codeowners",
+    "entitydescription",
+    "mformat",
+    "mtype",
+    "Mult",
+    "mypy",
+    "pymodbus",
+    "STATUSANZEIGE"
+  ],
+  "workbench.editor.restoreViewState": false,
+  "workbench.editor.enablePreview": true,
+  "workbench.editor.enablePreviewFromQuickOpen": false,
+  "awesome-copilot.mcp.enabled": true,
+  "awesome-copilot.mcp.configFile": "${workspaceFolder}/.github/mcp-config.json",
+  "awesome-copilot.mcp.timeout": 30000,
+  "[json]": {
+    "editor.formatOnSave": false
+  },
+  "json.schemas": [
+    {
+      "fileMatch": [
+        "homeassistant/components/*/manifest.json"
+      ],
+      // This value differs between working with devcontainer and locally, therefor this value should NOT be in sync!
+      "url": "./scripts/json_schemas/manifest_schema.json"
     },
+    {
+      "fileMatch": [
+        "${containerWorkspaceFolder}/custom_components/*/manifest.json"
+      ],
+      "url": "${containerWorkspaceFolder}/scripts/json_schemas/hacs_manifest_schema.json"
+    }
+  ],
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.{yml,yaml}",
+    "https://json.schemastore.org/dependabot-2.0.json": ".github/dependabot.yml"
+  },
 }
