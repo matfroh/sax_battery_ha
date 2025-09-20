@@ -291,7 +291,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             enabled_sax_items = []
             for sax_item in all_sax_items:
                 if not isinstance(sax_item, SAXItem):
-                    continue  # type.ignore[unreachable]
+                    continue  # # type: ignore[unreachable]
 
                 # Check if SAX entity is enabled in registry
                 unique_id = (
@@ -548,15 +548,14 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         # Security: Input validation
         if not isinstance(item, ModbusItem):
-            _LOGGER.error(
+            _LOGGER.error(  # type: ignore[unreachable]
                 "Expected ModbusItem, got %s", type(item)
-            )  # type.ignore[unreachable]
+            )
             return False
         if not isinstance(value, (int, float)):
-            _LOGGER.error(
+            _LOGGER.error(  # type: ignore[unreachable]
                 "Expected numeric value, got %s", type(value)
-            )  # type.ignore[unreachable]
-            return False
+            )
 
         # Ensure API is set
         if item.modbus_api is None:
@@ -584,10 +583,10 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         # Security: Input validation
         if not isinstance(item, ModbusItem):
-            _LOGGER.error("Expected ModbusItem, got %s", type(item))
+            _LOGGER.error("Expected ModbusItem, got %s", type(item))  # type: ignore[unreachable]
             return False
         if not isinstance(value, bool):
-            _LOGGER.error("Expected bool value, got %s", type(value))
+            _LOGGER.error("Expected bool value, got %s", type(value))  # type: ignore[unreachable]
             return False
 
         # Ensure API is set
@@ -656,7 +655,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not isinstance(power, (int, float)) or not isinstance(
                 power_factor, (int, float)
             ):
-                _LOGGER.error("Expected numeric values for pilot control")
+                _LOGGER.error("Expected numeric values for pilot control")  # type: ignore[unreachable]
                 return False
 
             # Ensure API references are set

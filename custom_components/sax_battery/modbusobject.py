@@ -180,7 +180,6 @@ class ModbusAPI:
                     self._modbus_client.close()  # type: ignore[no-untyped-call]
                 except Exception:  # noqa: BLE001
                     pass
-                self._modbus_client = None
 
             return False
 
@@ -256,9 +255,20 @@ class ModbusAPI:
                     return None
 
                 # Use pymodbus built-in conversion per coding instructions
-                return self._modbus_client.convert_from_registers(
+                converted_result = self._modbus_client.convert_from_registers(
                     registers=result.registers, data_type=modbus_item.data_type
                 )
+                if isinstance(converted_result, (int, float)):
+                    converted_result = converted_result - modbus_item.offset
+                    _LOGGER.debug(
+                        "Read %s from %s: %s",
+                        modbus_item.name,
+                        self.battery_id,
+                        converted_result,
+                    )
+                    return converted_result
+                else:  # noqa: RET505
+                    return None
 
             except (OSError, ConnectionException, ModbusIOException) as err:
                 if attempt < max_retries:
@@ -384,7 +394,7 @@ class ModbusAPI:
             def _write() -> bool:
                 try:
                     if self._modbus_client is None:
-                        return False
+                        return False  # type: ignore[unreachable]
 
                     # Single write_registers call for both power and power factor
                     result = self._modbus_client.write_registers(
