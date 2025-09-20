@@ -60,6 +60,18 @@ from .const import DOMAIN
 from .items import ModbusItem
 ```
 
+### pymodbus constrains
+
+- Use `pymodbus` for Modbus TCP/RTU communication
+- Handle `ModbusException` for Modbus-specific errors
+- Ensure proper connection management (open/close)
+- SAX battery only uses ModbusClientMixin.DATATYPE.UINT16 and ModbusClientMixin.DATATYPE.INT16
+- Use `read_holding_registers` (code 0x03) and `write_registers` (code 0x10) methods for data access
+- Handle connection errors with `OSError` and timeouts with `TimeoutError`
+- Consider SAX battery bug with `write_registers` not returning correct response (wrong transaction ID)
+- Prefer `ModbusTcpClient.convert_from_registers` and `ModbusTcpClient.convert_to_registers` for data conversion
+- Use available documentation for code generation https://pymodbus.readthedocs.io/en/v3.11.2/source/client.html
+
 ### Security Requirements
 
 - No hardcoded secrets - use environment variables or secret stores
