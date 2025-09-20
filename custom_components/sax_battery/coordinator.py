@@ -11,15 +11,10 @@ from pymodbus import ModbusException
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import (
-    BATTERY_POLL_INTERVAL,
-    BATTERY_POLL_SLAVE_INTERVAL,
-    CONF_BATTERY_IS_MASTER,
-    DOMAIN,
-)
+from .const import CONF_BATTERY_IS_MASTER, DOMAIN
 from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
@@ -29,11 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """SAX Battery data update coordinator with direct ModbusItem integration.
-
-    Security: Implements proper error handling and input validation
-    Performance: Efficient update strategies with connection pooling
-    """
+    """SAX Battery data update coordinator."""
 
     def __init__(
         self,
@@ -42,44 +33,30 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         sax_data: SAXBatteryData,
         modbus_api: ModbusAPI,
         config_entry: ConfigEntry,
-        battery_config: dict[str, Any] | None = None,
+        battery_config: dict[str, Any],
     ) -> None:
-        """Initialize coordinator.
+        """Initialize the coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_{battery_id}",
+            update_interval=timedelta(seconds=10),
+            config_entry=config_entry,
+        )
 
-        Args:
-            hass: Home Assistant instance
-            battery_id: Unique battery identifier
-            sax_data: SAX data manager
-            modbus_api: Modbus API instance
-            config_entry: Config entry for this battery
-            battery_config: Battery-specific configuration
-
-        Security: Validates all inputs and maintains reference integrity
-        """
         self.battery_id = battery_id
+        self.config_entry = config_entry
         self.sax_data = sax_data
         self.modbus_api = modbus_api
-        self.config_entry = config_entry
-        self.battery_config = battery_config or {}
+        self.battery_config = battery_config
 
         # Initialize timestamp for tracking last successful update
         self.last_update_success_time: datetime | None = None
 
-        # Determine update interval based on battery role
-        is_master_battery = self.battery_config.get(CONF_BATTERY_IS_MASTER, False)
-        update_interval = (
-            BATTERY_POLL_INTERVAL if is_master_battery else BATTERY_POLL_SLAVE_INTERVAL
-        )  # Master polls more frequently
-
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=f"SAX Battery {battery_id}",
-            update_interval=timedelta(seconds=update_interval),
-        )
-
-        # Initialize ModbusItems with API reference
-        self._setup_modbus_items()
+        # Set the modbus API reference for all items
+        for item in self.sax_data.get_modbus_items_for_battery(battery_id):
+            if hasattr(item, "modbus_api"):
+                item.modbus_api = self.modbus_api
 
     @property
     def is_master(self) -> bool:
@@ -135,7 +112,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
 
             # Get entity registry to check enabled state
-            entity_registry = async_get_entity_registry(self.hass)
+            entity_registry = er.async_get(self.hass)
 
             # Performance: Filter items to only poll enabled entities
             enabled_items = await self._get_enabled_modbus_items(entity_registry)
@@ -314,7 +291,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             enabled_sax_items = []
             for sax_item in all_sax_items:
                 if not isinstance(sax_item, SAXItem):
-                    continue  # type:ignore [unreachable]
+                    continue  # type.ignore[unreachable]
 
                 # Check if SAX entity is enabled in registry
                 unique_id = (
@@ -571,10 +548,14 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         # Security: Input validation
         if not isinstance(item, ModbusItem):
-            _LOGGER.error("Expected ModbusItem, got %s", type(item))  # type:ignore [unreachable]
+            _LOGGER.error(
+                "Expected ModbusItem, got %s", type(item)
+            )  # type.ignore[unreachable]
             return False
         if not isinstance(value, (int, float)):
-            _LOGGER.error("Expected numeric value, got %s", type(value))  # type:ignore [unreachable]
+            _LOGGER.error(
+                "Expected numeric value, got %s", type(value)
+            )  # type.ignore[unreachable]
             return False
 
         # Ensure API is set
@@ -603,10 +584,10 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         # Security: Input validation
         if not isinstance(item, ModbusItem):
-            _LOGGER.error("Expected ModbusItem, got %s", type(item))  # type:ignore [unreachable]
+            _LOGGER.error("Expected ModbusItem, got %s", type(item))
             return False
         if not isinstance(value, bool):
-            _LOGGER.error("Expected bool value, got %s", type(value))  # type:ignore [unreachable]
+            _LOGGER.error("Expected bool value, got %s", type(value))
             return False
 
         # Ensure API is set
@@ -675,7 +656,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not isinstance(power, (int, float)) or not isinstance(
                 power_factor, (int, float)
             ):
-                _LOGGER.error("Expected numeric values for pilot control")  # type:ignore [unreachable]
+                _LOGGER.error("Expected numeric values for pilot control")
                 return False
 
             # Ensure API references are set
@@ -781,9 +762,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             sax_items = self.sax_data.get_sax_items_for_battery(self.battery_id)
 
             # Performance optimization: Use dictionary update pattern
-            calculated_values: dict[
-                str, Any
-            ] = {}  # Fix: Use Any instead of float | int
+            calculated_values: dict[str, Any] = {}
             for sax_item in sax_items:
                 if isinstance(sax_item, SAXItem):
                     try:
