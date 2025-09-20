@@ -40,6 +40,7 @@ The SAX-power energy storage solution uses structured communication protocols ac
 - **Import cleanup** (F401): Remove unused imports immediately
 - **Security** (S): Avoid `eval()`, sanitize inputs, use parameterized queries
 - **Complexity** (C901): Keep functions simple and readable
+- **Private member access** (SLF001): Checks for accesses on "private" class members
 
 ### Import Management
 
@@ -58,6 +59,18 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from .items import ModbusItem
 ```
+
+### pymodbus constrains
+
+- Use `pymodbus` for Modbus TCP/RTU communication
+- Handle `ModbusException` for Modbus-specific errors
+- Ensure proper connection management (open/close)
+- SAX battery only uses ModbusClientMixin.DATATYPE.UINT16 and ModbusClientMixin.DATATYPE.INT16
+- Use `read_holding_registers` (code 0x03) and `write_registers` (code 0x10) methods for data access
+- Handle connection errors with `OSError` and timeouts with `TimeoutError`
+- Consider SAX battery bug with `write_registers` not returning correct response (wrong transaction ID)
+- Prefer `ModbusTcpClient.convert_from_registers` and `ModbusTcpClient.convert_to_registers` for data conversion
+- Use available documentation for code generation https://pymodbus.readthedocs.io/en/v3.11.2/source/client.html
 
 ### Security Requirements
 
@@ -269,3 +282,89 @@ During code reviews and generation:
 - Prioritize security and performance considerations
 - Explain security mitigations explicitly
 - Verify implementation details before generating tests
+
+# GitHub Copilot Instructions for SAX Battery Integration
+
+You are an AI programming assistant specialized in Home Assistant custom integration development for SAX Battery systems.
+
+## Performance Optimization Rules
+
+### List Operations and Loops
+
+**Prefer `list.extend()` over append loops** for better performance and readability:
+
+```python
+# ❌ BAD: Inefficient loop with repeated append calls
+entities = []
+for modbus_item in switch_items:
+    if isinstance(modbus_item, ModbusItem):
+        entities.append(
+            SAXBatterySwitch(
+                coordinator=coordinator,
+                battery_id=battery_id,
+                modbus_item=modbus_item,
+            )
+        )
+
+# ✅ GOOD: Use list comprehension with extend for better performance
+entities.extend([
+    SAXBatterySwitch(
+        coordinator=coordinator,
+        battery_id=battery_id,
+        modbus_item=modbus_item,
+    )
+    for modbus_item in switch_items
+    if isinstance(modbus_item, ModbusItem)
+])
+
+# ✅ ALTERNATIVE: Generator expression for memory efficiency with large lists
+entities.extend(
+    SAXBatterySwitch(
+        coordinator=coordinator,
+        battery_id=battery_id,
+        modbus_item=modbus_item,
+    )
+    for modbus_item in switch_items
+    if isinstance(modbus_item, ModbusItem)
+)
+```
+
+**Performance Benefits:**
+- **Reduced function call overhead**: Single `extend()` vs multiple `append()` calls
+- **Better memory allocation**: List grows once vs incrementally
+- **Improved readability**: Functional style over imperative loops
+- **Type safety**: Maintains list type consistency
+
+**When to Use Each Pattern:**
+- **List comprehension**: Small to medium lists, simple transformations
+- **Generator expression**: Large lists, memory-constrained environments
+- **Traditional loop**: Complex logic, error handling, or side effects needed
+
+**Security Considerations (OWASP A05: Security Misconfiguration):**
+- Validate input lists before processing to prevent resource exhaustion
+- Use generator expressions for untrusted/large data sources
+- Implement bounds checking for user-provided list sizes
+
+**Additional List Optimization Patterns:**
+
+```python
+# ✅ Efficient filtering and mapping
+valid_items = [item for item in items if item.is_valid()]
+
+# ✅ Flatten nested lists efficiently
+all_items = [item for sublist in nested_lists for item in sublist]
+
+# ✅ Batch operations instead of individual calls
+coordinator.add_entities(entities)  # vs multiple add_entity() calls
+
+# ✅ Use sets for membership testing in loops
+valid_types = {TypeConstants.SWITCH, TypeConstants.SENSOR}
+filtered = [item for item in items if item.mtype in valid_types]
+```
+
+**Code Review Checklist for List Operations:**
+- [ ] Can this append loop be replaced with `extend()` and list comprehension?
+- [ ] Is the list size bounded and validated for security?
+- [ ] Are we using the most efficient data structure for the access pattern?
+- [ ] For large lists, should we use a generator expression for memory efficiency?
+- [ ] Are we avoiding unnecessary intermediate lists?
