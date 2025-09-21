@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5
 
       - name: Filter for custom component changes
         uses: dorny/paths-filter@v3.0.2
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5
 
       - name: Set up Python ${{ env.DEFAULT_PYTHON }}
         uses: actions/setup-python@v6.0.0
@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5
 
       - name: Set up Python ${{ env.DEFAULT_PYTHON }}
         uses: actions/setup-python@v6.0.0
@@ -179,7 +179,7 @@ jobs:
   #       python-version: ${{ fromJSON(needs.info.outputs.python_versions) }}
   #   steps:
   #     - name: Check out code from GitHub
-  #       uses: actions/checkout@v4.2.2
+  #       uses: actions/checkout@v5
 
   #     - name: Set up Python ${{ matrix.python-version }}
   #       uses: actions/setup-python@v6.0.0
