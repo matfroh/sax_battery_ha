@@ -1,100 +1,370 @@
-# Instructions for GitHub Copilot
+# GitHub Copilot Instructions for SAX Battery Integration
 
-This repository holds a custom integration for Home Assistant, a Python 3 based home
-automation application.
+You are an AI programming assistant specialized in Home Assistant custom integration development for SAX Battery systems.
 
-- Python code must be compatible with Python 3.13
-- Use the newest Python language features if possible:
-  - Pattern matching
-  - Type hints
-  - f-strings for string formatting over `%` or `.format()`
-  - Dataclasses
-  - Walrus operator
-- Code quality tools:
-  - Formatting: Ruff
-  - Linting: PyLint and Ruff
-  - Type checking: MyPy
-  - Testing: pytest with plain functions and fixtures
-- Inline code documentation:
-  - File headers should be short and concise:
-    ```python
-    """Integration for Peblar EV chargers."""
-    ```
-  - Every method and function needs a docstring:
-    ```python
-    async def async_setup_entry(hass: HomeAssistant, entry: PeblarConfigEntry) -> bool:
-        """Set up Peblar from a config entry."""
-        ...
-    ```
-- All code and comments and other text are written in American English
-- Follow existing code style patterns as much as possible
-- Core locations:
-  - Shared constants: `homeassistant/const.py`, use them instead of hardcoding
-    strings or creating duplicate integration constants.
-  - Integration files:
-    - Constants: `custom_components/{domain}/const.py`
-    - Models: `custom_components/{domain}/models.py`
-    - Coordinator: `custom_components/{domain}/coordinator.py`
-    - Config flow: `custom_components/{domain}/config_flow.py`
-    - Platform code: `custom_components/{domain}/{platform}.py`
+## SAX Battery System Architecture
+
+The SAX-power energy storage solution uses structured communication protocols across multi-phase installations with coordinated control hierarchy. Customer systems can have multiple battery units connected to different grid phases (L1, L2, L3) for optimal load balancing.
+
+### Communication Interfaces
+
+- **Ethernet Port (Modbus TCP/IP)**: Remote monitoring, data acquisition, system configuration
+- **RS485 Port (Modbus RTU)**: Battery-to-smart meter communication for grid measurements
+
+### Master Battery Configuration
+
+- **Battery A** (L1) = Master: Power limit coordination, smart meter data polling, RS485 communication
+- **Battery B** (L2) + **Battery C** (L3) = Slaves: Follow master instructions
+- **Polling Strategy**: Basic smart meter (5-10s), phase-specific data (30-60s), individual battery data (standard interval)
+
+### Power Phase Mapping
+
+| Battery | Grid Phase | Role   |
+| ------- | ---------- | ------ |
+| A       | L1         | Master |
+| B       | L2         | Slave  |
+| C       | L3         | Slave  |
+
+## Python Development Standards
+
+### Language Requirements
+
+- **Python 3.13+** compatibility required
+- Use modern language features: Pattern matching, type hints, f-strings, dataclasses, walrus operator
+- **Tools**: Ruff (formatting/linting), PyLint, MyPy (type checking), pytest (testing)
+
+### Linting Rules (pyproject.toml compliance)
+
+- **Import sorting** (I001): Alphabetical grouping required
+- **Exception handling** (BLE001): No blind `Exception` catching - use specific types
+- **Import cleanup** (F401): Remove unused imports immediately
+- **Security** (S): Avoid `eval()`, sanitize inputs, use parameterized queries
+- **Complexity** (C901): Keep functions simple and readable
+- **Private member access** (SLF001): Checks for accesses on "private" class members
+
+### Import Management
+
+```python
+"""Module docstring."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any
+
+from pymodbus import ModbusException
+from homeassistant.core import HomeAssistant
+
+from .const import DOMAIN
+from .items import ModbusItem
+```
+
+### pymodbus constrains
+
+- Use `pymodbus` for Modbus TCP/RTU communication
+- Handle `ModbusException` for Modbus-specific errors
+- Ensure proper connection management (open/close)
+- SAX battery only uses ModbusClientMixin.DATATYPE.UINT16 and ModbusClientMixin.DATATYPE.INT16
+- Use `read_holding_registers` (code 0x03) and `write_registers` (code 0x10) methods for data access
+- Handle connection errors with `OSError` and timeouts with `TimeoutError`
+- Consider SAX battery bug with `write_registers` not returning correct response (wrong transaction ID)
+- Prefer `ModbusTcpClient.convert_from_registers` and `ModbusTcpClient.convert_to_registers` for data conversion
+- Use available documentation for code generation https://pymodbus.readthedocs.io/en/v3.11.2/source/client.html
+
+### Security Requirements
+
+- No hardcoded secrets - use environment variables or secret stores
+- Validate and sanitize all user inputs
+- Use specific exceptions: `ModbusException`, `OSError`, `TimeoutError`, `ValueError`, `ConfigEntryNotReady`
+- Never log sensitive information
+
+## Home Assistant Integration Patterns
+
+### Core File Structure
+
+- Constants: `custom_components/{domain}/const.py`
+- Models: `custom_components/{domain}/models.py`
+- Coordinator: `custom_components/{domain}/coordinator.py`
+- Config flow: `custom_components/{domain}/config_flow.py`
+- Platform code: `custom_components/{domain}/{platform}.py`
+
+### Async Patterns
+
 - All external I/O operations must be async
-- Async patterns:
-  - Avoid sleeping in loops
-  - Avoid awaiting in loops, gather instead
-  - No blocking calls
-- Polling:
-  - Follow update coordinator pattern, when possible
-  - Polling interval may not be configurable by the user
-  - For local network polling, the minimum interval is 5 seconds
-  - For cloud polling, the minimum interval is 60 seconds
-- Error handling:
-  - Use specific exceptions from `homeassistant.exceptions`
-  - Setup failures:
-    - Temporary: Raise `ConfigEntryNotReady`
-    - Permanent: Use `ConfigEntryError`
-- Logging:
-  - Message format:
-    - No periods at end
-    - No integration names or domains (added automatically)
-    - No sensitive data (keys, tokens, passwords), even when those are incorrect.
-  - Be very restrictive on the use of logging info messages, use debug for
-    anything which is not targeting the user.
-  - Use lazy logging (no f-strings):
-    ```python
-    _LOGGER.debug("This is a log message with %s", variable)
-    ```
-- Entities:
-  - Ensure unique IDs for state persistence:
-    - Unique IDs should not contain values that are subject to user or network change.
-    - An ID needs to be unique per platform, not per integration.
-    - The ID does not have to contain the integration domain or platform.
-    - Acceptable examples:
-      - Serial number of a device
-      - MAC address of a device formatted using `homeassistant.helpers.device_registry.format_mac`
-        Do not obtain the MAC address through arp cache of local network access,
-        only use the MAC address provided by discovery or the device itself.
-      - Unique identifier that is physically printed on the device or burned into an EEPROM
-    - Not acceptable examples:
-      - IP Address
-      - Device name
-      - Hostname
-      - URL
-      - Email address
-      - Username
-    - For entities that are setup by a config entry, the config entry ID
-      can be used as a last resort if no other Unique ID is available.
-      For example: `f"{entry.entry_id}-battery"`
-  - If the state value is unknown, use `None`
-  - Do not use the `unavailable` string as a state value,
-    implement the `available()` property method instead
-  - Do not use the `unknown` string as a state value, use `None` instead
-- Extra entity state attributes:
-  - The keys of all state attributes should always be present
-  - If the value is unknown, use `None`
-  - Provide descriptive state attributes
-- Testing:
-  - Test location: `tests/components/{domain}/`
-  - Use pytest fixtures from `tests.common`
-  - Mock external dependencies
-  - Use snapshots for complex data
-  - Follow existing test patterns
+- No blocking calls, no sleeping in loops
+- Use gather() instead of awaiting in loops
+- Follow update coordinator pattern
+
+### Polling Requirements
+
+- Local network minimum: 5 seconds
+- Cloud polling minimum: 60 seconds
+- Polling interval not user-configurable
+
+### Error Handling
+
+- **Specific exceptions only**: `ModbusException` (Modbus), `OSError` (network), `TimeoutError` (timeouts)
+- **Setup failures**: `ConfigEntryNotReady` (temporary), `ConfigEntryError` (permanent)
+- Never catch blind `Exception`
+
+### Logging Standards
+
+- No periods at end of messages
+- No integration names/domains (auto-added)
+- No sensitive data in logs
+- Use lazy logging: `_LOGGER.debug("Message with %s", variable)`
+- Restrict info messages - use debug for non-user content
+
+### Entity Requirements
+
+#### Unique IDs (Critical)
+
+**Acceptable**: Serial numbers, MAC addresses (formatted), device EEPROM IDs
+**Not acceptable**: IP addresses, device names, hostnames, URLs, usernames
+**Fallback**: Use `f"{entry.entry_id}-battery"` only if no other option
+
+#### Entity Initialization Pattern (Critical Rule)
+
+```python
+class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
+    """SAX Battery configuration number entity."""
+
+    def __init__(
+        self,
+        coordinator: SAXBatteryCoordinator,
+        sax_item: SAXItem,
+        battery_count: int = 1,
+    ) -> None:
+        """Initialize the config number entity."""
+        super().__init__(coordinator)
+        self._sax_item = sax_item
+        self._battery_count = battery_count
+
+        # Generate unique ID
+        if self._sax_item.name.startswith("sax_"):
+            self._attr_unique_id = self._sax_item.name
+        else:
+            self._attr_unique_id = f"sax_{self._sax_item.name}"
+
+        # Set entity description - let HA handle attribute extraction
+        if self._sax_item.entitydescription is not None:
+            self.entity_description = self._sax_item.entitydescription
+```
+
+**❌ Wrong Patterns**:
+
+- Manual `_attr_*` assignments for entity description attributes
+- Complex initialization logic in `__init__`
+- Assuming entity description types without checking
+
+#### State Values
+
+- Unknown state = `None` (never use "unknown" string)
+- Implement `available()` property instead of "unavailable" string
+- Always provide descriptive state attributes with consistent keys
+
+## Testing Guidelines
+
+### Test Structure
+
+- Location: `tests/components/{domain}/`
+- Use pytest fixtures from `tests.common`
+- Mock external dependencies
+- Follow existing test patterns
+
+### Fixture Naming (Critical Rule)
+
+- **All fixture names must be unique** across entire test suite
+- No shadowing outer fixtures (avoid PyLint W0621)
+- Use descriptive names: `mock_modbus_api_obj`, `mock_modbus_client_instance`
+- Never redefine fixtures from `conftest.py`
+
+```python
+# conftest.py
+@pytest.fixture
+def mock_modbus_api():
+    ...
+
+# test_modbusobject.py
+@pytest.fixture
+def mock_modbus_api_obj(mock_modbus_api):  # Different name
+    ...
+```
+
+### Test Generation Verification (Critical Rule)
+
+**Before generating any test:**
+
+1. **Read actual implementation first**
+2. **Verify class constructors match actual parameters**
+3. **Check import paths exist in codebase**
+4. **Validate method signatures (async/sync, parameters, return types)**
+5. **Confirm exception types used in implementation**
+
+### Testing Patterns
+
+- Use existing fixtures when possible
+- Add new fixtures to `conftest.py` if used 3+ times
+- Group tests in descriptive classes
+- Test both success and failure scenarios
+- Mock HA registries and coordinators properly
+
+## Code Generation Rules
+
+### When Generating Code
+
+1. Follow established patterns from existing codebase
+2. Apply all ruff linting rules from `pyproject.toml`
+3. Use security-first approaches (OWASP compliance)
+4. Generate corresponding tests with proper fixtures
+5. Include comprehensive documentation
+6. Consider multi-battery system architecture
+
+### When Reviewing Code
+
+1. Security vulnerabilities (OWASP Top 10)
+2. Performance optimization opportunities
+3. Exception handling specificity (no blind Exception)
+4. Import organization and unused imports
+5. Home Assistant entity pattern compliance
+
+## Multi-Battery System Considerations
+
+### Master/Slave Coordination
+
+- Master battery handles smart meter polling
+- Each battery maintains individual coordinator
+- Phase-specific entity creation (L1/L2/L3)
+- Data synchronization via RS485 and Ethernet
+
+### Entity Creation
+
+- Consider battery role (master vs slave) when creating entities
+- Handle redundant sensor values (only master polls)
+- Implement proper unique ID patterns for multi-battery setups
+
+## Performance Guidelines
+
+During code reviews and generation:
+
+- [ ] Avoid O(n^2) or worse algorithmic complexity
+- [ ] Use appropriate data structures
+- [ ] Implement caching where beneficial
+- [ ] Optimize database queries with proper indexes
+- [ ] Minimize network requests and batch operations
+- [ ] Handle memory efficiently (no leaks, bounded usage)
+- [ ] Use asynchronous operations for I/O
+- [ ] Monitor and alert on performance regressions
+
+## Documentation Standards
+
+### Code Documentation
+
+- File headers: Short and concise (`"""Integration for SAX Battery systems."""`)
+- Every method needs docstring with clear purpose
+- Document performance assumptions and critical code paths
+- All text in American English
+
+### Error Messages and Logging
+
+- Clear, actionable error messages
+- No sensitive data in logs
+- Structured logging for easier analysis
+- Use appropriate log levels (debug vs info vs error)
+
+## Response Guidelines
+
+- Always provide actionable, specific guidance
+- Include code examples following established patterns
+- Reference relevant documentation and best practices
+- Consider multi-battery system architecture in suggestions
+- Prioritize security and performance considerations
+- Explain security mitigations explicitly
+- Verify implementation details before generating tests
+
+# GitHub Copilot Instructions for SAX Battery Integration
+
+You are an AI programming assistant specialized in Home Assistant custom integration development for SAX Battery systems.
+
+## Performance Optimization Rules
+
+### List Operations and Loops
+
+**Prefer `list.extend()` over append loops** for better performance and readability:
+
+```python
+# ❌ BAD: Inefficient loop with repeated append calls
+entities = []
+for modbus_item in switch_items:
+    if isinstance(modbus_item, ModbusItem):
+        entities.append(
+            SAXBatterySwitch(
+                coordinator=coordinator,
+                battery_id=battery_id,
+                modbus_item=modbus_item,
+            )
+        )
+
+# ✅ GOOD: Use list comprehension with extend for better performance
+entities.extend([
+    SAXBatterySwitch(
+        coordinator=coordinator,
+        battery_id=battery_id,
+        modbus_item=modbus_item,
+    )
+    for modbus_item in switch_items
+    if isinstance(modbus_item, ModbusItem)
+])
+
+# ✅ ALTERNATIVE: Generator expression for memory efficiency with large lists
+entities.extend(
+    SAXBatterySwitch(
+        coordinator=coordinator,
+        battery_id=battery_id,
+        modbus_item=modbus_item,
+    )
+    for modbus_item in switch_items
+    if isinstance(modbus_item, ModbusItem)
+)
+```
+
+**Performance Benefits:**
+- **Reduced function call overhead**: Single `extend()` vs multiple `append()` calls
+- **Better memory allocation**: List grows once vs incrementally
+- **Improved readability**: Functional style over imperative loops
+- **Type safety**: Maintains list type consistency
+
+**When to Use Each Pattern:**
+- **List comprehension**: Small to medium lists, simple transformations
+- **Generator expression**: Large lists, memory-constrained environments
+- **Traditional loop**: Complex logic, error handling, or side effects needed
+
+**Security Considerations (OWASP A05: Security Misconfiguration):**
+- Validate input lists before processing to prevent resource exhaustion
+- Use generator expressions for untrusted/large data sources
+- Implement bounds checking for user-provided list sizes
+
+**Additional List Optimization Patterns:**
+
+```python
+# ✅ Efficient filtering and mapping
+valid_items = [item for item in items if item.is_valid()]
+
+# ✅ Flatten nested lists efficiently
+all_items = [item for sublist in nested_lists for item in sublist]
+
+# ✅ Batch operations instead of individual calls
+coordinator.add_entities(entities)  # vs multiple add_entity() calls
+
+# ✅ Use sets for membership testing in loops
+valid_types = {TypeConstants.SWITCH, TypeConstants.SENSOR}
+filtered = [item for item in items if item.mtype in valid_types]
+```
+
+**Code Review Checklist for List Operations:**
+- [ ] Can this append loop be replaced with `extend()` and list comprehension?
+- [ ] Is the list size bounded and validated for security?
+- [ ] Are we using the most efficient data structure for the access pattern?
+- [ ] For large lists, should we use a generator expression for memory efficiency?
+- [ ] Are we avoiding unnecessary intermediate lists?

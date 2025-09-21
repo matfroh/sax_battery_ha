@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import pymodbus
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -64,7 +66,6 @@ def get_device_id_parameter(unit_id: int) -> dict[str, int]:
     This provides backwards compatibility between pymodbus 3.10 and 3.11+.
     In 3.11+, 'slave' parameter was renamed to 'device_id'.
     """
-    import pymodbus
 
     try:
         version = pymodbus.__version__

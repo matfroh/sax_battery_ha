@@ -48,8 +48,8 @@ async def async_setup_entry(
             master_battery = coordinator.master_battery
             if hasattr(master_battery, "_data_manager"):
                 # Check if the battery objects are stored in the data manager
-                if hasattr(master_battery._data_manager, "batteries"):
-                    battery = master_battery._data_manager.batteries.get(battery_id)
+                if hasattr(master_battery._data_manager, "batteries"):  # noqa: SLF001
+                    battery = master_battery._data_manager.batteries.get(battery_id)  # noqa: SLF001
 
         if battery is not None:
             entities.append(SAXBatteryOnOffSwitch(battery_id, battery, coordinator))
@@ -208,7 +208,7 @@ class SAXBatteryManualControlSwitch(CoordinatorEntity, SwitchEntity):
         # Force pilot back to automatic mode
         sax_data = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
         if hasattr(sax_data, "pilot") and sax_data.pilot:
-            await sax_data.pilot._async_update_pilot()
+            await sax_data.pilot._async_update_pilot()  # noqa: SLF001
 
         self.async_write_ha_state()
 
@@ -377,7 +377,7 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
                 )
 
         except Exception as err:
-            _LOGGER.error(
+            _LOGGER.error(  # noqa: G201
                 "Failed to turn on battery %s: %s", self.battery_id, err, exc_info=True
             )
 
@@ -428,7 +428,7 @@ class SAXBatteryOnOffSwitch(CoordinatorEntity, SwitchEntity):
                 )
 
         except Exception as err:
-            _LOGGER.error(
+            _LOGGER.error(  # noqa: G201
                 "Failed to turn off battery %s: %s", self.battery_id, err, exc_info=True
             )
 

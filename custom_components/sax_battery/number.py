@@ -128,7 +128,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 _LOGGER.error("Master battery data manager not available")
                 return
 
-            client = master_battery._data_manager.modbus_clients.get(
+            client = master_battery._data_manager.modbus_clients.get(  # noqa: SLF001
                 master_battery.battery_id
             )
 
@@ -144,7 +144,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 try:
                     await client.connect()
                     _LOGGER.info("Reconnected to Modbus device")
-                except Exception as connect_err:
+                except Exception as connect_err:  # noqa: BLE001
                     _LOGGER.error("Failed to reconnect: %s", connect_err)
                     return
 
@@ -177,7 +177,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 try:
                     await client.close()
                     await client.connect()
-                except Exception as reconnect_err:
+                except Exception as reconnect_err:  # noqa: BLE001
                     _LOGGER.debug("Failed to reconnect after error: %s", reconnect_err)
             else:
                 _LOGGER.debug("Successfully wrote max charge value: %s", value)
@@ -187,7 +187,7 @@ class SAXBatteryMaxChargeNumber(NumberEntity):
                 self.async_write_ha_state()
 
         except Exception as err:
-            _LOGGER.error("Failed to write max charge value: %s", err, exc_info=True)
+            _LOGGER.error("Failed to write max charge value: %s", err, exc_info=True)  # noqa: G201
 
 
 class SAXBatteryMaxDischargeNumber(NumberEntity):
@@ -262,7 +262,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 _LOGGER.error("Master battery data manager not available")
                 return
 
-            client = master_battery._data_manager.modbus_clients.get(
+            client = master_battery._data_manager.modbus_clients.get(  # noqa: SLF001
                 master_battery.battery_id
             )
 
@@ -278,7 +278,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 try:
                     await client.connect()
                     _LOGGER.info("Reconnected to Modbus device")
-                except Exception as connect_err:
+                except Exception as connect_err:  # noqa: BLE001
                     _LOGGER.error("Failed to reconnect: %s", connect_err)
                     return
 
@@ -311,7 +311,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 try:
                     await client.close()
                     await client.connect()
-                except Exception as reconnect_err:
+                except Exception as reconnect_err:  # noqa: BLE001
                     _LOGGER.debug("Failed to reconnect after error: %s", reconnect_err)
             else:
                 _LOGGER.debug("Successfully wrote max discharge value: %s", value)
@@ -321,7 +321,7 @@ class SAXBatteryMaxDischargeNumber(NumberEntity):
                 self.async_write_ha_state()
 
         except Exception as err:
-            _LOGGER.error("Failed to write max discharge value: %s", err, exc_info=True)
+            _LOGGER.error("Failed to write max discharge value: %s", err, exc_info=True)  # noqa: G201
 
 
 class SAXBatteryPilotIntervalNumber(NumberEntity):
