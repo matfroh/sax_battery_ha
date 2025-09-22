@@ -259,7 +259,10 @@ class ModbusAPI:
                     registers=result.registers, data_type=modbus_item.data_type
                 )
                 if isinstance(converted_result, (int, float)):
-                    converted_result = converted_result - modbus_item.offset
+                    converted_result = (
+                        converted_result - modbus_item.offset
+                    ) * modbus_item.factor
+
                     _LOGGER.debug(
                         "Read %s from %s: %s",
                         modbus_item.name,
