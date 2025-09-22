@@ -9,7 +9,8 @@ class DeviceConstants(Enum):
     """Device type constants."""
 
     SYS = "sys"  # One or more batteries [1..3]
-    SM = "sm"  # always one smart meter
+    SM = "smartmeter"  # always one smart meter
+    BESS = "battery"  # One or more batteries [1..3] - former "sys"
 
 
 # fmt: off
