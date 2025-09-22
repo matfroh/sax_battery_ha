@@ -36,20 +36,4 @@ else
     echo "Docker socket not available, skipping Docker setup"
 fi
 
-# Setup MCP server integration
-echo "Setting up MCP server integration..."
-
-if [ -f "${WORKSPACE}/scripts/setup-mcp.sh" ]; then
-    # Security: Check if Docker is available and user has permissions
-    if docker --version > /dev/null 2>&1; then
-        echo "Docker is available, proceeding with MCP setup"
-        bash "${WORKSPACE}/scripts/setup-mcp.sh"
-    else
-        echo "Docker is not available or user lacks permissions, skipping MCP setup"
-    fi
-else
-    echo "Warning: MCP setup script not found at ${WORKSPACE}/scripts/setup-mcp.sh"
-    echo "MCP integration will not be available"
-fi
-
 echo "Post-create setup completed!"

@@ -1,0 +1,26 @@
+{
+  "servers": {
+    "my-mcp-server-2174a9e8": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "ghcr.io/microsoft/mcp-dotnet-samples/awesome-copilot:latest"
+      ]
+    },
+    "my-mcp-server-a628632c": {
+      "url": "https://api.githubcopilot.com/mcp/",
+      "type": "http"
+    },
+    "my-mcp-server-1885bd58": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "markitdown-mcp"
+      ]
+    },
+  },
+  "inputs": []
+}
