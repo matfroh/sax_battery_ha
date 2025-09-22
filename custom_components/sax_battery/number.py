@@ -243,17 +243,10 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             self._local_value = float(config_data.get("max_discharge", default_value))
 
         # Initialize pilot control items ONLY from config - no dangerous defaults
-        elif self._modbus_item.name == SAX_NOMINAL_POWER:
+        elif self._modbus_item.name in (SAX_NOMINAL_POWER, SAX_NOMINAL_FACTOR):
             # Only initialize if explicitly set in config
-            if "nominal_power" in config_data:
-                self._local_value = float(config_data["nominal_power"])
+            self._local_value = 0.0
             # else: leave as None - no dangerous default
-
-        elif self._modbus_item.name == SAX_NOMINAL_FACTOR:
-            # Only initialize if explicitly set in config
-            if "nominal_factor" in config_data:
-                self._local_value = float(config_data["nominal_factor"])
-            # else: leave as None - no dangerous default for power factor
 
     @property
     def native_value(self) -> float | None:

@@ -123,8 +123,10 @@ CONF_MASTER_BATTERY = "master_battery"
 CONF_DEVICE_ID = "device_id"
 
 # Polling intervals (in seconds)
-BATTERY_POLL_INTERVAL = 10  # Standard battery data polling (SOC, Power, Status)
-BATTERY_POLL_SLAVE_INTERVAL = 30  # Standard battery data polling (SOC, Power, Status)
+BATTERY_POLL_INTERVAL = 10  # master battery data polling (SOC, Power, Status)
+BATTERY_POLL_SLAVE_INTERVAL = 30  # slave battery data polling (SOC, Power, Status)
+
+# config flow constants
 CONF_MIN_SOC = "min_soc"
 CONF_PRIORITY_DEVICES = "priority_devices"
 CONF_ENABLE_SOLAR_CHARGING = "enable_solar_charging"

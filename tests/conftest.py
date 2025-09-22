@@ -13,22 +13,187 @@ from custom_components.sax_battery.const import (
     DEFAULT_AUTO_PILOT_INTERVAL,
     DEFAULT_MIN_SOC,
     DESCRIPTION_SAX_COMBINED_SOC,
+    DESCRIPTION_SAX_MAX_CHARGE,
+    DESCRIPTION_SAX_MIN_SOC,
     DESCRIPTION_SAX_NOMINAL_POWER,
     DESCRIPTION_SAX_POWER,
     DESCRIPTION_SAX_SOC,
     DESCRIPTION_SAX_TEMPERATURE,
-)
-from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
-from custom_components.sax_battery.entity_keys import (
+    PILOT_ITEMS,
     SAX_COMBINED_SOC,
+    SAX_MAX_CHARGE,
+    SAX_MIN_SOC,
+    SAX_NOMINAL_FACTOR,
     SAX_NOMINAL_POWER,
 )
+from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem
 from custom_components.sax_battery.modbusobject import ModbusAPI
+from custom_components.sax_battery.number import SAXBatteryModbusNumber
+from homeassistant.components.number import NumberEntityDescription
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 
 pytest_plugins = "pytest_homeassistant_custom_component"
+
+
+# Base Mock Objects
+@pytest.fixture
+def mock_hass_base():
+    """Create base mock Home Assistant instance."""
+    hass = MagicMock(spec=HomeAssistant)
+    hass.config_entries = MagicMock()
+    hass.config_entries.async_update_entry = MagicMock(return_value=True)
+    hass.data = {}
+    hass.loop_thread_id = 1
+    return hass
+
+
+@pytest.fixture
+def mock_config_entry_base():
+    """Create base mock config entry."""
+    config_entry = MagicMock(spec=ConfigEntry)
+    config_entry.entry_id = "test_entry_id"
+    config_entry.data = {"min_soc": 15, "max_charge": 4000.0, "max_discharge": 3000.0}
+    config_entry.options = {}
+    return config_entry
+
+
+# Coordinator Fixtures
+@pytest.fixture
+def mock_coordinator_modbus_base(mock_hass_base, mock_config_entry_base):
+    """Create base mock coordinator for modbus number tests."""
+    coordinator = MagicMock(spec=SAXBatteryCoordinator)
+    coordinator.data = {"sax_temperature": 25.5}
+    coordinator.battery_id = "battery_a"
+    coordinator.hass = mock_hass_base
+    coordinator.sax_data = MagicMock()
+    coordinator.sax_data.get_device_info.return_value = {"name": "Test Battery"}
+    coordinator.config_entry = mock_config_entry_base
+    coordinator.battery_config = {"is_master": True, "phase": "L1"}
+    coordinator.modbus_api = MagicMock()
+    coordinator.modbus_api.write_holding_registers = AsyncMock(return_value=True)
+    coordinator.async_write_number_value = AsyncMock(return_value=True)
+    coordinator.async_request_refresh = AsyncMock(return_value=None)
+    coordinator.last_update_success = True
+    coordinator.last_update_success_time = MagicMock()
+    return coordinator
+
+
+@pytest.fixture
+def mock_coordinator_config_base(mock_hass_base, mock_config_entry_base):
+    """Create base mock coordinator for config number tests."""
+    coordinator = MagicMock(spec=SAXBatteryCoordinator)
+    coordinator.data = {SAX_MIN_SOC: 20.0}
+    coordinator.battery_id = "battery_a"
+    coordinator.hass = mock_hass_base
+    coordinator.sax_data = MagicMock()
+    coordinator.sax_data.get_device_info.return_value = {"name": "Test Battery"}
+    coordinator.config_entry = mock_config_entry_base
+    coordinator.battery_config = {"is_master": True, "phase": "L1"}
+    coordinator.async_write_sax_value = AsyncMock(return_value=True)
+    coordinator.last_update_success = True
+    coordinator.last_update_success_time = MagicMock()
+    return coordinator
+
+
+@pytest.fixture
+def mock_coordinator_pilot_control_base(mock_hass_base, mock_config_entry_base):
+    """Create base mock coordinator for pilot control tests."""
+    coordinator = MagicMock(spec=SAXBatteryCoordinator)
+    coordinator.data = {}
+    coordinator.battery_id = "battery_a"
+    coordinator.hass = mock_hass_base
+    coordinator.sax_data = MagicMock()
+    coordinator.sax_data.get_device_info.return_value = {"name": "Test Battery"}
+    coordinator.config_entry = mock_config_entry_base
+    coordinator.battery_config = {"is_master": True, "phase": "L1"}
+    coordinator.async_write_pilot_control_value = AsyncMock(return_value=True)
+    coordinator.last_update_success = True
+    coordinator.last_update_success_time = MagicMock()
+    return coordinator
+
+
+# ModbusItem Fixtures
+@pytest.fixture
+def modbus_item_power_base():
+    """Create power number ModbusItem for testing."""
+    return ModbusItem(
+        address=100,
+        name=SAX_MAX_CHARGE,
+        mtype=TypeConstants.NUMBER_WO,
+        device=DeviceConstants.SYS,
+        entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
+    )
+
+
+@pytest.fixture
+def modbus_item_percentage_base():
+    """Create percentage number ModbusItem for testing."""
+    return ModbusItem(
+        address=101,
+        name=SAX_MIN_SOC,
+        mtype=TypeConstants.NUMBER,
+        device=DeviceConstants.SYS,
+        entitydescription=DESCRIPTION_SAX_MIN_SOC,
+    )
+
+
+@pytest.fixture
+def modbus_item_pilot_power_base():
+    """Create pilot control power ModbusItem for testing."""
+    return ModbusItem(
+        address=41,
+        name=SAX_NOMINAL_POWER,
+        mtype=TypeConstants.NUMBER_WO,
+        device=DeviceConstants.SYS,
+        entitydescription=NumberEntityDescription(
+            key="nominal_power",
+            name="Nominal Power",
+            native_min_value=0,
+            native_max_value=5000,
+            native_step=100,
+            native_unit_of_measurement="W",
+        ),
+    )
+
+
+@pytest.fixture
+def modbus_item_pilot_factor_base():
+    """Create pilot control power factor ModbusItem for testing."""
+    return ModbusItem(
+        address=42,
+        name=SAX_NOMINAL_FACTOR,
+        mtype=TypeConstants.NUMBER_WO,
+        device=DeviceConstants.SYS,
+        entitydescription=NumberEntityDescription(
+            key="nominal_factor",
+            name="Nominal Power Factor",
+            native_min_value=0,
+            native_max_value=1000,
+            native_step=1,
+        ),
+    )
+
+
+# SAXItem Fixtures
+@pytest.fixture
+def sax_item_min_soc_base():
+    """Create SAXItem for MIN_SOC testing."""
+    return next(
+        (item for item in PILOT_ITEMS if item.name == SAX_MIN_SOC),
+        None,
+    )
+
+
+# Cleanup Fixtures
+@pytest.fixture(autouse=True)
+def reset_pilot_control_state():
+    """Reset pilot control transactions before each test."""
+    SAXBatteryModbusNumber._pilot_control_transaction.clear()
+    yield
+    SAXBatteryModbusNumber._pilot_control_transaction.clear()
 
 
 @pytest.fixture
@@ -132,6 +297,7 @@ def sax_battery_coordinator(hass, mock_sax_data, mock_modbus_api):
         sax_data=mock_sax_data,
         modbus_api=mock_modbus_api,
         config_entry=mock_config_entry,
+        battery_config={"is_master": True, "phase": "L1"},
     )
 
 
