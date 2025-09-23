@@ -8,13 +8,14 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import BATTERY_IDS, CONF_BATTERY_IS_MASTER, CONF_BATTERY_PHASE, DOMAIN
 from .coordinator import SAXBatteryCoordinator
 from .entity_utils import filter_items_by_type, filter_sax_items_by_type
-from .enums import TypeConstants
+from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
 
 _LOGGER = logging.getLogger(__name__)
@@ -149,7 +150,9 @@ class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEnt
             self._attr_name = clean_name
 
         # Set device info
-        self._attr_device_info = coordinator.sax_data.get_device_info(battery_id)
+        self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
+            battery_id, self._modbus_item.device
+        )
 
     @property
     def native_value(self) -> Any:
@@ -211,7 +214,9 @@ class SAXBatteryCalculatedSensor(
         self._attr_name = f"Sax {item_name}"  # pyright: ignore[reportPossiblyUnboundVariable]
 
         # Set system device info
-        self._attr_device_info = coordinator.sax_data.get_device_info("cluster")
+        self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
+            "cluster", DeviceConstants.SYS
+        )
 
     @property
     def native_value(self) -> Any:

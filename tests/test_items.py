@@ -36,7 +36,7 @@ class TestModbusItem:
             name="test_item",
             address=100,
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             battery_slave_id=1,
             factor=1.0,
             offset=0,
@@ -47,7 +47,7 @@ class TestModbusItem:
         assert modbus_item.name == "test_item"
         assert modbus_item.address == 100
         assert modbus_item.mtype == TypeConstants.SENSOR
-        assert modbus_item.device == DeviceConstants.SYS
+        assert modbus_item.device == DeviceConstants.BESS
         assert modbus_item.battery_slave_id == 1
         assert modbus_item.factor == 1.0
         assert modbus_item.offset == 0
@@ -75,7 +75,7 @@ class TestModbusItem:
             name="write_only",
             address=100,
             mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
         item.modbus_api = mock_modbus_api_for_item
 
@@ -89,7 +89,7 @@ class TestModbusItem:
             name="writable_number",
             address=100,
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
         item.modbus_api = mock_modbus_api_for_item
 
@@ -144,14 +144,14 @@ class TestSAXItem:
         return SAXItem(
             name="sax_test_calculation",
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
     def test_initialization(self, sax_item):
         """Test SAXItem initialization."""
         assert sax_item.name == "sax_test_calculation"
         assert sax_item.mtype == TypeConstants.SENSOR_CALC
-        assert sax_item.device == DeviceConstants.SYS
+        assert sax_item.device == DeviceConstants.BESS
 
     def test_is_invalid_always_false(self, sax_item):
         """Test SAXItem is never invalid."""
@@ -209,7 +209,7 @@ class TestSAXItemCalculationFunctions:
         sax_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         mock_coordinator = mock_coordinators_calc({SAX_SOC: 85.5})
@@ -225,7 +225,7 @@ class TestSAXItemCalculationFunctions:
         sax_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         mock_coord_a = mock_coordinators_calc({SAX_SOC: 80.0})
@@ -244,7 +244,7 @@ class TestSAXItemCalculationFunctions:
         sax_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         mock_coordinator = mock_coordinators_calc({})
@@ -258,7 +258,7 @@ class TestSAXItemCalculationFunctions:
         sax_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         mock_coord_a = mock_coordinators_calc({SAX_SOC: 75.0})
@@ -281,7 +281,7 @@ class TestSAXItemCalculationFunctions:
         sax_item = SAXItem(
             name=SAX_CUMULATIVE_ENERGY_PRODUCED,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         mock_coordinator = mock_coordinators_calc({SAX_ENERGY_PRODUCED: 12500.0})
@@ -297,7 +297,7 @@ class TestSAXItemCalculationFunctions:
         sax_item = SAXItem(
             name=SAX_CUMULATIVE_ENERGY_PRODUCED,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         mock_coord_a = mock_coordinators_calc({SAX_ENERGY_PRODUCED: 10000.0})
@@ -318,7 +318,7 @@ class TestSAXItemCalculationFunctions:
         sax_item = SAXItem(
             name=SAX_CUMULATIVE_ENERGY_CONSUMED,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         mock_coordinator = mock_coordinators_calc({SAX_ENERGY_CONSUMED: 8500.0})
@@ -334,7 +334,7 @@ class TestSAXItemCalculationFunctions:
         sax_item = SAXItem(
             name=SAX_CUMULATIVE_ENERGY_CONSUMED,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         mock_coord_a = mock_coordinators_calc({SAX_ENERGY_CONSUMED: 7000.0})
@@ -353,17 +353,17 @@ class TestSAXItemCalculationFunctions:
         sax_item_soc = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
         sax_item_produced = SAXItem(
             name=SAX_CUMULATIVE_ENERGY_PRODUCED,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
         sax_item_consumed = SAXItem(
             name=SAX_CUMULATIVE_ENERGY_CONSUMED,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         assert sax_item_soc.calculate_value({}) is None
@@ -377,7 +377,7 @@ class TestSAXItemCalculationFunctions:
         sax_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         mock_coordinator = mock_coordinators_calc({SAX_SOC: None})
@@ -395,7 +395,7 @@ class TestWebAPIItem:
         return WebAPIItem(
             name="web_analytics",
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             api_endpoint="https://api.saxpower.com/analytics",
         )
 
@@ -424,7 +424,7 @@ class TestWebAPIItem:
         item = WebAPIItem(
             name="web_config",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             api_endpoint="https://api.saxpower.com/config",
         )
         mock_client = MagicMock()
@@ -445,25 +445,25 @@ class TestHelperFunctions:
                 name="sensor1",
                 address=100,
                 mtype=TypeConstants.SENSOR,
-                device=DeviceConstants.SYS,
+                device=DeviceConstants.BESS,
             ),
             ModbusItem(
                 name="number1",
                 address=101,
                 mtype=TypeConstants.NUMBER,
-                device=DeviceConstants.SYS,
+                device=DeviceConstants.BESS,
             ),
             ModbusItem(
                 name="switch1",
                 address=102,
                 mtype=TypeConstants.SWITCH,
-                device=DeviceConstants.SYS,
+                device=DeviceConstants.BESS,
             ),
             SAXItem(
-                name="sax1", mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.SYS
+                name="sax1", mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.BESS
             ),
             WebAPIItem(
-                name="web1", mtype=TypeConstants.SENSOR, device=DeviceConstants.SYS
+                name="web1", mtype=TypeConstants.SENSOR, device=DeviceConstants.BESS
             ),
         ]
 

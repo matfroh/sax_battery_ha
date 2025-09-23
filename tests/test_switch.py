@@ -57,7 +57,7 @@ class TestSAXBatterySwitch:
         """Create a test modbus item for switch."""
         item = ModbusItem(
             name="test_switch",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,  # Use valid Modbus address instead of 0
             battery_slave_id=1,
@@ -87,7 +87,7 @@ class TestSAXBatterySwitch:
         unknown_item = ModbusItem(
             name="unknown_regular_switch",
             mtype=TypeConstants.SWITCH,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=99,  # Regular register, not write-only
             battery_slave_id=1,
             factor=1.0,
@@ -119,7 +119,7 @@ class TestSAXBatterySwitch:
         """Test switch initialization without entity description."""
         modbus_item = ModbusItem(
             name="custom_switch",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1001,
             battery_slave_id=1,
@@ -317,7 +317,7 @@ class TestSAXBatterySwitch:
         """Test icon property without entity description."""
         modbus_item = ModbusItem(
             name="test_switch",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,
             battery_slave_id=1,
@@ -379,7 +379,7 @@ class TestSAXBatterySwitch:
 
         modbus_item = ModbusItem(
             name="test_switch",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,
             battery_slave_id=1,
@@ -762,6 +762,7 @@ class TestSAXBatteryControlSwitch:
         """Create mock SAX item for control switch."""
         sax_item = MagicMock(spec=SAXItem)
         sax_item.name = "solar_charging_switch"
+        sax_item.device = DeviceConstants.SYS
         sax_item.entitydescription = None
         sax_item.calculate_value.return_value = True
         sax_item.set_coordinators = MagicMock()
@@ -1141,7 +1142,7 @@ class TestAsyncSetupEntry:
         # Add modbus switch items
         modbus_item = ModbusItem(
             name="battery_switch",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,
             battery_slave_id=1,
@@ -1177,6 +1178,7 @@ class TestAsyncSetupEntry:
         # Add SAX switch items
         sax_item = MagicMock(spec=SAXItem)
         sax_item.name = "solar_charging_switch"
+        sax_item.device = DeviceConstants.SYS
         sax_item.set_coordinators = MagicMock()
 
         mock_setup_data["sax_data"].get_sax_items_for_battery.return_value = [sax_item]
@@ -1303,7 +1305,7 @@ class TestAsyncSetupEntry:
         # Add modbus item
         modbus_item = ModbusItem(
             name="battery_switch",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,
             battery_slave_id=1,
@@ -1313,6 +1315,7 @@ class TestAsyncSetupEntry:
         # Add SAX item
         sax_item = MagicMock(spec=SAXItem)
         sax_item.name = "solar_charging_switch"
+        sax_item.device = DeviceConstants.SYS
         sax_item.set_coordinators = MagicMock()
 
         mock_setup_data["sax_data"].get_modbus_items_for_battery.return_value = [

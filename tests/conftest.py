@@ -123,7 +123,7 @@ def modbus_item_power_base():
         address=100,
         name=SAX_MAX_CHARGE,
         mtype=TypeConstants.NUMBER_WO,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
     )
 
@@ -135,7 +135,7 @@ def modbus_item_percentage_base():
         address=101,
         name=SAX_MIN_SOC,
         mtype=TypeConstants.NUMBER,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         entitydescription=DESCRIPTION_SAX_MIN_SOC,
     )
 
@@ -147,7 +147,7 @@ def modbus_item_pilot_power_base():
         address=41,
         name=SAX_NOMINAL_POWER,
         mtype=TypeConstants.NUMBER_WO,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         entitydescription=NumberEntityDescription(
             key="nominal_power",
             name="Nominal Power",
@@ -166,7 +166,7 @@ def modbus_item_pilot_factor_base():
         address=42,
         name=SAX_NOMINAL_FACTOR,
         mtype=TypeConstants.NUMBER_WO,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         entitydescription=NumberEntityDescription(
             key="nominal_factor",
             name="Nominal Power Factor",
@@ -413,7 +413,7 @@ def mock_modbus_item():
         address=100,
         battery_slave_id=1,
         mtype=TypeConstants.NUMBER,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         factor=10,
     )
 
@@ -423,7 +423,7 @@ def smart_meter_modbus_item():
     """Create a smart meter ModbusItem for testing."""
     return ModbusItem(
         name="smartmeter_power",
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         mtype=TypeConstants.SENSOR,
         address=1000,
         battery_slave_id=1,
@@ -438,7 +438,7 @@ def temperature_modbus_item():
         address=40117,
         name="sax_temperature",
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         battery_slave_id=40,
         factor=10.0,
         entitydescription=DESCRIPTION_SAX_TEMPERATURE,
@@ -452,7 +452,7 @@ def percentage_modbus_item():
         address=46,
         name="sax_soc",
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         battery_slave_id=64,
         factor=1.0,
         entitydescription=DESCRIPTION_SAX_SOC,
@@ -466,7 +466,7 @@ def power_modbus_item():
         address=47,
         name="sax_power",
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         battery_slave_id=64,
         factor=1.0,
         entitydescription=DESCRIPTION_SAX_POWER,
@@ -652,18 +652,18 @@ def pilot_items_mixed():
         SAXItem(
             name=SAX_NOMINAL_POWER,
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_NOMINAL_POWER,
         ),
         SAXItem(
             name="manual_control_switch",
             mtype=TypeConstants.SWITCH,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         ),
         SAXItem(
             name="solar_charging_switch",
             mtype=TypeConstants.SWITCH,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         ),
     ]
 
@@ -689,6 +689,6 @@ def calc_sax_item():
     return SAXItem(
         name=SAX_COMBINED_SOC,
         mtype=TypeConstants.SENSOR_CALC,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
     )

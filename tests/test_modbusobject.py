@@ -106,7 +106,7 @@ def power_number_item_unique(mock_coordinator_number_temperature_unique):
         address=100,
         name=SAX_MAX_CHARGE,
         mtype=TypeConstants.NUMBER_WO,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
     )
 
@@ -118,7 +118,7 @@ def percentage_number_item_unique():
         address=101,
         name=SAX_MIN_SOC,
         mtype=TypeConstants.NUMBER,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         entitydescription=DESCRIPTION_SAX_MIN_SOC,
     )
 
@@ -307,7 +307,7 @@ class TestNumberEntityConfiguration:
         """Test number name formatting."""
         item_with_underscores = ModbusItem(
             name="sax_test_underscore_name",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             entitydescription=NumberEntityDescription(
                 key="sax_test_underscore_name",
@@ -335,7 +335,7 @@ class TestNumberEntityConfiguration:
         """Test number name formatting."""
         item_with_underscores = ModbusItem(
             name=SAX_MAX_CHARGE,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
         )
@@ -357,7 +357,7 @@ class TestNumberEntityConfiguration:
         """Test number mode property with different mode values."""
         box_item = ModbusItem(
             name="sax_charge_limit",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=200,
             battery_slave_id=1,
@@ -388,7 +388,7 @@ class TestNumberEntityConfiguration:
         """Test number mode from entity description."""
         item_with_mode = ModbusItem(
             name="sax_slider_control",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER_WO,
             entitydescription=NumberEntityDescription(
                 key="slider_control",
@@ -411,7 +411,7 @@ class TestNumberEntityConfiguration:
         """Test number entity category from entity description."""
         item_with_category = ModbusItem(
             name="sax_custom_number",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER_WO,
             entitydescription=NumberEntityDescription(
                 key="custom_number",
@@ -434,7 +434,7 @@ class TestNumberEntityConfiguration:
         """Test number entity without unit."""
         unitless_item = ModbusItem(
             name="sax_unitless_number",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER_WO,
             entitydescription=NumberEntityDescription(
                 key="sax_test_underscore_name",
@@ -464,7 +464,7 @@ class TestSAXBatteryNumberDynamicLimits:
         """Create max charge ModbusItem for limits tests."""
         return ModbusItem(
             name=SAX_MAX_CHARGE,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
             address=100,
@@ -477,7 +477,7 @@ class TestSAXBatteryNumberDynamicLimits:
         """Create max discharge ModbusItem for limits tests."""
         return ModbusItem(
             name=SAX_MAX_DISCHARGE,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE,
             address=101,
@@ -490,7 +490,7 @@ class TestSAXBatteryNumberDynamicLimits:
         """Create regular ModbusItem (not charge/discharge) for limits tests."""
         return ModbusItem(
             name="sax_regular_setting",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             entitydescription=NumberEntityDescription(
                 key="regular_setting",
@@ -631,7 +631,7 @@ class TestSAXBatteryModbusPilotControl:
             address=41,
             name=SAX_NOMINAL_POWER,
             mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=NumberEntityDescription(
                 key="nominal_power",
                 name="Nominal Power",
@@ -649,7 +649,7 @@ class TestSAXBatteryModbusPilotControl:
             address=42,
             name=SAX_NOMINAL_FACTOR,
             mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=NumberEntityDescription(
                 key="nominal_factor",
                 name="Nominal Power Factor",
@@ -1034,7 +1034,7 @@ class TestSAXBatteryNumberUniqueIdAndName:
             address=100,
             name=SAX_MAX_CHARGE,
             mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
         )
 
@@ -1069,7 +1069,7 @@ class TestSAXBatteryNumberUniqueIdAndName:
             address=105,
             name="temperature_sensor",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=NumberEntityDescription(
                 key="temperature",
                 name="Temperature",
@@ -1107,7 +1107,7 @@ class TestSAXBatteryNumberUniqueIdAndName:
             address=106,
             name="sax_test_underscore_setting",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         number = SAXBatteryModbusNumber(
@@ -1127,7 +1127,7 @@ class TestSAXBatteryNumberUniqueIdAndName:
             address=107,
             name="sax_custom_control",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=NumberEntityDescription(
                 key="custom_control",
                 name="Sax Custom Control",
@@ -1160,7 +1160,7 @@ class TestSAXBatteryNumberUniqueIdAndName:
             address=100,
             name=SAX_MAX_CHARGE,
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
         )
 
@@ -1215,7 +1215,7 @@ class TestModbusAPI:
         return ModbusItem(
             name="test_api_item",
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=100,
             battery_slave_id=1,
             data_type=ModbusClientMixin.DATATYPE.UINT16,

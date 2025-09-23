@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.models import BatteryModel, SAXBatteryData
 
@@ -22,19 +20,6 @@ class TestBatteryModel:
         assert battery.host == "192.168.1.100"
         assert battery.port == 502
         assert battery.is_master is True
-
-    def test_battery_model_device_info(self, battery_model_data_basic) -> None:
-        """Test BatteryModel device info."""
-        battery = BatteryModel(
-            device_id=battery_model_data_basic["device_id"],
-            name=battery_model_data_basic["name"],
-        )
-
-        device_info = battery.get_device_info()
-
-        assert device_info["identifiers"] == {("sax_battery", "battery_a")}
-        assert device_info["name"] == "SAX Battery A"
-        assert device_info["manufacturer"] == "SAX"
 
     def test_battery_model_data_operations(self, battery_model_data_basic) -> None:
         """Test BatteryModel data operations."""
@@ -69,7 +54,7 @@ class TestBatteryModel:
 
         # Check for system items (adjusted expectation based on actual implementation)
         system_items = [
-            item for item in modbus_items if item.device == DeviceConstants.SYS
+            item for item in modbus_items if item.device == DeviceConstants.BESS
         ]
         assert len(system_items) > 0
 
@@ -89,7 +74,7 @@ class TestBatteryModel:
         smart_meter_items = [
             item
             for item in modbus_items
-            if item.device == DeviceConstants.SYS and "smartmeter" in item.name.lower()
+            if item.device == DeviceConstants.BESS and "smartmeter" in item.name.lower()
         ]
         assert len(smart_meter_items) == 0
 
@@ -197,40 +182,21 @@ class TestSAXBatteryData:
         nonexistent_sax_items = sax_data.get_sax_items_for_battery("battery_z")
         assert len(nonexistent_sax_items) == 0
 
-    @pytest.mark.skip(reason="This test might be useless")
-    def test_sax_battery_data_get_smart_meter_items(
-        self, mock_hass, mock_config_entry_dual_battery
-    ) -> None:
-        """Test get_smart_meter_items method."""
-        sax_data = SAXBatteryData(mock_hass, mock_config_entry_dual_battery)
-
-        smart_meter_items = sax_data.get_smart_meter_items()
-        assert len(smart_meter_items) > 0
-
-        # Should include smart meter device items
-        smart_meter_device_items = [
-            item for item in smart_meter_items if item.device == DeviceConstants.SM
-        ]
-        assert len(smart_meter_device_items) > 0
-
     def test_sax_battery_data_get_device_info(
         self, mock_hass, mock_config_entry_dual_battery
     ) -> None:
         """Test get_device_info method."""
         sax_data = SAXBatteryData(mock_hass, mock_config_entry_dual_battery)
 
-        device_info_a = sax_data.get_device_info("battery_a")
+        device_info_a = sax_data.get_device_info(
+            "battery_a", device=DeviceConstants.BESS
+        )
         assert device_info_a["identifiers"] == {("sax_battery", "battery_a")}
         assert device_info_a["name"] == "SAX Battery A"
 
-        device_info_b = sax_data.get_device_info("battery_b")
+        device_info_b = sax_data.get_device_info("battery_b", DeviceConstants.BESS)
         assert device_info_b["identifiers"] == {("sax_battery", "battery_b")}
         assert device_info_b["name"] == "SAX Battery B"
-
-        # Non-existent battery should return fallback device info
-        device_info_fallback = sax_data.get_device_info("battery_z")
-        assert device_info_fallback["identifiers"] == {("sax_battery", "battery_z")}
-        assert device_info_fallback["name"] == "SAX Battery battery_z"
 
     def test_sax_battery_data_single_battery(
         self, mock_hass, mock_config_entry_single_battery
@@ -294,8 +260,12 @@ class TestSAXBatteryData:
         sax_data = SAXBatteryData(mock_hass, mock_config_entry_dual_battery)
 
         # Test device info for both batteries
-        device_info_a = sax_data.get_device_info("battery_a")
-        device_info_b = sax_data.get_device_info("battery_b")
+        device_info_a = sax_data.get_device_info(
+            "battery_a", device=DeviceConstants.BESS
+        )
+        device_info_b = sax_data.get_device_info(
+            "battery_b", device=DeviceConstants.BESS
+        )
 
         # Both should have consistent structure
         for device_info in [device_info_a, device_info_b]:

@@ -44,7 +44,7 @@ class TestShouldIncludeEntity:
 
         api_item = ModbusItem(
             name="voltage",
-            device=DeviceConstants.SYS,  # Different from config
+            device=DeviceConstants.BESS,  # Different from config
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
@@ -56,11 +56,11 @@ class TestShouldIncludeEntity:
 
     def test_include_by_device_type_match(self, mock_config_entry) -> None:
         """Test entity inclusion by device type match."""
-        mock_config_entry.data = {"device_type": DeviceConstants.SYS}
+        mock_config_entry.data = {"device_type": DeviceConstants.BESS}
 
         api_item = ModbusItem(
             name="voltage",
-            device=DeviceConstants.SYS,  # Matches config
+            device=DeviceConstants.BESS,  # Matches config
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
@@ -76,7 +76,7 @@ class TestShouldIncludeEntity:
         """Test master-only item inclusion for master battery."""
         api_item = ModbusItem(
             name="smart_meter_data",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             entitydescription=DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER,
             address=100,
@@ -97,7 +97,7 @@ class TestShouldIncludeEntity:
         """Test master-only item exclusion for slave battery."""
         api_item = ModbusItem(
             name="smart_meter_data",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
@@ -125,7 +125,7 @@ class TestShouldIncludeEntity:
 
         api_item = ModbusItem(
             name="smart_meter_data",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
@@ -152,7 +152,7 @@ class TestShouldIncludeEntity:
 
         api_item = ModbusItem(
             name="smart_meter_data",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_slave_id=1,
@@ -175,7 +175,7 @@ class TestShouldIncludeEntity:
         """Test entity inclusion when all required features are available."""
         api_item = ModbusItem(
             name="power_limit",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
@@ -195,7 +195,7 @@ class TestShouldIncludeEntity:
 
         api_item = ModbusItem(
             name="power_limit",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
@@ -213,7 +213,7 @@ class TestShouldIncludeEntity:
         """Test entity exclusion when no features are configured."""
         api_item = ModbusItem(
             name="power_limit",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
@@ -240,7 +240,7 @@ class TestShouldIncludeEntity:
         """Test complex filtering scenario with multiple constraints."""
         api_item = ModbusItem(
             name="smart_meter_control",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
@@ -260,14 +260,14 @@ class TestShouldIncludeEntity:
         # Create specific config for this test
         mock_config_entry = MagicMock()
         mock_config_entry.data = {
-            "device_type": DeviceConstants.SYS,
+            "device_type": DeviceConstants.BESS,
             "batteries": {"battery_a": {"role": "slave"}},  # Not master
             "features": ["smart_meter", "power_control"],
         }
 
         api_item = ModbusItem(
             name="smart_meter_control",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
             battery_slave_id=1,
@@ -286,7 +286,7 @@ class TestShouldIncludeEntity:
         api_item = ModbusItem(
             name="test_item",
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=100,
             battery_slave_id=1,
             factor=1.0,
@@ -302,7 +302,7 @@ class TestShouldIncludeEntity:
         # but if it should accept SAXItem too, this test documents that behavior
         sax_item = SAXItem(
             name="calculated_power",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR_CALC,
         )
 
@@ -336,7 +336,7 @@ class TestWriteOnlyRegisterHandling:
         pilot_item = ModbusItem(
             name="pilot_control_41",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=41,
             battery_slave_id=1,
             factor=1.0,
@@ -349,7 +349,7 @@ class TestWriteOnlyRegisterHandling:
         pilot_item_42 = ModbusItem(
             name="pilot_control_42",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=42,
             battery_slave_id=1,
             factor=1.0,
@@ -369,7 +369,7 @@ class TestWriteOnlyRegisterHandling:
         pilot_item = ModbusItem(
             name="pilot_control",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=41,
             battery_slave_id=1,
             factor=1.0,
@@ -389,7 +389,7 @@ class TestWriteOnlyRegisterHandling:
         pilot_item = ModbusItem(
             name="pilot_control",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=41,
             battery_slave_id=1,
             factor=1.0,
@@ -410,7 +410,7 @@ class TestWriteOnlyRegisterHandling:
         limit_item = ModbusItem(
             name="power_limit_43",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=43,
             battery_slave_id=1,
             factor=1.0,
@@ -423,7 +423,7 @@ class TestWriteOnlyRegisterHandling:
         limit_item_44 = ModbusItem(
             name="power_limit_44",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=44,
             battery_slave_id=1,
             factor=1.0,
@@ -443,7 +443,7 @@ class TestWriteOnlyRegisterHandling:
         limit_item = ModbusItem(
             name="power_limit",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=43,
             battery_slave_id=1,
             factor=1.0,
@@ -463,7 +463,7 @@ class TestWriteOnlyRegisterHandling:
         limit_item = ModbusItem(
             name="power_limit",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=43,
             battery_slave_id=1,
             factor=1.0,
@@ -481,7 +481,7 @@ class TestWriteOnlyRegisterHandling:
         item = ModbusItem(
             name="test_item",
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=100,
             battery_slave_id=1,
             factor=1.0,
@@ -906,7 +906,7 @@ class TestSAXItemHandling:
 
         sax_item = SAXItem(
             name="calculated_power",
-            device=DeviceConstants.SYS,  # Different from config
+            device=DeviceConstants.BESS,  # Different from config
             mtype=TypeConstants.SENSOR_CALC,
         )
 
@@ -922,7 +922,7 @@ class TestSAXItemHandling:
 
         sax_item = SAXItem(
             name="calculated_power",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR_CALC,
         )
 
@@ -940,7 +940,7 @@ class TestEdgeCasesAndBoundaryConditions:
     def test_should_include_entity_with_none_device(self) -> None:
         """Test should_include_entity when item device is None."""
         mock_config_entry = MagicMock()
-        mock_config_entry.data = {"device_type": DeviceConstants.SYS}
+        mock_config_entry.data = {"device_type": DeviceConstants.BESS}
 
         item = ModbusItem(
             name="test_item",
@@ -962,7 +962,7 @@ class TestEdgeCasesAndBoundaryConditions:
         item = ModbusItem(
             name="test_item",
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=100,
             battery_slave_id=1,
             factor=1.0,
@@ -979,7 +979,7 @@ class TestEdgeCasesAndBoundaryConditions:
         item = ModbusItem(
             name="test_item",
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=100,
             battery_slave_id=1,
             factor=1.0,

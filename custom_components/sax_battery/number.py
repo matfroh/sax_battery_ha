@@ -10,6 +10,7 @@ from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -186,7 +187,9 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             self._attr_name = clean_name
 
         # Set device info for the specific battery (unchanged)
-        self._attr_device_info = coordinator.sax_data.get_device_info(battery_id)
+        self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
+            battery_id, self._modbus_item.device
+        )
 
         # Initialize with default values for write-only registers (unchanged)
         if self._is_write_only:
@@ -674,7 +677,9 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             self.entity_description = self._sax_item.entitydescription  # type: ignore[assignment]
 
         # Set cluster device info - this creates the "SAX Battery Cluster" device
-        self._attr_device_info = coordinator.sax_data.get_device_info("cluster")
+        self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
+            "cluster", self._sax_item.device
+        )
 
     @property
     def native_value(self) -> float | None:

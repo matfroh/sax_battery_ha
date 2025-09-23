@@ -122,7 +122,7 @@ class TestSAXBatteryCoordinator:
         item = ModbusItem(
             name="sax_status",
             mtype=TypeConstants.SWITCH,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=10,
             battery_slave_id=1,
             factor=1.0,
@@ -136,7 +136,7 @@ class TestSAXBatteryCoordinator:
         item = ModbusItem(
             name="sax_max_charge",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=43,
             battery_slave_id=1,
             factor=1.0,
@@ -150,7 +150,7 @@ class TestSAXBatteryCoordinator:
         item = ModbusItem(
             name="sax_temperature",
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=20,
             battery_slave_id=1,
             factor=1.0,
@@ -584,7 +584,7 @@ class TestSAXBatteryCoordinator:
         sax_item = SAXItem(
             name="sax_combined_soc",
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         # Mock SAX data to return the item
@@ -796,7 +796,7 @@ class TestSAXBatteryCoordinator:
         sys_item1 = ModbusItem(
             name="sys_item1",
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=10,
             battery_slave_id=1,
             factor=1.0,
@@ -805,7 +805,7 @@ class TestSAXBatteryCoordinator:
         sys_item2 = ModbusItem(
             name="sys_item2",
             mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=11,
             battery_slave_id=1,
             factor=1.0,
@@ -826,12 +826,12 @@ class TestSAXBatteryCoordinator:
         result = sax_battery_coordinator_instance._group_items_by_device(items)
 
         # Verify grouping
-        assert DeviceConstants.SYS in result
+        assert DeviceConstants.BESS in result
         assert DeviceConstants.SM in result
-        assert len(result[DeviceConstants.SYS]) == 2
+        assert len(result[DeviceConstants.BESS]) == 2
         assert len(result[DeviceConstants.SM]) == 1
-        assert sys_item1 in result[DeviceConstants.SYS]
-        assert sys_item2 in result[DeviceConstants.SYS]
+        assert sys_item1 in result[DeviceConstants.BESS]
+        assert sys_item2 in result[DeviceConstants.BESS]
         assert bms_item in result[DeviceConstants.SM]
 
     async def test_poll_device_batch_success(
@@ -863,7 +863,7 @@ class TestSAXBatteryCoordinator:
         ) as mock_poll_single:
             # Test polling
             result = await sax_battery_coordinator_instance._poll_device_batch(
-                DeviceConstants.SYS, items
+                DeviceConstants.BESS, items
             )
 
             # Verify the method was called and returns a dict
@@ -903,7 +903,7 @@ class TestSAXBatteryCoordinator:
         ) as mock_poll_single:
             # Test polling
             result = await sax_battery_coordinator_instance._poll_device_batch(
-                DeviceConstants.SYS, items
+                DeviceConstants.BESS, items
             )
 
             # Verify the method handles exceptions gracefully and returns a dict
@@ -1251,71 +1251,6 @@ class TestSAXBatteryCoordinator:
         # Should complete without error for master battery
         assert isinstance(data, dict)
 
-    async def test_read_smart_meter_item_success(
-        self,
-        sax_battery_coordinator_instance,
-        mock_modbus_api_coord_unique,
-    ) -> None:
-        """Test _read_smart_meter_item with successful read."""
-        # Create mock smart meter item
-        item = MagicMock(spec=ModbusItem)
-        item.name = "smartmeter_power"
-        item.async_read_value = AsyncMock(return_value=1500.0)
-
-        # Test read
-        data: dict = {}
-        await sax_battery_coordinator_instance._read_smart_meter_item(item, data)
-
-        # Verify data was stored
-        assert data["smartmeter_power"] == 1500.0
-
-    async def test_read_smart_meter_item_none_result(
-        self,
-        sax_battery_coordinator_instance,
-    ) -> None:
-        """Test _read_smart_meter_item with None result."""
-        # Create mock item that returns None
-        item = MagicMock(spec=ModbusItem)
-        item.name = "smartmeter_power"
-        item.async_read_value = AsyncMock(return_value=None)
-
-        # Test read
-        data: dict = {}
-        await sax_battery_coordinator_instance._read_smart_meter_item(item, data)
-
-        # Should not store None values
-        assert len(data) == 0
-
-    async def test_read_smart_meter_item_exception(
-        self,
-        sax_battery_coordinator_instance,
-    ) -> None:
-        """Test _read_smart_meter_item with read exception."""
-        # Create mock item that raises exception
-        item = MagicMock(spec=ModbusItem)
-        item.name = "smartmeter_power"
-        item.async_read_value = AsyncMock(side_effect=OSError("Network error"))
-
-        # Test read
-        data: dict = {}
-        await sax_battery_coordinator_instance._read_smart_meter_item(item, data)
-
-        # Should store None for failed reads
-        assert data["smartmeter_power"] is None
-
-    async def test_async_write_number_value_invalid_item_type(
-        self,
-        sax_battery_coordinator_instance,
-    ) -> None:
-        """Test async_write_number_value with invalid item type."""
-        # Test with non-ModbusItem
-        result = await sax_battery_coordinator_instance.async_write_number_value(
-            "not_a_modbus_item", 100.0
-        )
-
-        # Should return False for invalid item type
-        assert result is False
-
     async def test_async_write_number_value_invalid_value_type(
         self,
         sax_battery_coordinator_instance,
@@ -1341,7 +1276,7 @@ class TestSAXBatteryCoordinator:
         item = ModbusItem(
             name="test_item",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=10,
             battery_slave_id=1,
             factor=1.0,
@@ -1395,7 +1330,7 @@ class TestSAXBatteryCoordinator:
         item = ModbusItem(
             name="test_switch",
             mtype=TypeConstants.SWITCH,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=10,
             battery_slave_id=1,
             factor=1.0,
@@ -1559,7 +1494,7 @@ class TestSAXBatteryCoordinator:
         power_item = ModbusItem(
             name="power_item",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=10,
             battery_slave_id=1,
             factor=1.0,
@@ -1570,7 +1505,7 @@ class TestSAXBatteryCoordinator:
         power_factor_item = ModbusItem(
             name="power_factor_item",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=11,
             battery_slave_id=1,
             factor=1.0,
@@ -1842,7 +1777,7 @@ class TestSAXBatteryCoordinator:
         # Create comprehensive test data
         modbus_item = MagicMock(spec=ModbusItem)
         modbus_item.name = "test_modbus_item"
-        modbus_item.device = DeviceConstants.SYS
+        modbus_item.device = DeviceConstants.BESS
         modbus_item.mtype = TypeConstants.SENSOR
         modbus_item.is_read_only.return_value = True
         modbus_item.async_read_value = AsyncMock(return_value=50.0)
@@ -1990,7 +1925,7 @@ class TestSAXBatteryCoordinator:
             item = ModbusItem(
                 name=f"sys_item_{i}",
                 mtype=TypeConstants.SENSOR,
-                device=DeviceConstants.SYS,
+                device=DeviceConstants.BESS,
                 address=10 + i,
                 battery_slave_id=1,
                 factor=1.0,
@@ -2017,9 +1952,9 @@ class TestSAXBatteryCoordinator:
 
         # Verify efficient grouping
         assert len(grouped) == 2
-        assert DeviceConstants.SYS in grouped
+        assert DeviceConstants.BESS in grouped
         assert DeviceConstants.SM in grouped
-        assert len(grouped[DeviceConstants.SYS]) == 3
+        assert len(grouped[DeviceConstants.BESS]) == 3
         assert len(grouped[DeviceConstants.SM]) == 2
 
     async def test_calculated_values_comprehensive_types(
@@ -2121,7 +2056,7 @@ class TestSAXBatteryCoordinator:
         for i in range(20):
             item = MagicMock(spec=ModbusItem)
             item.name = f"perf_item_{i}"
-            item.device = DeviceConstants.SYS if i % 2 == 0 else DeviceConstants.SM
+            item.device = DeviceConstants.BESS if i % 2 == 0 else DeviceConstants.SM
             item.mtype = TypeConstants.SENSOR
             item.is_read_only.return_value = True
             item.async_read_value = AsyncMock(return_value=float(i))
@@ -2232,37 +2167,13 @@ class TestSAXBatteryCoordinator:
         # Test concurrent polling
         start_time = time.time()
         result = await sax_battery_coordinator_instance._poll_device_batch(
-            DeviceConstants.SYS, items
+            DeviceConstants.BESS, items
         )
         end_time = time.time()
 
         # Verify concurrent execution (should not take much longer than slowest item)
         assert end_time - start_time < 0.1  # Should be concurrent, not sequential
         assert isinstance(result, dict)
-
-    async def test_smart_meter_integration_patterns(
-        self,
-        sax_battery_coordinator_instance,
-        mock_sax_data_coord_unique,
-    ) -> None:
-        """Test smart meter integration patterns for master/slave coordination."""
-        # Test master battery smart meter handling
-        assert sax_battery_coordinator_instance.is_master is True
-
-        # Create smart meter item
-        smart_meter_item = MagicMock(spec=ModbusItem)
-        smart_meter_item.name = "smartmeter_total_active_power"
-        smart_meter_item.async_read_value = AsyncMock(return_value=2500.0)
-
-        # Test smart meter read operation
-        data: dict = {}
-        await sax_battery_coordinator_instance._read_smart_meter_item(
-            smart_meter_item, data
-        )
-
-        # Verify smart meter data handling
-        assert "smartmeter_total_active_power" in data
-        assert data["smartmeter_total_active_power"] == 2500.0
 
     async def test_write_operations_comprehensive(
         self,
@@ -2274,7 +2185,7 @@ class TestSAXBatteryCoordinator:
         number_item = ModbusItem(
             name="test_number",
             mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=50,
             battery_slave_id=1,
             factor=1.0,
@@ -2286,7 +2197,7 @@ class TestSAXBatteryCoordinator:
         switch_item = ModbusItem(
             name="test_switch",
             mtype=TypeConstants.SWITCH,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             address=51,
             battery_slave_id=1,
             factor=1.0,

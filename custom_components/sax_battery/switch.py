@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -162,7 +163,9 @@ class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):
             self._attr_name = clean_name
 
         # Set device info for the specific battery
-        self._attr_device_info = coordinator.sax_data.get_device_info(battery_id)
+        self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
+            battery_id, self._modbus_item.device
+        )
 
     @property
     def is_on(self) -> bool | None:
@@ -416,7 +419,9 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
             self._attr_name = clean_name
 
         # Set cluster device info
-        self._attr_device_info = coordinator.sax_data.get_device_info("cluster")
+        self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
+            "cluster", self._sax_item.device
+        )
 
     @property
     def is_on(self) -> bool | None:

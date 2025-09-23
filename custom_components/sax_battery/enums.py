@@ -8,9 +8,9 @@ from enum import Enum
 class DeviceConstants(Enum):
     """Device type constants."""
 
-    SYS = "sys"  # One or more batteries [1..3]
+    SYS = "cluster"  # device handles entities for batteries
     SM = "smartmeter"  # always one smart meter
-    BESS = "battery"  # One or more batteries [1..3] - former "sys"
+    BESS = "battery"  # One or more batteries [1..3]
 
 
 # fmt: off

@@ -32,6 +32,7 @@ from .const import (
     SAX_COMBINED_SOC,
 )
 from .coordinator import SAXBatteryCoordinator
+from .enums import DeviceConstants
 from .models import SAXBatteryData
 
 _LOGGER = logging.getLogger(__name__)
@@ -686,7 +687,9 @@ class SAXBatteryPilotPowerEntity(
     @property
     def device_info(self) -> Any:
         """Return device info."""
-        return self.coordinator.sax_data.get_device_info(self._battery_id)
+        return self.coordinator.sax_data.get_device_info(
+            self._battery_id, DeviceConstants.SYS
+        )
 
     @property
     def native_value(self) -> float | None:

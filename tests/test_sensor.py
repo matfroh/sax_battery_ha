@@ -66,7 +66,7 @@ def temperature_modbus_item_sensor():
     """Create temperature modbus item for testing."""
     return ModbusItem(
         name="sax_temperature",
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         mtype=TypeConstants.SENSOR,
         address=40117,
         entitydescription=DESCRIPTION_SAX_TEMPERATURE,
@@ -78,7 +78,7 @@ def power_modbus_item_sensor():
     """Create power modbus item for testing."""
     return ModbusItem(
         name=SAX_POWER,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         mtype=TypeConstants.SENSOR,
         address=40001,
         entitydescription=DESCRIPTION_SAX_POWER,
@@ -90,7 +90,7 @@ def percentage_modbus_item_sensor():
     """Create percentage modbus item for testing."""
     return ModbusItem(
         name=SAX_SOC,
-        device=DeviceConstants.SYS,
+        device=DeviceConstants.BESS,
         mtype=TypeConstants.SENSOR,
         address=40010,
         entitydescription=DESCRIPTION_SAX_SOC,
@@ -274,7 +274,7 @@ class TestSAXBatteryModbusSensor:
         device_info = sensor.device_info
         assert device_info is not None
         mock_coordinator_sensor.sax_data.get_device_info.assert_called_once_with(
-            "battery_a"
+            "battery_a", DeviceConstants.BESS
         )
 
     def test_modbus_sensor_percentage_format(
@@ -333,7 +333,7 @@ class TestSAXBatteryCalculatedSensor:
         calc_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
         )
 
@@ -360,7 +360,7 @@ class TestSAXBatteryCalculatedSensor:
         calc_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
         )
 
@@ -385,7 +385,7 @@ class TestSAXBatteryCalculatedSensor:
         calc_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
         )
 
@@ -415,7 +415,7 @@ class TestSAXBatteryCalculatedSensor:
         calc_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
         )
 
@@ -428,7 +428,9 @@ class TestSAXBatteryCalculatedSensor:
         )
 
         # Verify it calls get_device_info with "cluster"
-        mock_coordinator.sax_data.get_device_info.assert_called_once_with("cluster")
+        mock_coordinator.sax_data.get_device_info.assert_called_once_with(
+            "cluster", DeviceConstants.SYS
+        )
 
 
 class TestSensorEntityConfiguration:
@@ -453,7 +455,7 @@ class TestSensorEntityConfiguration:
         """Test sensor name handling when entity description has Sax prefix."""
         item_with_sax_prefix = ModbusItem(
             name="sax_custom_sensor",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             entitydescription=SensorEntityDescription(
                 key="custom_sensor",
@@ -511,7 +513,7 @@ class TestSensorErrorHandling:
         """Test modbus sensor with missing entity description."""
         item_no_desc = ModbusItem(
             name="sax_no_desc",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             # No entitydescription set
         )
@@ -575,7 +577,7 @@ class TestSensorPlatformSetup:
         # Mock sensor items for battery with proper entity descriptions
         mock_modbus_item = ModbusItem(
             name="sax_test_sensor",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             address=100,
             entitydescription=SensorEntityDescription(
@@ -587,7 +589,7 @@ class TestSensorPlatformSetup:
         mock_sax_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
         )
 
@@ -663,7 +665,7 @@ class TestSensorPlatformSetup:
         # Mock mixed items - only sensors should be created
         sensor_item = ModbusItem(
             name="sax_test_sensor",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             address=100,
             entitydescription=SensorEntityDescription(
@@ -673,19 +675,19 @@ class TestSensorPlatformSetup:
         )
         switch_item = ModbusItem(  # noqa: F841
             name="sax_test_switch",
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
         )
         calc_item = SAXItem(  # noqa: F841
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
         )
         non_calc_item = SAXItem(  # noqa: F841
             name="sax_test_switch_sax",
             mtype=TypeConstants.SWITCH,
-            device=DeviceConstants.SYS,
+            device=DeviceConstants.BESS,
         )
 
         # Mock the filter functions to return appropriate items
@@ -700,7 +702,7 @@ class TestSensorPlatformSetup:
                 calc_item = SAXItem(
                     name=SAX_COMBINED_SOC,
                     mtype=TypeConstants.SENSOR_CALC,
-                    device=DeviceConstants.SYS,
+                    device=DeviceConstants.BESS,
                     entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
                 )
                 return [calc_item]

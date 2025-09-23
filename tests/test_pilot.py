@@ -22,6 +22,7 @@ from custom_components.sax_battery.const import (
     DOMAIN,
     SAX_COMBINED_SOC,
 )
+from custom_components.sax_battery.enums import DeviceConstants
 from custom_components.sax_battery.pilot import (
     SAXBatteryPilot,
     SAXBatteryPilotPowerEntity,
@@ -454,6 +455,7 @@ class TestSAXBatteryPilotPowerEntity:
         mock_coordinator = MagicMock()
         mock_coordinator.data = {"pilot_power": 1500.0}
         mock_coordinator.sax_data = MagicMock()
+        mock_coordinator.sax_data.device = DeviceConstants.SYS
 
         return SAXBatteryPilotPowerEntity(
             mock_pilot,
@@ -471,8 +473,9 @@ class TestSAXBatteryPilotPowerEntity:
         result = power_entity_instance_test.device_info
 
         assert result == expected_device_info
+        # Fix: Use DeviceConstants.SYS directly instead of accessing _sax_item.device
         power_entity_instance_test.coordinator.sax_data.get_device_info.assert_called_once_with(
-            "battery_a"
+            "battery_a", DeviceConstants.SYS
         )
 
     def test_native_value(self, power_entity_instance_test):

@@ -506,34 +506,6 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.error("Error in smart meter data handling: %s", err)
             raise
 
-    async def _read_smart_meter_item(
-        self, item: ModbusItem, data: dict[str, Any]
-    ) -> None:
-        """Read a single smart meter item.
-
-        Args:
-            item: ModbusItem to read
-            data: Dictionary to store the result
-
-        Performance: Individual item reads for better error isolation
-        """
-        try:
-            value = await item.async_read_value()
-            if value is not None:
-                data[item.name] = value
-
-                # Update smart meter model if available
-                if self.sax_data.smart_meter_data:
-                    # Security: Validate numeric value before setting
-                    if isinstance(value, (int, float)):
-                        self.sax_data.smart_meter_data.set_value(
-                            item.name, float(value)
-                        )
-
-        except (ModbusException, OSError, TimeoutError) as err:
-            _LOGGER.warning("Failed to read smart meter item %s: %s", item.name, err)
-            data[item.name] = None
-
     async def async_write_number_value(self, item: ModbusItem, value: float) -> bool:
         """Write number value using direct ModbusItem communication.
 
