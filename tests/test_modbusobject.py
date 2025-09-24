@@ -1563,7 +1563,7 @@ class TestModbusAPI:
             address=100,  # From modbus_item_api_test
             values=[1000, 9500],
             device_id=1,
-            no_response_expected=False,
+            no_response_expected=True,
         )
 
     @pytest.mark.skip(reason="This test fails - no_response_expected")
@@ -2436,12 +2436,12 @@ class TestModbusAPI:
         result = await modbus_api_instance.write_registers(42.0, modbus_item_api_test)
 
         assert result is True
-        # Verify no_response_expected=False was used
+        # Verify no_response_expected=True was used
         mock_modbus_client_api.write_registers.assert_called_once_with(
             address=100,
             values=[42],
             device_id=1,
-            no_response_expected=False,
+            no_response_expected=True,
         )
 
     def test_modbus_api_str_representation(self, modbus_api_instance):

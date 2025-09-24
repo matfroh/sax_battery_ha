@@ -327,8 +327,8 @@ class ModbusAPI:
             result = self._modbus_client.write_registers(
                 address=modbus_item.address,
                 values=converted_registers,
-                device_id=device_id,  # Use the correct device_id here
-                no_response_expected=False,
+                device_id=device_id,
+                no_response_expected=True,
             )
 
             # Enhanced SAX battery bug workaround
@@ -438,7 +438,7 @@ class ModbusAPI:
                         address=address,
                         values=[power_int, pf_int],
                         device_id=device_id,
-                        no_response_expected=False,
+                        no_response_expected=True,
                     )
 
                     _LOGGER.debug(
