@@ -41,6 +41,7 @@ The SAX-power energy storage solution uses structured communication protocols ac
 - **Security** (S): Avoid `eval()`, sanitize inputs, use parameterized queries
 - **Complexity** (C901): Keep functions simple and readable
 - **Private member access** (SLF001): Checks for accesses on "private" class members
+- **Modules file size** (D103): Limit to 1000 lines - split large files
 
 ### Import Management
 
