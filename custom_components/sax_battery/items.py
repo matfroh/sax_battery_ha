@@ -134,6 +134,14 @@ class ModbusItem(BaseItem):
 
     async def async_write_value(self, value: float | bool) -> bool:
         """Write value to physical modbus register."""
+
+        _LOGGER.debug(
+            "Writing value %s to item %s (address: %s, data_type: %s)",
+            value,
+            self.name,
+            self.address,
+            self.data_type,
+        )
         # Check if this type supports writing using TypeConstants
         if self.mtype in (
             TypeConstants.SENSOR,

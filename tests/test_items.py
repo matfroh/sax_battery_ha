@@ -460,7 +460,9 @@ class TestHelperFunctions:
                 device=DeviceConstants.BESS,
             ),
             SAXItem(
-                name="sax1", mtype=TypeConstants.SENSOR_CALC, device=DeviceConstants.BESS
+                name="sax1",
+                mtype=TypeConstants.SENSOR_CALC,
+                device=DeviceConstants.BESS,
             ),
             WebAPIItem(
                 name="web1", mtype=TypeConstants.SENSOR, device=DeviceConstants.BESS

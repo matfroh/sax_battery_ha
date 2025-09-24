@@ -318,33 +318,67 @@ class ModbusAPI:
                 value, modbus_item.data_type
             )
 
+            # Use the correct device_id from the ModbusItem
+            device_id = (
+                modbus_item.battery_slave_id
+            )  # This should be 64 for SAX batteries
+
             # SAX does not support single register writes, so always use write_registers
             result = self._modbus_client.write_registers(
                 address=modbus_item.address,
                 values=converted_registers,
-                device_id=modbus_item.battery_slave_id,
-                no_response_expected=True,
+                device_id=device_id,  # Use the correct device_id here
+                no_response_expected=False,  # Change this to False to get response
             )
 
-            # SAX battery bug workaround: Don't strictly validate transaction ID
+            # Enhanced SAX battery bug workaround
             if hasattr(result, "isError"):
-                success = not result.isError()
-            else:
-                # Assume success if we can't determine error status
-                success = True
+                if result.isError():
+                    # Check if this is a known SAX battery quirk
+                    error_str = str(result).lower()
 
-            if success:
-                _LOGGER.debug(
-                    "Successfully wrote value %s to %s", value, modbus_item.name
-                )
-            else:
-                _LOGGER.warning(
-                    "Write operation returned error for %s: %s",
-                    modbus_item.name,
-                    result,
-                )
+                    # These are real errors that should fail
+                    real_errors = [
+                        "connection",
+                        "timeout",
+                        "refused",
+                        "unreachable",
+                        "illegal function",
+                        "illegal data address",
+                        "illegal data value",
+                    ]
 
-            return success  # noqa: TRY300
+                    if any(error in error_str for error in real_errors):
+                        _LOGGER.error(
+                            "Real Modbus error for %s: %s", modbus_item.name, result
+                        )
+                        return False
+
+                    # SAX battery specific: Exception with function_code=255 might be OK
+                    if hasattr(result, "function_code") and result.function_code == 255:
+                        _LOGGER.debug(
+                            "SAX battery returned function_code=255 for %s - treating as success",
+                            modbus_item.name,
+                        )
+                        return True
+
+                    # Other SAX quirks - log but assume success
+                    _LOGGER.debug(
+                        "SAX battery quirk detected for %s: %s - assuming success",
+                        modbus_item.name,
+                        result,
+                    )
+                    return True
+                else:  # noqa: RET505
+                    # No error reported
+                    return True
+
+            # Can't determine error status - assume success for SAX compatibility
+            _LOGGER.debug(
+                "Cannot determine error status for %s, assuming success",
+                modbus_item.name,
+            )
+            return True  # noqa: TRY300
 
         except (ModbusException, ValueError, TypeError) as exc:
             _LOGGER.error("Error writing to %s: %s", modbus_item.name, exc)

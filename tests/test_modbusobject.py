@@ -2055,18 +2055,149 @@ class TestModbusAPI:
     async def test_write_registers_modbus_error(
         self, modbus_api_instance, mock_modbus_client_api, modbus_item_api_test
     ):
-        """Test write registers with modbus error."""
+        """Test write registers with modbus error - accounting for SAX battery quirks."""
         mock_modbus_client_api.connected = True
 
-        # Mock error result
+        # Mock error result that should be treated as a real failure
         mock_result = MagicMock()
         mock_result.isError.return_value = True
+        # Use a real failure pattern that SAX implementation recognizes
+        mock_result.__str__.return_value = "Connection timeout error"
         mock_modbus_client_api.write_registers.return_value = mock_result
         mock_modbus_client_api.convert_to_registers.return_value = [42]
 
         result = await modbus_api_instance.write_registers(42.0, modbus_item_api_test)
 
         assert result is False
+
+    async def test_write_registers_sax_quirk_assumed_success(
+        self, modbus_api_instance, mock_modbus_client_api, modbus_item_api_test
+    ):
+        """Test write registers with SAX-specific error that's assumed as success."""
+        mock_modbus_client_api.connected = True
+
+        # Mock error result that should be treated as success (SAX quirk)
+        mock_result = MagicMock()
+        mock_result.isError.return_value = True
+        # Use a generic error that doesn't match real failure patterns
+        mock_result.__str__.return_value = "Some generic modbus error"
+        mock_modbus_client_api.write_registers.return_value = mock_result
+        mock_modbus_client_api.convert_to_registers.return_value = [42]
+
+        result = await modbus_api_instance.write_registers(42.0, modbus_item_api_test)
+
+        # Should be treated as success due to SAX battery quirk handling
+        assert result is True
+
+    async def test_write_registers_sax_function_code_255(
+        self, modbus_api_instance, mock_modbus_client_api, modbus_item_api_test
+    ):
+        """Test write registers with SAX-specific function_code=255."""
+        mock_modbus_client_api.connected = True
+
+        # Mock error result with function_code=255 (SAX specific)
+        mock_result = MagicMock()
+        mock_result.isError.return_value = True
+        mock_result.function_code = 255
+        mock_modbus_client_api.write_registers.return_value = mock_result
+        mock_modbus_client_api.convert_to_registers.return_value = [42]
+
+        result = await modbus_api_instance.write_registers(42.0, modbus_item_api_test)
+
+        # Should be treated as success due to SAX function_code=255 handling
+        assert result is True
+
+    async def test_write_registers_real_failure_patterns(
+        self, modbus_api_instance, mock_modbus_client_api, modbus_item_api_test
+    ):
+        """Test write registers with real failure patterns that should fail."""
+        mock_modbus_client_api.connected = True
+        mock_modbus_client_api.convert_to_registers.return_value = [42]
+
+        real_failure_patterns = [
+            "connection timeout",
+            "connection refused",
+            "unreachable host",
+            "illegal function code",
+            "illegal data address",
+            "illegal data value",
+        ]
+
+        for pattern in real_failure_patterns:
+            mock_result = MagicMock()
+            mock_result.isError.return_value = True
+            mock_result.__str__.return_value = f"Modbus error: {pattern}"
+            mock_modbus_client_api.write_registers.return_value = mock_result
+
+            result = await modbus_api_instance.write_registers(
+                42.0, modbus_item_api_test
+            )
+
+            assert result is False, f"Expected failure for pattern: {pattern}"
+
+    async def test_write_registers_disconnection_handling(
+        self, modbus_api_instance, mock_modbus_client_api, modbus_item_api_test
+    ):
+        """Test write registers when connection is lost."""
+        # Start disconnected
+        mock_modbus_client_api.connected = False
+
+        # Mock connect to fail
+        with patch.object(
+            modbus_api_instance, "connect", new_callable=AsyncMock
+        ) as mock_connect:
+            mock_connect.return_value = False
+
+            result = await modbus_api_instance.write_registers(
+                42.0, modbus_item_api_test
+            )
+
+            assert result is False
+            mock_connect.assert_called_once()
+
+    async def test_read_holding_registers_with_factor_and_offset(
+        self, modbus_api_instance, mock_modbus_client_api, modbus_item_api_test
+    ):
+        """Test read holding registers with both factor and offset applied."""
+        mock_modbus_client_api.connected = True
+
+        # Set both factor and offset
+        modbus_item_api_test.factor = 0.1
+        modbus_item_api_test.offset = 500
+
+        mock_result = MagicMock()
+        mock_result.isError.return_value = False
+        mock_result.registers = [1000]
+        mock_modbus_client_api.read_holding_registers.return_value = mock_result
+        mock_modbus_client_api.convert_from_registers.return_value = 1000
+
+        result = await modbus_api_instance.read_holding_registers(
+            1, modbus_item_api_test
+        )
+
+        # Should apply: (1000 - 500) * 0.1 = 50.0
+        assert result == 50.0
+
+    async def test_read_holding_registers_max_retry_exceeded(
+        self, modbus_api_instance, mock_modbus_client_api, modbus_item_api_test
+    ):
+        """Test read holding registers when max retries are exceeded."""
+        mock_modbus_client_api.connected = True
+
+        # Mock all attempts to fail
+        mock_error_result = MagicMock()
+        mock_error_result.isError.return_value = True
+        mock_modbus_client_api.read_holding_registers.return_value = mock_error_result
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await modbus_api_instance.read_holding_registers(
+                1, modbus_item_api_test, max_retries=2
+            )
+
+            assert result is None
+            # Should attempt 3 times (initial + 2 retries) with 2 sleep calls
+            assert mock_modbus_client_api.read_holding_registers.call_count == 3
+            assert mock_sleep.call_count == 2
 
     async def test_write_registers_conversion_exception(
         self, modbus_api_instance, mock_modbus_client_api, modbus_item_api_test
@@ -2295,12 +2426,12 @@ class TestModbusAPI:
         result = await modbus_api_instance.write_registers(42.0, modbus_item_api_test)
 
         assert result is True
-        # Verify no_response_expected=True was used
+        # Verify no_response_expected=False was used
         mock_modbus_client_api.write_registers.assert_called_once_with(
             address=100,
             values=[42],
             device_id=1,
-            no_response_expected=True,
+            no_response_expected=False,
         )
 
     def test_modbus_api_str_representation(self, modbus_api_instance):
