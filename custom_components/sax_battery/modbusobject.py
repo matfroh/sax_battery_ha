@@ -328,7 +328,7 @@ class ModbusAPI:
                 address=modbus_item.address,
                 values=converted_registers,
                 device_id=device_id,  # Use the correct device_id here
-                no_response_expected=False,  # Change this to False to get response
+                no_response_expected=False,
             )
 
             # Enhanced SAX battery bug workaround
@@ -420,8 +420,8 @@ class ModbusAPI:
                 address = modbus_item.address
                 device_id = modbus_item.battery_slave_id
             else:
-                address = 41  # SAX specific power register
-                device_id = 64  # SAX specific device ID
+                _LOGGER.warning("No Modbus item provided for nominal power write")
+                return False  # Address and device_id must be provided via modbus_item
 
             # Convert values to 16-bit unsigned integers
             power_int = max(0, min(65535, int(value))) & 0xFFFF
@@ -438,6 +438,7 @@ class ModbusAPI:
                         address=address,
                         values=[power_int, pf_int],
                         device_id=device_id,
+                        no_response_expected=False,
                     )
 
                     _LOGGER.debug(
@@ -456,33 +457,37 @@ class ModbusAPI:
                                 "Write registers returned error status: %s", result
                             )
 
+                            # Check if this is a known SAX battery quirk
+                            error_str = str(result).lower()
                             # Some SAX batteries return errors even on successful writes
                             # Check for specific error patterns that indicate real failures
-                            error_str = str(result).lower()
-                            real_failure_patterns = [
+                            real_errors = [
                                 "connection",
                                 "timeout",
                                 "refused",
                                 "unreachable",
                                 "illegal function",
                                 "illegal data address",
+                                "illegal data value",
                             ]
 
-                            if any(
-                                pattern in error_str
-                                for pattern in real_failure_patterns
-                            ):
-                                _LOGGER.warning(
+                            if any(error in error_str for error in real_errors):
+                                _LOGGER.error(
                                     "Real failure detected in write response: %s",
                                     result,
                                 )
                                 return False
 
-                            # Assume success for SAX-specific error responses
-                            _LOGGER.debug(
-                                "Assuming success despite error response (SAX transaction ID bug)"
-                            )
-                            return True
+                            # SAX battery specific: Exception with function_code=255 might be OK
+                            if (
+                                hasattr(result, "function_code")
+                                and result.function_code == 255
+                            ):
+                                _LOGGER.debug(
+                                    "SAX battery returned function_code=255 for %s - treating as success",
+                                    modbus_item.name,
+                                )
+                                return True
                         # No error reported - success
                         return True
                     # Can't determine error status - assume success
