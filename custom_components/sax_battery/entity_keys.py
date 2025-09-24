@@ -50,3 +50,4 @@ SAX_STORAGE_STATUS = "storage_status"
 
 SOLAR_CHARGING_SWITCH = "solar_charging_switch"
 MANUAL_CONTROL_SWITCH = "manual_control_switch"
+SAX_PILOT_POWER = "sax_pilot_power"

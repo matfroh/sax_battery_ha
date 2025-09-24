@@ -22,6 +22,7 @@ from .entity_keys import (
     SAX_ENERGY_CONSUMED,
     SAX_ENERGY_PRODUCED,
     SAX_MIN_SOC,
+    SAX_PILOT_POWER,
     SAX_SOC,
 )
 from .enums import DeviceConstants, TypeConstants
@@ -342,6 +343,10 @@ class SAXItem(BaseItem):
             _LOGGER.warning("Attempted to write to read-only SAX item %s", self.name)
             return False
 
+        # Handle pilot power writes
+        if self.name == SAX_PILOT_POWER:
+            return await self._write_pilot_power_value(value)
+
         # System configuration writes are handled through config entry updates
         # This will be implemented based on specific SAX item requirements
         _LOGGER.debug("SAX item write not yet implemented for %s", self.name)
@@ -356,6 +361,8 @@ class SAXItem(BaseItem):
                 return self._calculate_cumulative_energy_produced(coordinators)
             if self.name == SAX_CUMULATIVE_ENERGY_CONSUMED:
                 return self._calculate_cumulative_energy_consumed(coordinators)
+            if self.name == SAX_PILOT_POWER:
+                return self._get_pilot_power_value(coordinators)
             # Default: return None for unknown calculation types
             if self.name != SAX_MIN_SOC:
                 _LOGGER.warning("Unknown calculation type for SAXItem: %s", self.name)
@@ -363,6 +370,34 @@ class SAXItem(BaseItem):
         except (ValueError, TypeError, KeyError) as exc:
             _LOGGER.error("Error calculating value for %s: %s", self.name, exc)
             return None
+
+    def _get_pilot_power_value(self, coordinators: dict[str, Any]) -> float | None:
+        """Get pilot power value from the pilot service."""
+        # Get pilot instance from sax_data
+        for coordinator in coordinators.values():
+            if hasattr(coordinator, "sax_data") and hasattr(
+                coordinator.sax_data, "pilot"
+            ):
+                pilot = coordinator.sax_data.pilot
+                return pilot.calculated_power if pilot else 0.0
+        return 0.0
+
+    async def _write_pilot_power_value(self, value: float) -> bool:
+        """Write pilot power value to the pilot service."""
+        try:
+            # Get pilot instance from coordinators
+            for coordinator in self.coordinators.values():
+                if hasattr(coordinator, "sax_data") and hasattr(
+                    coordinator.sax_data, "pilot"
+                ):
+                    pilot = coordinator.sax_data.pilot
+                    if pilot:
+                        await pilot.set_manual_power(value)
+                        return True
+            return False  # noqa: TRY300
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Failed to write pilot power value: %s", err)
+            return False
 
     # Calculation functions for SAXItem values
     def _calculate_combined_soc(

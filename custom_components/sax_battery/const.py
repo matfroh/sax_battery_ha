@@ -47,6 +47,7 @@ from .entity_keys import (
     SAX_NOMINAL_FACTOR,
     SAX_NOMINAL_POWER,
     SAX_PHASE_CURRENTS_SUM,
+    SAX_PILOT_POWER,
     SAX_POWER,
     SAX_POWER_FACTOR,
     SAX_POWER_SM,
@@ -224,6 +225,17 @@ DESCRIPTION_SAX_MIN_SOC = NumberEntityDescription(
     native_min_value=0,
     native_max_value=100,
     entity_category=EntityCategory.CONFIG,
+)
+
+DESCRIPTION_SAX_PILOT_POWER= NumberEntityDescription(
+    key=SAX_PILOT_POWER,
+    name="Sax Pilot Power",
+    mode=NumberMode.BOX,
+    native_unit_of_measurement=UnitOfPower.WATT,
+    native_min_value=LIMIT_MAX_DISCHARGE_PER_BATTERY * -1,
+    native_max_value=LIMIT_MAX_CHARGE_PER_BATTERY,
+    native_step=1,
+    device_class=NumberDeviceClass.POWER,
 )
 
 DESCRIPTION_SAX_POWER = SensorEntityDescription(
@@ -573,6 +585,7 @@ AGGREGATED_ITEMS: list[SAXItem] = [
 PILOT_ITEMS: list[SAXItem] = [
     SAXItem(name=SOLAR_CHARGING_SWITCH,  mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SOLAR_CHARGING_SWITCH),
     SAXItem(name=MANUAL_CONTROL_SWITCH,  mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_MANUAL_CONTROL_SWITCH),
-    SAXItem(name=SAX_MIN_SOC, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MIN_SOC, translation_key="sax_min_soc")
+    SAXItem(name=SAX_MIN_SOC, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MIN_SOC, translation_key="sax_min_soc"),
+    SAXItem(name=SAX_PILOT_POWER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_PILOT_POWER, translation_key="sax_pilot_power"),
 ]
 # fmt: on

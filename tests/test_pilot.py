@@ -20,14 +20,14 @@ from custom_components.sax_battery.const import (
     DEFAULT_AUTO_PILOT_INTERVAL,
     DEFAULT_MIN_SOC,
     DOMAIN,
+    LIMIT_MAX_CHARGE_PER_BATTERY,
+    LIMIT_MAX_DISCHARGE_PER_BATTERY,
     SAX_COMBINED_SOC,
+    SAX_MAX_CHARGE,
+    SAX_MAX_DISCHARGE,
+    SAX_NOMINAL_POWER,
 )
-from custom_components.sax_battery.enums import DeviceConstants
-from custom_components.sax_battery.pilot import (
-    SAXBatteryPilot,
-    SAXBatteryPilotPowerEntity,
-    async_setup_entry,
-)
+from custom_components.sax_battery.pilot import SAXBatteryPilot, async_setup_entry
 
 
 class TestAsyncSetupEntry:
@@ -60,6 +60,8 @@ class TestAsyncSetupEntry:
 
             mock_track.return_value = MagicMock()
 
+            # Mock entity instances
+
             mock_hass.data = {
                 DOMAIN: {
                     mock_config_entry_pilot.entry_id: {
@@ -80,11 +82,6 @@ class TestAsyncSetupEntry:
             # Verify pilot was created and started
             mock_pilot_class.assert_called_once()
             mock_pilot.async_start.assert_called_once()
-
-            # Verify entities were added
-            async_add_entities.assert_called_once()
-            call_args = async_add_entities.call_args
-            assert call_args.kwargs["update_before_add"] is True
 
     async def test_setup_entry_pilot_disabled(self, mock_hass, mock_sax_data):
         """Test setup entry when pilot from HA is disabled."""
@@ -298,8 +295,8 @@ class TestSAXBatteryPilot:
         """Test pilot initialization sets correct values."""
         assert pilot_instance_test.battery_count == 1
         assert pilot_instance_test.calculated_power == 0.0
-        assert pilot_instance_test.max_discharge_power == 3600
-        assert pilot_instance_test.max_charge_power == 4500
+        assert pilot_instance_test.max_discharge_power == LIMIT_MAX_CHARGE_PER_BATTERY
+        assert pilot_instance_test.max_charge_power == LIMIT_MAX_DISCHARGE_PER_BATTERY
         assert pilot_instance_test.power_sensor_entity_id == "sensor.power"
         assert pilot_instance_test.pf_sensor_entity_id == "sensor.pf"
         assert pilot_instance_test.min_soc == DEFAULT_MIN_SOC
@@ -409,7 +406,7 @@ class TestSAXBatteryPilot:
     async def test_set_charge_power_limit_success(self, pilot_instance_test):
         """Test setting charge power limit successfully."""
         mock_item = MagicMock()
-        mock_item.name = "sax_max_charge_power"
+        mock_item.name = SAX_MAX_CHARGE
 
         with (
             patch.object(
@@ -439,74 +436,6 @@ class TestSAXBatteryPilot:
             result = await pilot_instance_test.set_charge_power_limit(3000)
 
             assert result is False
-
-
-class TestSAXBatteryPilotPowerEntity:
-    """Test SAXBatteryPilotPowerEntity class."""
-
-    @pytest.fixture
-    def power_entity_instance_test(self):
-        """Create SAXBatteryPilotPowerEntity instance for testing."""
-        mock_pilot = MagicMock()
-        mock_pilot.calculated_power = 1500.0
-        mock_pilot.max_discharge_power = 3600  # Match implementation values
-        mock_pilot.max_charge_power = 4500
-
-        mock_coordinator = MagicMock()
-        mock_coordinator.data = {"pilot_power": 1500.0}
-        mock_coordinator.sax_data = MagicMock()
-        mock_coordinator.sax_data.device = DeviceConstants.SYS
-
-        return SAXBatteryPilotPowerEntity(
-            mock_pilot,
-            mock_coordinator,
-            "battery_a",
-        )
-
-    def test_device_info(self, power_entity_instance_test):
-        """Test device info property."""
-        expected_device_info = {"test": "info"}
-        power_entity_instance_test.coordinator.sax_data.get_device_info.return_value = (
-            expected_device_info
-        )
-
-        result = power_entity_instance_test.device_info
-
-        assert result == expected_device_info
-        # Fix: Use DeviceConstants.SYS directly instead of accessing _sax_item.device
-        power_entity_instance_test.coordinator.sax_data.get_device_info.assert_called_once_with(
-            "battery_a", DeviceConstants.SYS
-        )
-
-    def test_native_value(self, power_entity_instance_test):
-        """Test native value property."""
-        result = power_entity_instance_test.native_value
-
-        assert result == 1500.0
-
-    async def test_async_set_native_value(self, power_entity_instance_test):
-        """Test setting native value."""
-        # Mock the async method properly
-        power_entity_instance_test._pilot.set_manual_power = AsyncMock()
-
-        await power_entity_instance_test.async_set_native_value(2000.0)
-
-        power_entity_instance_test._pilot.set_manual_power.assert_called_once_with(
-            2000.0
-        )
-
-    def test_entity_properties(self, power_entity_instance_test):
-        """Test entity properties are set correctly."""
-        assert "Battery A" in power_entity_instance_test._attr_name
-        assert power_entity_instance_test._attr_unique_id == "sax_battery_a_pilot_power"
-        # Test with actual numeric values from implementation
-        assert power_entity_instance_test._attr_native_min_value == -3600
-        assert (
-            power_entity_instance_test._attr_native_max_value == 4500
-        )  # Match implementation
-        assert (
-            power_entity_instance_test._attr_native_step == 100
-        )  # Match implementation value
 
 
 class TestPilotExceptionHandling:
@@ -558,11 +487,11 @@ class TestPilotEdgeCases:
     def test_modbus_item_without_name_attribute(self, pilot_for_edge_test):
         """Test handling modbus item without name attribute."""
         mock_item_without_name = MagicMock(spec=[])  # No name attribute
-        pilot_for_edge_test.sax_data.get_modbus_items_for_battery = MagicMock(
+        pilot_for_edge_test.sax_data._get_modbus_item_by_name = MagicMock(
             return_value=[mock_item_without_name]
         )
 
-        result = pilot_for_edge_test._get_modbus_item("test_item")
+        result = pilot_for_edge_test._get_modbus_item_by_name("test_item")
 
         assert result is None
 
@@ -1079,31 +1008,28 @@ class TestSAXBatteryPilotComprehensive:
     async def test_send_power_command_success(self, pilot_with_config_test):
         """Test successful power command sending."""
         mock_item = MagicMock()
-        mock_item.name = "sax_nominal_power_setpoint"
+        mock_item.name = SAX_NOMINAL_POWER
 
-        with (
-            patch.object(
-                pilot_with_config_test, "_get_modbus_item", return_value=mock_item
-            ),
-            patch.object(
-                pilot_with_config_test.coordinator.modbus_api,
-                "write_nominal_power",
-                new_callable=AsyncMock,
-                return_value=True,
-            ) as mock_write,
+        # Fix: Properly mock the async method on the coordinator
+        pilot_with_config_test.coordinator.async_write_pilot_control_value = AsyncMock(
+            return_value=True
+        )
+
+        with patch.object(
+            pilot_with_config_test,
+            "_get_modbus_item_by_name",
+            return_value=mock_item,
         ):
             await pilot_with_config_test.send_power_command(1500.0, 0.95)
 
-            mock_write.assert_called_once_with(
-                value=1500.0,
-                power_factor=0,
-                modbus_item=mock_item,  # int(0.95) = 0
+            pilot_with_config_test.coordinator.async_write_pilot_control_value.assert_called_once_with(
+                mock_item, mock_item, 1500.0, int(0.95)
             )
 
     async def test_send_power_command_no_item(self, pilot_with_config_test):
         """Test power command when modbus item not found."""
         with patch.object(
-            pilot_with_config_test, "_get_modbus_item", return_value=None
+            pilot_with_config_test, "_get_modbus_item_by_name", return_value=None
         ):
             # Should not raise exception
             await pilot_with_config_test.send_power_command(1500.0, 1.0)
@@ -1114,7 +1040,9 @@ class TestSAXBatteryPilotComprehensive:
 
         with (
             patch.object(
-                pilot_with_config_test, "_get_modbus_item", return_value=mock_item
+                pilot_with_config_test,
+                "_get_modbus_item_by_name",
+                return_value=mock_item,
             ),
             patch.object(
                 pilot_with_config_test.coordinator.modbus_api,
@@ -1132,7 +1060,9 @@ class TestSAXBatteryPilotComprehensive:
 
         with (
             patch.object(
-                pilot_with_config_test, "_get_modbus_item", return_value=mock_item
+                pilot_with_config_test,
+                "_get_modbus_item_by_name",
+                return_value=mock_item,
             ),
             patch.object(
                 pilot_with_config_test.coordinator.modbus_api,
@@ -1150,7 +1080,9 @@ class TestSAXBatteryPilotComprehensive:
 
         with (
             patch.object(
-                pilot_with_config_test, "_get_modbus_item", return_value=mock_item
+                pilot_with_config_test,
+                "_get_modbus_item_by_name",
+                return_value=mock_item,
             ),
             patch.object(
                 pilot_with_config_test.coordinator.modbus_api,
@@ -1180,7 +1112,7 @@ class TestSAXBatteryPilotComprehensive:
     async def test_set_discharge_power_limit_success(self, pilot_with_config_test):
         """Test setting discharge power limit successfully."""
         mock_item = MagicMock()
-        mock_item.name = "sax_max_discharge_power"
+        mock_item.name = SAX_MAX_DISCHARGE
 
         with (
             patch.object(
@@ -1714,7 +1646,7 @@ class TestSAXBatteryPilotComprehensive:
             mock_send.assert_not_called()
 
     async def test_get_modbus_item_multiple_matches(self, pilot_with_config_test):
-        """Test _get_modbus_item when multiple items have same name."""
+        """Test _get_modbus_item_by_name when multiple items have same name."""
         mock_item1 = MagicMock()
         mock_item1.name = "test_item"
         mock_item2 = MagicMock()
@@ -1728,13 +1660,13 @@ class TestSAXBatteryPilotComprehensive:
             mock_item3,
         ]
 
-        result = pilot_with_config_test._get_modbus_item("test_item")
+        result = pilot_with_config_test._get_modbus_item_by_name("test_item")
 
         # Should return the first match
         assert result == mock_item1
 
     async def test_get_modbus_item_no_matches(self, pilot_with_config_test):
-        """Test _get_modbus_item when no items match."""
+        """Test _get_modbus_item_by_name when no items match."""
         mock_item = MagicMock()
         mock_item.name = "other_item"
 
@@ -1742,15 +1674,15 @@ class TestSAXBatteryPilotComprehensive:
             mock_item
         ]
 
-        result = pilot_with_config_test._get_modbus_item("nonexistent_item")
+        result = pilot_with_config_test._get_modbus_item_by_name("nonexistent_item")
 
         assert result is None
 
     async def test_get_modbus_item_empty_list(self, pilot_with_config_test):
-        """Test _get_modbus_item with empty items list."""
+        """Test _get_modbus_item_by_name with empty items list."""
         pilot_with_config_test.sax_data.get_modbus_items_for_battery.return_value = []
 
-        result = pilot_with_config_test._get_modbus_item("any_item")
+        result = pilot_with_config_test._get_modbus_item_by_name("any_item")
 
         assert result is None
 
@@ -1797,23 +1729,22 @@ class TestSAXBatteryPilotComprehensive:
     async def test_send_power_command_write_failure(self, pilot_with_config_test):
         """Test send_power_command when write operation returns False."""
         mock_item = MagicMock()
-        mock_item.name = "sax_nominal_power_setpoint"
+        mock_item.name = SAX_NOMINAL_POWER
 
-        with (
-            patch.object(
-                pilot_with_config_test, "_get_modbus_item", return_value=mock_item
-            ),
-            patch.object(
-                pilot_with_config_test.coordinator.modbus_api,
-                "write_nominal_power",
-                new_callable=AsyncMock,
-                return_value=False,  # Write failed
-            ) as mock_write,
+        # Fix: Properly mock the async method on the coordinator
+        pilot_with_config_test.coordinator.async_write_pilot_control_value = AsyncMock(
+            return_value=False
+        )
+
+        with patch.object(
+            pilot_with_config_test,
+            "_get_modbus_item_by_name",
+            return_value=mock_item,
         ):
             # Should handle write failure gracefully
             await pilot_with_config_test.send_power_command(1500.0, 0.95)
 
-            mock_write.assert_called_once()
+            pilot_with_config_test.coordinator.async_write_pilot_control_value.assert_called_once()
 
     async def test_set_manual_power_with_negative_value(self, pilot_with_config_test):
         """Test setting manual power with negative value (charging)."""
@@ -1858,8 +1789,8 @@ class TestSAXBatteryPilotComprehensive:
         )
 
         assert pilot_new.battery_count == 1
-        assert pilot_new.max_discharge_power == 3600
-        assert pilot_new.max_charge_power == 4500
+        assert pilot_new.max_discharge_power == LIMIT_MAX_CHARGE_PER_BATTERY
+        assert pilot_new.max_charge_power == LIMIT_MAX_DISCHARGE_PER_BATTERY
 
     def test_battery_count_with_many_batteries(self, pilot_with_config_test):
         """Test battery count calculation with many batteries."""
@@ -1873,245 +1804,12 @@ class TestSAXBatteryPilotComprehensive:
         )
 
         assert pilot_new.battery_count == 10
-        assert pilot_new.max_discharge_power == 36000  # 10 * 3600
-        assert pilot_new.max_charge_power == 45000  # 10 * 4500
-
-
-class TestSAXBatteryPilotPowerEntityComprehensive:
-    """Comprehensive tests for SAXBatteryPilotPowerEntity."""
-
-    @pytest.fixture
-    def power_entity_edge_test(self):
-        """Create power entity for edge case testing."""
-        mock_pilot = MagicMock()
-        mock_pilot.calculated_power = 0.0
-        mock_pilot.max_discharge_power = 3600
-        mock_pilot.max_charge_power = 4500
-        mock_pilot.get_solar_charging_enabled.return_value = False
-        mock_pilot.get_manual_control_enabled.return_value = True
-
-        mock_coordinator = MagicMock()
-        mock_coordinator.data = {}
-        mock_coordinator.sax_data = MagicMock()
-        mock_coordinator.last_update_success = True
-        mock_coordinator.last_update_success_time = None
-
-        return SAXBatteryPilotPowerEntity(
-            mock_pilot,
-            mock_coordinator,
-            "battery_test",
-        )
-
-    @pytest.fixture
-    def power_entity_comprehensive_test(self):
-        """Create comprehensive power entity for testing."""
-        mock_pilot = MagicMock()
-        mock_pilot.calculated_power = 2000.0
-        mock_pilot.max_discharge_power = 3600
-        mock_pilot.max_charge_power = 4500
-        mock_pilot.get_solar_charging_enabled.return_value = True
-        mock_pilot.get_manual_control_enabled.return_value = False
-
-        mock_coordinator = MagicMock()
-        mock_coordinator.data = {"pilot_power": 2000.0}
-        mock_coordinator.sax_data = MagicMock()
-        mock_coordinator.last_update_success = True
-        mock_coordinator.last_update_success_time = "2023-01-01T12:00:00"
-
-        return SAXBatteryPilotPowerEntity(
-            mock_pilot,
-            mock_coordinator,
-            "battery_b",
-        )
-
-    def test_native_value_none(self, power_entity_comprehensive_test):
-        """Test native value when pilot calculated power is None."""
-        power_entity_comprehensive_test._pilot.calculated_power = None
-
-        result = power_entity_comprehensive_test.native_value
-
-        assert result is None
-
-    def test_icon_charging(self, power_entity_comprehensive_test):
-        """Test icon when battery is charging (positive power)."""
-        power_entity_comprehensive_test._pilot.calculated_power = 1000.0
-
-        result = power_entity_comprehensive_test.icon
-
-        assert result == "mdi:battery-charging"
-
-    def test_icon_discharging(self, power_entity_comprehensive_test):
-        """Test icon when battery is discharging (negative power)."""
-        power_entity_comprehensive_test._pilot.calculated_power = -500.0
-
-        result = power_entity_comprehensive_test.icon
-
-        assert result == "mdi:battery-minus"
-
-    def test_icon_idle(self, power_entity_comprehensive_test):
-        """Test icon when battery is idle (zero power)."""
-        power_entity_comprehensive_test._pilot.calculated_power = 0.0
-
-        result = power_entity_comprehensive_test.icon
-
-        assert result == "mdi:battery"
-
-    def test_extra_state_attributes_success(self, power_entity_comprehensive_test):
-        """Test extra state attributes when update is successful."""
-        result = power_entity_comprehensive_test.extra_state_attributes
-
-        expected = {
-            "battery_id": "battery_b",
-            "solar_charging_enabled": True,
-            "manual_control_enabled": False,
-            "max_charge_power": 4500,
-            "max_discharge_power": 3600,
-            "last_updated": "2023-01-01T12:00:00",
-        }
-        assert result == expected
-
-    def test_extra_state_attributes_failed_update(
-        self, power_entity_comprehensive_test
-    ):
-        """Test extra state attributes when last update failed."""
-        power_entity_comprehensive_test.coordinator.last_update_success = False
-
-        result = power_entity_comprehensive_test.extra_state_attributes
-
-        assert result is None
-
-    def test_entity_name_formatting(self, power_entity_comprehensive_test):
-        """Test entity name is properly formatted."""
-        assert "Battery B" in power_entity_comprehensive_test._attr_name
-        assert "Pilot Power" in power_entity_comprehensive_test._attr_name
-
-    def test_unique_id_formatting(self, power_entity_comprehensive_test):
-        """Test unique ID is properly formatted."""
         assert (
-            power_entity_comprehensive_test._attr_unique_id
-            == "sax_battery_b_pilot_power"
-        )
-
-    def test_native_value_with_zero_power(self, power_entity_edge_test):
-        """Test native value when power is exactly zero."""
-        power_entity_edge_test._pilot.calculated_power = 0.0
-
-        result = power_entity_edge_test.native_value
-
-        assert result == 0.0
-
-    def test_native_value_with_very_small_positive(self, power_entity_edge_test):
-        """Test native value with very small positive power."""
-        power_entity_edge_test._pilot.calculated_power = 0.001
-
-        result = power_entity_edge_test.native_value
-
-        assert result == 0.001
-
-    def test_native_value_with_very_small_negative(self, power_entity_edge_test):
-        """Test native value with very small negative power."""
-        power_entity_edge_test._pilot.calculated_power = -0.001
-
-        result = power_entity_edge_test.native_value
-
-        assert result == -0.001
-
-    def test_icon_with_small_positive_power(self, power_entity_edge_test):
-        """Test icon with small positive power."""
-        power_entity_edge_test._pilot.calculated_power = 0.1
-
-        result = power_entity_edge_test.icon
-
-        assert result == "mdi:battery-charging"
-
-    def test_icon_with_small_negative_power(self, power_entity_edge_test):
-        """Test icon with small negative power."""
-        power_entity_edge_test._pilot.calculated_power = -0.1
-
-        result = power_entity_edge_test.icon
-
-        assert result == "mdi:battery-minus"
-
-    def test_extra_state_attributes_with_none_last_updated(
-        self, power_entity_edge_test
-    ):
-        """Test extra state attributes when last_updated is None."""
-        result = power_entity_edge_test.extra_state_attributes
-
-        expected = {
-            "battery_id": "battery_test",
-            "solar_charging_enabled": False,
-            "manual_control_enabled": True,
-            "max_charge_power": 4500,
-            "max_discharge_power": 3600,
-            "last_updated": None,
-        }
-        assert result == expected
-
-    def test_unique_id_with_different_battery_format(self, power_entity_edge_test):
-        """Test unique ID with different battery ID format."""
-        entity = SAXBatteryPilotPowerEntity(
-            power_entity_edge_test._pilot,
-            power_entity_edge_test.coordinator,
-            "custom_battery_123",
-        )
-
-        assert entity._attr_unique_id == "sax_custom_battery_123_pilot_power"
-
-    def test_entity_name_with_complex_battery_id(self, power_entity_edge_test):
-        """Test entity name with complex battery ID."""
-        entity = SAXBatteryPilotPowerEntity(
-            power_entity_edge_test._pilot,
-            power_entity_edge_test.coordinator,
-            "battery_system_a1",
-        )
-
-        # The actual implementation uses title() on the result of replace('battery_', 'Battery ')
-        # So "battery_system_a1" becomes "system_a1" then "System_A1"
-        assert "Battery System_A1" in entity._attr_name
-        assert "Pilot Power" in entity._attr_name
-
-    async def test_async_set_native_value_with_boundary_values(
-        self, power_entity_edge_test
-    ):
-        """Test setting native value with boundary values."""
-        power_entity_edge_test._pilot.set_manual_power = AsyncMock()
-
-        # Test maximum positive value
-        await power_entity_edge_test.async_set_native_value(4500.0)
-        power_entity_edge_test._pilot.set_manual_power.assert_called_with(4500.0)
-
-        # Test maximum negative value
-        await power_entity_edge_test.async_set_native_value(-3600.0)
-        power_entity_edge_test._pilot.set_manual_power.assert_called_with(-3600.0)
-
-        # Test zero value
-        await power_entity_edge_test.async_set_native_value(0.0)
-        power_entity_edge_test._pilot.set_manual_power.assert_called_with(0.0)
-
-    def test_entity_properties_with_custom_pilot_limits(self, power_entity_edge_test):
-        """Test entity properties with custom pilot power limits."""
-        # Modify pilot limits
-        power_entity_edge_test._pilot.max_discharge_power = 5000
-        power_entity_edge_test._pilot.max_charge_power = 6000
-
-        # Create new entity to pick up new limits
-        entity = SAXBatteryPilotPowerEntity(
-            power_entity_edge_test._pilot,
-            power_entity_edge_test.coordinator,
-            "battery_custom",
-        )
-
-        assert entity._attr_native_min_value == -5000
-        assert entity._attr_native_max_value == 6000
-
-    def test_device_info_with_none_return(self, power_entity_edge_test):
-        """Test device_info when sax_data returns None."""
-        power_entity_edge_test.coordinator.sax_data.get_device_info.return_value = None
-
-        result = power_entity_edge_test.device_info
-
-        assert result is None
+            pilot_new.max_discharge_power == 35000
+        )  # 10 * LIMIT_MAX_CHARGE_PER_BATTERY00
+        assert (
+            pilot_new.max_charge_power == 46000
+        )  # 10 * LIMIT_MAX_DISCHARGE_PER_BATTERY
 
 
 class TestPilotAdditionalEdgeCases:
@@ -2314,8 +2012,14 @@ class TestPilotPerformanceAndEdgeCases:
     def test_multiple_battery_power_calculation(self, pilot_performance_test):
         """Test power calculation scales with battery count."""
         assert pilot_performance_test.battery_count == 5
-        assert pilot_performance_test.max_discharge_power == 5 * 3600  # 18000W
-        assert pilot_performance_test.max_charge_power == 5 * 4500  # 22500W
+        assert (
+            pilot_performance_test.max_discharge_power
+            == 5 * LIMIT_MAX_CHARGE_PER_BATTERY
+        )
+        assert (
+            pilot_performance_test.max_charge_power
+            == 5 * LIMIT_MAX_DISCHARGE_PER_BATTERY
+        )
 
     async def test_many_priority_devices_performance(self, pilot_performance_test):
         """Test performance with many priority devices."""

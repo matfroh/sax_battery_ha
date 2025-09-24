@@ -601,20 +601,21 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         power_item: ModbusItem,
         power_factor_item: ModbusItem,
         power: float,
-        power_factor: float,
+        power_factor: int,
     ) -> bool:
-        """Write pilot control values with transactional coordination.
+        """Write pilot control values with atomic Modbus operation.
 
         Args:
-            power_item: Power register ModbusItem
-            power_factor_item: Power factor register ModbusItem
+            power_item: Power register ModbusItem (for reference only)
+            power_factor_item: Power factor register ModbusItem (for reference only)
             power: Power value to write
             power_factor: Power factor value to write
 
         Returns:
-            bool: True if both writes successful
+            bool: True if atomic write successful
 
         Security: Input validation and atomic write operations
+        Performance: Single Modbus write for both registers
         """
         try:
             # Security: Input validation
@@ -630,39 +631,27 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.error("Expected numeric values for pilot control")  # type: ignore[unreachable]
                 return False
 
-            # Ensure API references are set
-            for item in [power_item, power_factor_item]:
-                if item.modbus_api is None:
-                    item.modbus_api = self.modbus_api
-
-            # Performance: Execute writes concurrently for better coordination
-            write_tasks = [
-                power_item.async_write_value(float(power)),
-                power_factor_item.async_write_value(float(power_factor)),
-            ]
-
-            results = await asyncio.gather(*write_tasks, return_exceptions=True)
-
-            # Check if both writes succeeded
-            success = all(
-                result is True
-                for result in results
-                if not isinstance(result, Exception)
+            # Performance: Use atomic write_nominal_power for both registers
+            success = await self.modbus_api.write_nominal_power(
+                value=power, power_factor=int(power_factor), modbus_item=power_item
             )
 
             if success:
                 _LOGGER.debug(
-                    "Successfully wrote pilot control values: power=%s, factor=%s",
+                    "Successfully wrote pilot control values atomically: power=%s, factor=%s",
                     power,
                     power_factor,
                 )
             else:
-                _LOGGER.error("Failed to write pilot control values")
+                _LOGGER.error("Failed to write pilot control values atomically")
 
             return success  # noqa: TRY300
 
+        except (ModbusException, OSError, TimeoutError) as err:
+            _LOGGER.error("Modbus error in pilot control write operation: %s", err)
+            return False
         except Exception as err:  # noqa: BLE001
-            _LOGGER.error("Error in pilot control write operation: %s", err)
+            _LOGGER.error("Unexpected error in pilot control write operation: %s", err)
             return False
 
     async def _update_battery_data(self, data: dict[str, Any]) -> None:

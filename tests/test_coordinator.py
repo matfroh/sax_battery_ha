@@ -1421,15 +1421,18 @@ class TestSAXBatteryCoordinator:
         power_factor_item.modbus_api = mock_modbus_api_coord_unique
         power_factor_item.async_write_value = AsyncMock(return_value=True)
 
-        # Test pilot control write
+        # Mock the write_nominal_power method on the modbus API
+        mock_modbus_api_coord_unique.write_nominal_power = AsyncMock(return_value=True)
+
+        # Test pilot control write - fix: use the correct method name
         result = await sax_battery_coordinator_instance.async_write_pilot_control_value(
-            power_item, power_factor_item, 1500.0, 8500.0
+            power_item, power_factor_item, 1500.0, 8500
         )
 
-        # Verify both writes were called and succeeded
         assert result is True
-        power_item.async_write_value.assert_called_once_with(1500.0)
-        power_factor_item.async_write_value.assert_called_once_with(8500.0)
+        mock_modbus_api_coord_unique.write_nominal_power.assert_called_once_with(
+            value=1500.0, power_factor=8500, modbus_item=power_item
+        )
 
     async def test_async_write_pilot_control_value_invalid_items(
         self,
@@ -1500,7 +1503,6 @@ class TestSAXBatteryCoordinator:
             factor=1.0,
         )
         power_item.modbus_api = None
-        power_item.async_write_value = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
         power_factor_item = ModbusItem(
             name="power_factor_item",
@@ -1511,17 +1513,20 @@ class TestSAXBatteryCoordinator:
             factor=1.0,
         )
         power_factor_item.modbus_api = None
-        power_factor_item.async_write_value = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+        # Mock the write_nominal_power method on the modbus API - fix: ensure it's async
+        mock_modbus_api_coord_unique.write_nominal_power = AsyncMock(return_value=True)
 
         # Test write
         result = await sax_battery_coordinator_instance.async_write_pilot_control_value(
-            power_item, power_factor_item, 1500.0, 8500.0
+            power_item, power_factor_item, 1500.0, 8500
         )
 
-        # Should set API references and succeed
-        assert power_item.modbus_api == mock_modbus_api_coord_unique
-        assert power_factor_item.modbus_api == mock_modbus_api_coord_unique
+        # Should succeed (API references are not set by this method in the actual implementation)
         assert result is True
+        mock_modbus_api_coord_unique.write_nominal_power.assert_called_once_with(
+            value=1500.0, power_factor=8500, modbus_item=power_item
+        )
 
     async def test_async_write_pilot_control_value_exception_handling(
         self,
