@@ -102,7 +102,7 @@ jobs:
           python-version: ${{ env.DEFAULT_PYTHON }}
 
       - name: Restore Python cache
-        uses: actions/cache@v4.2.4
+        uses: actions/cache@v4.3.0
         with:
           path: ${{ env.UV_CACHE_DIR }}
           key: ${{ needs.info.outputs.python_cache_key }}
@@ -115,7 +115,7 @@ jobs:
           uv pip install --system -r requirements_dev.txt
 
       # - name: Cache pre-commit environment
-      #   uses: actions/cache@v4.2.4
+      #   uses: actions/cache@v4.3.0
       #   with:
       #     path: ${{ env.PRE_COMMIT_CACHE }}
       #     key: ${{ needs.info.outputs.pre-commit_cache_key }}
@@ -147,7 +147,7 @@ jobs:
           python-version: ${{ env.DEFAULT_PYTHON }}
 
       - name: Restore Python cache
-        uses: actions/cache@v4.2.4
+        uses: actions/cache@v4.3.0
         with:
           path: ${{ env.UV_CACHE_DIR }}
           key: ${{ needs.info.outputs.python_cache_key }}
@@ -160,7 +160,7 @@ jobs:
           uv pip install --system -r requirements_dev.txt
 
       - name: Cache mypy
-        uses: actions/cache@v4.2.4
+        uses: actions/cache@v4.3.0
         with:
           path: .mypy_cache
           key: mypy-${{ env.MYPY_CACHE_VERSION }}-${{ env.DEFAULT_PYTHON }}-${{ hashFiles('pyproject.toml') }}
@@ -187,7 +187,7 @@ jobs:
   #         python-version: ${{ matrix.python-version }}
 
   #     - name: Restore Python cache
-  #       uses: actions/cache@v4.2.4
+  #       uses: actions/cache@v4.3.0
   #       with:
   #         path: ${{ env.UV_CACHE_DIR }}
   #         key: ${{ needs.info.outputs.python_cache_key }}
