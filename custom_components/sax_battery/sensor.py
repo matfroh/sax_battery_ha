@@ -122,8 +122,11 @@ class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEnt
         self._battery_id = battery_id
 
         # Generate unique ID using class name pattern
-        item_name = self._modbus_item.name.removeprefix("sax_")
-        self._attr_unique_id = f"sax_{self._battery_id}_{item_name}"
+        item_name: str = self._modbus_item.name.removeprefix("sax_")
+        if "smartmeter" in item_name:
+            self._attr_unique_id = f"sax_{item_name}"
+        else:
+            self._attr_unique_id = f"sax_{self._battery_id}_{item_name}"
 
         # Set entity description from modbus item if available
         if self._modbus_item.entitydescription is not None:
@@ -196,8 +199,7 @@ class SAXBatteryCalculatedSensor(
         self._sax_item.set_coordinators(coordinators)
 
         # Generate unique ID using class name pattern (without "(Calculated)" suffix)
-        item_name = self._sax_item.name.removeprefix("sax_")
-        self._attr_unique_id = f"sax_{item_name}"
+        self._attr_unique_id = self._sax_item.name
 
         # Set entity description from sax item if available
         if self._sax_item.entitydescription is not None:
@@ -209,9 +211,7 @@ class SAXBatteryCalculatedSensor(
             and hasattr(self.entity_description, "name")
             and isinstance(self.entity_description.name, str)
         ):
-            item_name = self.entity_description.name[4:]  # eliminate 'Sax '
-
-        self._attr_name = f"Sax {item_name}"  # pyright: ignore[reportPossiblyUnboundVariable]
+            self._attr_name = self.entity_description.name.removeprefix("Sax ")
 
         # Set system device info
         self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(

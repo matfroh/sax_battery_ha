@@ -19,10 +19,10 @@ from .entity_keys import (
     SAX_COMBINED_SOC,
     SAX_CUMULATIVE_ENERGY_CONSUMED,
     SAX_CUMULATIVE_ENERGY_PRODUCED,
-    SAX_ENERGY_CONSUMED,
-    SAX_ENERGY_PRODUCED,
     SAX_MIN_SOC,
     SAX_PILOT_POWER,
+    SAX_SMARTMETER_ENERGY_CONSUMED,
+    SAX_SMARTMETER_ENERGY_PRODUCED,
     SAX_SOC,
 )
 from .enums import DeviceConstants, TypeConstants
@@ -434,8 +434,8 @@ class SAXItem(BaseItem):
         count = 0
 
         for coordinator in coordinators.values():
-            if coordinator.data and SAX_ENERGY_PRODUCED in coordinator.data:
-                energy_value = coordinator.data[SAX_ENERGY_PRODUCED]
+            if coordinator.data and SAX_SMARTMETER_ENERGY_PRODUCED in coordinator.data:
+                energy_value = coordinator.data[SAX_SMARTMETER_ENERGY_PRODUCED]
                 if energy_value is not None:
                     total_energy += float(energy_value)
                     count += 1
@@ -451,8 +451,8 @@ class SAXItem(BaseItem):
         count = 0
 
         for coordinator in coordinators.values():
-            if coordinator.data and SAX_ENERGY_CONSUMED in coordinator.data:
-                energy_value = coordinator.data[SAX_ENERGY_CONSUMED]
+            if coordinator.data and SAX_SMARTMETER_ENERGY_CONSUMED in coordinator.data:
+                energy_value = coordinator.data[SAX_SMARTMETER_ENERGY_CONSUMED]
                 if energy_value is not None:
                     total_energy += float(energy_value)
                     count += 1

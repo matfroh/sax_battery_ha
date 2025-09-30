@@ -14,7 +14,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import CONF_BATTERY_IS_MASTER, DOMAIN
+from .const import (
+    BATTERY_POLL_INTERVAL,
+    BATTERY_POLL_SLAVE_INTERVAL,
+    CONF_BATTERY_IS_MASTER,
+    DOMAIN,
+)
 from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
@@ -57,6 +62,11 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for item in self.sax_data.get_modbus_items_for_battery(battery_id):
             if hasattr(item, "modbus_api"):
                 item.modbus_api = self.modbus_api
+
+        if self.sax_data.batteries[self.battery_id].is_master:
+            self.update_interval = timedelta(seconds=BATTERY_POLL_INTERVAL)
+        else:
+            self.update_interval = timedelta(seconds=BATTERY_POLL_SLAVE_INTERVAL)
 
     @property
     def is_master(self) -> bool:
@@ -386,7 +396,10 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 # Generate the unique_id that would be used for this item
                 item_name = item.name.removeprefix("sax_")
-                unique_id = f"sax_{self.battery_id}_{item_name}"
+                if "smartmeter" in item_name.lower():
+                    unique_id = f"sax_{item_name}"
+                else:
+                    unique_id = f"sax_{self.battery_id}_{item_name}"
 
                 # Check if entity exists in registry
                 entity_id = (

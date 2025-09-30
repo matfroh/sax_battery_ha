@@ -102,7 +102,7 @@ class TestSAXBatterySwitch:
         self, mock_coordinator_switch, modbus_item_switch
     ) -> None:
         """Test switch entity initialization with sax_ prefix in name."""
-        modbus_item_switch.name = "sax_battery_switch"
+        modbus_item_switch.name = "sax_power_switch"
 
         switch = SAXBatterySwitch(
             coordinator=mock_coordinator_switch,
@@ -111,7 +111,7 @@ class TestSAXBatterySwitch:
         )
 
         # Should remove sax_ prefix
-        assert switch.unique_id == "sax_battery_1_battery_switch"
+        assert switch.unique_id == "sax_power_switch"
 
     def test_switch_initialization_without_entity_description(
         self, mock_coordinator_switch
@@ -133,7 +133,7 @@ class TestSAXBatterySwitch:
             modbus_item=modbus_item,
         )
 
-        assert switch.unique_id == "sax_battery_2_custom_switch"
+        assert switch.unique_id == "custom_switch"
         assert switch.name == "Custom Switch"  # Should use clean item name
 
     def test_switch_initialization_with_disabled_by_default(
@@ -405,7 +405,7 @@ class TestSAXBatterySwitch:
             modbus_item=modbus_item_switch,
         )
 
-        assert switch.unique_id == "sax_battery_1_test_switch"
+        assert switch.unique_id == "test_switch"
         assert switch.name == "On/Off"
 
         assert switch._battery_id == "battery_1"

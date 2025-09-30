@@ -23,6 +23,11 @@ from .items import ModbusItem, SAXItem
 _LOGGER = logging.getLogger(__name__)
 
 
+def get_battery_count(config_entry: ConfigEntry) -> int:
+    """Get the number of batteries from configuration entry."""
+    return int(config_entry.data.get(CONF_BATTERY_COUNT, 1))
+
+
 def should_include_entity(
     item: ModbusItem | SAXItem,
     config_entry: ConfigEntry,

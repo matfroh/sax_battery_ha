@@ -37,7 +37,7 @@ class TestSAXBatteryModbusNumber:
             modbus_item=modbus_item_power_base,
         )
 
-        assert number.unique_id == "sax_battery_a_max_charge"
+        assert number.unique_id == "sax_max_charge"
         assert number.name == "Max Charge"
         assert number._battery_id == "battery_a"
         assert number._modbus_item == modbus_item_power_base
@@ -638,7 +638,7 @@ class TestSAXBatteryModbusNumberAdvanced:
             modbus_item=item_with_prefix,
         )
 
-        assert number.unique_id == "sax_battery_b_test_setting"
+        assert number.unique_id == "sax_test_setting"
 
         # Test without "sax_" prefix in name
         item_without_prefix = ModbusItem(
@@ -654,7 +654,7 @@ class TestSAXBatteryModbusNumberAdvanced:
             modbus_item=item_without_prefix,
         )
 
-        assert number2.unique_id == "sax_battery_c_another_setting"
+        assert number2.unique_id == "sax_another_setting"
 
     def test_device_info_assignment(self, mock_coordinator_modbus_base) -> None:
         """Test device info assignment during initialization."""

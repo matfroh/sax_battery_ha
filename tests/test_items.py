@@ -10,8 +10,8 @@ from custom_components.sax_battery.entity_keys import (
     SAX_COMBINED_SOC,
     SAX_CUMULATIVE_ENERGY_CONSUMED,
     SAX_CUMULATIVE_ENERGY_PRODUCED,
-    SAX_ENERGY_CONSUMED,
-    SAX_ENERGY_PRODUCED,
+    SAX_SMARTMETER_ENERGY_CONSUMED,
+    SAX_SMARTMETER_ENERGY_PRODUCED,
     SAX_SOC,
 )
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
@@ -125,15 +125,15 @@ class TestSAXItem:
         coordinator1 = MagicMock()
         coordinator1.data = {
             SAX_SOC: 80.0,
-            SAX_ENERGY_PRODUCED: 10000.0,
-            SAX_ENERGY_CONSUMED: 7000.0,
+            SAX_SMARTMETER_ENERGY_PRODUCED: 10000.0,
+            SAX_SMARTMETER_ENERGY_CONSUMED: 7000.0,
         }
 
         coordinator2 = MagicMock()
         coordinator2.data = {
             SAX_SOC: 75.0,
-            SAX_ENERGY_PRODUCED: 15000.0,
-            SAX_ENERGY_CONSUMED: 9000.0,
+            SAX_SMARTMETER_ENERGY_PRODUCED: 15000.0,
+            SAX_SMARTMETER_ENERGY_CONSUMED: 9000.0,
         }
 
         return {"battery_1": coordinator1, "battery_2": coordinator2}
@@ -284,7 +284,9 @@ class TestSAXItemCalculationFunctions:
             device=DeviceConstants.BESS,
         )
 
-        mock_coordinator = mock_coordinators_calc({SAX_ENERGY_PRODUCED: 12500.0})
+        mock_coordinator = mock_coordinators_calc(
+            {SAX_SMARTMETER_ENERGY_PRODUCED: 12500.0}
+        )
         coordinators = {"battery_a": mock_coordinator}
         result = sax_item.calculate_value(coordinators)
 
@@ -300,8 +302,8 @@ class TestSAXItemCalculationFunctions:
             device=DeviceConstants.BESS,
         )
 
-        mock_coord_a = mock_coordinators_calc({SAX_ENERGY_PRODUCED: 10000.0})
-        mock_coord_b = mock_coordinators_calc({SAX_ENERGY_PRODUCED: 15000.0})
+        mock_coord_a = mock_coordinators_calc({SAX_SMARTMETER_ENERGY_PRODUCED: 10000.0})
+        mock_coord_b = mock_coordinators_calc({SAX_SMARTMETER_ENERGY_PRODUCED: 15000.0})
 
         coordinators = {
             "battery_a": mock_coord_a,
@@ -321,7 +323,9 @@ class TestSAXItemCalculationFunctions:
             device=DeviceConstants.BESS,
         )
 
-        mock_coordinator = mock_coordinators_calc({SAX_ENERGY_CONSUMED: 8500.0})
+        mock_coordinator = mock_coordinators_calc(
+            {SAX_SMARTMETER_ENERGY_CONSUMED: 8500.0}
+        )
         coordinators = {"battery_a": mock_coordinator}
         result = sax_item.calculate_value(coordinators)
 
@@ -337,8 +341,8 @@ class TestSAXItemCalculationFunctions:
             device=DeviceConstants.BESS,
         )
 
-        mock_coord_a = mock_coordinators_calc({SAX_ENERGY_CONSUMED: 7000.0})
-        mock_coord_b = mock_coordinators_calc({SAX_ENERGY_CONSUMED: 9000.0})
+        mock_coord_a = mock_coordinators_calc({SAX_SMARTMETER_ENERGY_CONSUMED: 7000.0})
+        mock_coord_b = mock_coordinators_calc({SAX_SMARTMETER_ENERGY_CONSUMED: 9000.0})
 
         coordinators = {
             "battery_a": mock_coord_a,

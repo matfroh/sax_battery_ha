@@ -33,6 +33,7 @@ from .coordinator import SAXBatteryCoordinator
 from .entity_utils import filter_items_by_type, filter_sax_items_by_type
 from .enums import TypeConstants
 from .items import ModbusItem, SAXItem
+from .utils import get_battery_count
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ async def async_setup_entry(
     if master_coordinators:
         master_coordinator = next(iter(master_coordinators.values()))
 
+        # number entity for cluster is only created for master battery
         system_number_items = filter_sax_items_by_type(
             sax_data.get_sax_items_for_battery("battery_a"),
             TypeConstants.NUMBER,
@@ -113,7 +115,6 @@ async def async_setup_entry(
                         sax_item=sax_item,
                     )
                 )
-
         _LOGGER.info("Added %d config number entities", len(system_number_items))
 
     if entities:
@@ -165,8 +166,10 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         self._transaction_key = f"{battery_id}_pilot_control"
 
         # Generate unique ID using simple pattern (unchanged)
-        item_name = self._modbus_item.name.removeprefix("sax_")
-        self._attr_unique_id = f"sax_{battery_id}_{item_name}"
+        if "sax_" in self._modbus_item.name:
+            self._attr_unique_id = self._modbus_item.name
+        else:
+            self._attr_unique_id = f"sax_{self._modbus_item.name}"
 
         # Set entity description from modbus item if available (unchanged)
         if self._modbus_item.entitydescription is not None:
@@ -183,7 +186,9 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             entity_name = entity_name.removeprefix("Sax ")
             self._attr_name = entity_name
         else:
-            clean_name = item_name.replace("_", " ").title()
+            clean_name = (
+                self._attr_unique_id.removeprefix("sax_").replace("_", " ").title()
+            )
             self._attr_name = clean_name
 
         # Set device info for the specific battery (unchanged)
@@ -232,17 +237,24 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         if not self.coordinator.config_entry:
             return
 
+        if not self.coordinator.is_master:
+            return
+
         config_data = self.coordinator.config_entry.data
+
+        battery_count = get_battery_count(self.coordinator.config_entry)
 
         # Set default values based on register type
         if self._modbus_item.name == SAX_MAX_CHARGE:
             # Get from config or use entity description default
-            default_value = LIMIT_MAX_CHARGE_PER_BATTERY  # Default per battery
+            default_value = LIMIT_MAX_CHARGE_PER_BATTERY * battery_count
+            self._attr_native_max_value = float(default_value)
             self._local_value = float(config_data.get("max_charge", default_value))
 
         elif self._modbus_item.name == SAX_MAX_DISCHARGE:
             # Get from config or use entity description default
-            default_value = LIMIT_MAX_DISCHARGE_PER_BATTERY  # Default per battery
+            default_value = LIMIT_MAX_DISCHARGE_PER_BATTERY * battery_count
+            self._attr_native_max_value = float(default_value)
             self._local_value = float(config_data.get("max_discharge", default_value))
 
         # Initialize pilot control items ONLY from config - no dangerous defaults
@@ -302,17 +314,28 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
                 "Setting native value for %s to %s", self._modbus_item.name, value
             )
 
+            if not self.coordinator.config_entry:
+                return
+
+            if not self.coordinator.is_master:
+                return
+
+            value_per_battery: float = value / float(
+                get_battery_count(self.coordinator.config_entry)
+            )
             # Check if this is a pilot control item requiring special handling
             if self._is_pilot_control_item:
-                success = await self._write_pilot_control_value_transactional(value)
+                success = await self._write_pilot_control_value_transactional(
+                    value_per_battery
+                )
             else:
                 # Standard number entity write using coordinator
                 success = await self.coordinator.async_write_number_value(
-                    self._modbus_item, value
+                    self._modbus_item, value_per_battery
                 )
 
             if not success:
-                msg = f"Failed to write value {value} to {self._modbus_item.name}"
+                msg = f"Failed to write value {value_per_battery} to {self._modbus_item.name}"
                 raise HomeAssistantError(msg)  # noqa: TRY301
 
             # Update local value for write-only registers (immediate UI feedback)

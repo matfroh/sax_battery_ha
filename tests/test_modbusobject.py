@@ -136,7 +136,7 @@ class TestSAXBatteryNumber:
             modbus_item=power_number_item_unique,
         )
 
-        assert number.unique_id == "sax_battery_a_max_charge"
+        assert number.unique_id == "sax_max_charge"
         assert number.name == "Max Charge"
         assert number._battery_id == "battery_a"
         assert number._modbus_item == power_number_item_unique
@@ -347,7 +347,7 @@ class TestNumberEntityConfiguration:
         )
 
         # Name comes from entity description
-        assert number._attr_unique_id == "sax_battery_b_max_charge"
+        assert number._attr_unique_id == "sax_max_charge"
         assert number.name == "Max Charge"
         assert number.entity_description.native_unit_of_measurement == UnitOfPower.WATT
 
@@ -527,7 +527,7 @@ class TestSAXBatteryNumberDynamicLimits:
                 assert number_entity._attr_native_max_value == 4500.0
             else:
                 # Just verify entity creation works
-                assert number_entity.unique_id == "sax_battery_a_max_charge"
+                assert number_entity.unique_id == "sax_max_charge"
 
     def test_apply_dynamic_limits_regular_item_unchanged(
         self, mock_coordinator_number_temperature_unique, regular_modbus_item_unique
@@ -1058,8 +1058,9 @@ class TestSAXBatteryNumberUniqueIdAndName:
         )
 
         # Should strip 'sax_' prefix and add battery_id
-        assert number.unique_id == "sax_battery_a_max_charge"
-        assert number._attr_unique_id == "sax_battery_a_max_charge"
+        assert number.unique_id == "sax_max_charge"
+        assert number._attr_unique_id == "sax_max_charge"
+        assert number._attr_name == "Max Charge"
 
     def test_modbus_number_unique_id_without_sax_prefix(
         self, mock_coordinator_unique_id_test
@@ -1083,7 +1084,7 @@ class TestSAXBatteryNumberUniqueIdAndName:
             modbus_item=item_without_prefix,
         )
 
-        assert number.unique_id == "sax_battery_b_temperature_sensor"
+        assert number.unique_id == "sax_temperature_sensor"
 
     def test_modbus_number_name_from_entity_description(
         self, mock_coordinator_unique_id_test, power_number_item_for_unique_id
@@ -1141,44 +1142,6 @@ class TestSAXBatteryNumberUniqueIdAndName:
         )
 
         assert number.name == "Custom Control"
-
-    def test_different_battery_ids_generate_unique_ids(self, mock_hass_unique_id_test):
-        """Test that different battery IDs generate unique entity IDs."""
-        coordinator_a = MagicMock(spec=SAXBatteryCoordinator)
-        coordinator_a.hass = mock_hass_unique_id_test
-        coordinator_a.sax_data = MagicMock()
-        coordinator_a.sax_data.get_device_info.return_value = {"name": "Battery A"}
-        coordinator_a.last_update_success_time = MagicMock()
-
-        coordinator_b = MagicMock(spec=SAXBatteryCoordinator)
-        coordinator_b.hass = mock_hass_unique_id_test
-        coordinator_b.sax_data = MagicMock()
-        coordinator_b.sax_data.get_device_info.return_value = {"name": "Battery B"}
-        coordinator_b.last_update_success_time = MagicMock()
-
-        same_item = ModbusItem(
-            address=100,
-            name=SAX_MAX_CHARGE,
-            mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.BESS,
-            entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
-        )
-
-        number_a = SAXBatteryModbusNumber(
-            coordinator=coordinator_a,
-            battery_id="battery_a",
-            modbus_item=same_item,
-        )
-
-        number_b = SAXBatteryModbusNumber(
-            coordinator=coordinator_b,
-            battery_id="battery_b",
-            modbus_item=same_item,
-        )
-
-        assert number_a.unique_id == "sax_battery_a_max_charge"
-        assert number_b.unique_id == "sax_battery_b_max_charge"
-        assert number_a.unique_id != number_b.unique_id
 
 
 class TestModbusAPI:

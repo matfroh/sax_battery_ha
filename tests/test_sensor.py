@@ -20,6 +20,7 @@ from custom_components.sax_battery.const import (
     DESCRIPTION_SAX_TEMPERATURE,
     DOMAIN,
     SAX_COMBINED_SOC,
+    SAX_TEMPERATURE,
 )
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.entity_keys import SAX_POWER, SAX_SOC
@@ -65,7 +66,7 @@ def mock_coordinator_sensor():
 def temperature_modbus_item_sensor():
     """Create temperature modbus item for testing."""
     return ModbusItem(
-        name="sax_temperature",
+        name=SAX_TEMPERATURE,
         device=DeviceConstants.BESS,
         mtype=TypeConstants.SENSOR,
         address=40117,
@@ -350,7 +351,7 @@ class TestSAXBatteryCalculatedSensor:
         # Unique ID should match the actual implementation
         assert sensor.unique_id == SAX_COMBINED_SOC
         # Name format: Sax Combined SOC (without battery prefix for system items)
-        assert sensor.name == "Sax Combined SOC"
+        assert sensor.name == "Combined SOC"
 
     def test_calc_sensor_uses_sax_item_calculate_value(self) -> None:
         """Test calculated sensor uses SAXItem calculate_value method."""

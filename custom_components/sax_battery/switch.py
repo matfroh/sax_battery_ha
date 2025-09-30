@@ -128,13 +128,8 @@ class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):
         self._battery_id = battery_id
         self._modbus_item = modbus_item
 
-        # Generate unique ID using simple pattern - no battery prefix needed
-        if self._modbus_item.name.startswith("sax_"):
-            item_name = self._modbus_item.name[4:]  # Remove "sax_" prefix
-        else:
-            item_name = self._modbus_item.name
-
-        self._attr_unique_id = f"sax_{battery_id}_{item_name}"
+        # Generate unique ID  - no battery prefix needed
+        self._attr_unique_id = self._modbus_item.name
 
         # Set entity registry enabled state
         self._attr_entity_registry_enabled_default = getattr(
@@ -154,12 +149,13 @@ class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):
             and isinstance(self.entity_description.name, str)
         ):
             # Remove "Sax " prefix from entity description name
-            entity_name = str(self.entity_description.name)
-            entity_name = entity_name.removeprefix("Sax ")  # Remove "Sax " prefix
+            entity_name = self.entity_description.name.removeprefix("Sax ")
             self._attr_name = entity_name
         else:
             # Fallback: use clean item name without prefixes
-            clean_name = item_name.replace("_", " ").title()
+            clean_name = (
+                self._attr_unique_id.replace("_", " ").title().removeprefix("Sax ")
+            )
             self._attr_name = clean_name
 
         # Set device info for the specific battery
