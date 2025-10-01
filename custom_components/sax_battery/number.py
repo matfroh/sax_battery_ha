@@ -699,6 +699,22 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         if self._sax_item.entitydescription is not None:
             self.entity_description = self._sax_item.entitydescription  # type: ignore[assignment]
 
+        # Set entity name
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "name")
+            and isinstance(self.entity_description.name, str)
+        ):
+            entity_name = str(self.entity_description.name)
+            entity_name = entity_name.removeprefix("Sax ")
+            self._attr_name = entity_name
+        else:
+            clean_name = (
+                self._attr_unique_id.removeprefix("sax_").replace("_", " ").title()
+            )
+            self._attr_name = clean_name
+
         # Set cluster device info - this creates the "SAX Battery Cluster" device
         self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
             "cluster", self._sax_item.device
