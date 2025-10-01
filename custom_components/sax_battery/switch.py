@@ -34,6 +34,7 @@ async def async_setup_entry(
     sax_data = integration_data["sax_data"]
 
     entities: list[SwitchEntity] = []
+    entity_details: list[dict[str, Any]] = []  # For logging
 
     # Create switches for each battery using new constants
     for battery_id, coordinator in coordinators.items():
@@ -62,17 +63,31 @@ async def async_setup_entry(
             battery_id,
         )
 
-        entities.extend(
-            [
-                SAXBatterySwitch(
+        for modbus_item in switch_items:
+            if isinstance(modbus_item, ModbusItem):
+                entity: SAXBatteryControlSwitch | SAXBatterySwitch = SAXBatterySwitch(
                     coordinator=coordinator,
                     battery_id=battery_id,
                     modbus_item=modbus_item,
                 )
-                for modbus_item in switch_items
-                if isinstance(modbus_item, ModbusItem)
-            ]
-        )
+                entities.append(entity)
+
+                # Collect entity details for logging
+                entity_details.append(
+                    {
+                        "type": "modbus",
+                        "battery_id": battery_id,
+                        "unique_id": entity.unique_id,
+                        "name": entity.name,
+                        "enabled_by_default": getattr(
+                            modbus_item, "enabled_by_default", True
+                        ),
+                        "address": getattr(modbus_item, "address", None),
+                        "tri_state": getattr(
+                            modbus_item, "is_tri_state_switch", lambda: True
+                        )(),
+                    }
+                )
 
         _LOGGER.info(
             "Added %d modbus switch entities for %s", len(switch_items), battery_id
@@ -93,22 +108,51 @@ async def async_setup_entry(
             TypeConstants.SWITCH,
         )
 
-        entities.extend(
-            [
-                SAXBatteryControlSwitch(
+        for sax_item in system_switch_items:
+            if isinstance(sax_item, SAXItem):
+                entity = SAXBatteryControlSwitch(
                     coordinator=master_coordinator,
                     sax_item=sax_item,
                     coordinators=coordinators,
                 )
-                for sax_item in system_switch_items
-                if isinstance(sax_item, SAXItem)
-            ]
-        )
+                entities.append(entity)
+
+                # Collect entity details for logging
+                entity_details.append(
+                    {
+                        "type": "control",
+                        "battery_id": "cluster",
+                        "unique_id": entity.unique_id,
+                        "name": entity.name,
+                        "enabled_by_default": True,
+                        "sax_item_name": sax_item.name,
+                    }
+                )
 
         _LOGGER.info("Added %d control switch entities", len(system_switch_items))
 
     if entities:
         async_add_entities(entities)
+
+        # Log detailed entity information
+        _LOGGER.debug("SAX Battery switch entities created:")
+        for detail in entity_details:
+            if detail["type"] == "modbus":
+                _LOGGER.debug(
+                    "  Switch: %s (battery=%s, addr=%s, enabled=%s, tri_state=%s)",
+                    detail["unique_id"],
+                    detail["battery_id"],
+                    detail["address"],
+                    detail["enabled_by_default"],
+                    detail["tri_state"],
+                )
+            else:  # control
+                _LOGGER.debug(
+                    "  Control Switch: %s (type=%s, sax_item=%s)",
+                    detail["unique_id"],
+                    detail["type"],
+                    detail["sax_item_name"],
+                )
 
 
 class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):

@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import (
     BATTERY_IDS,
@@ -45,6 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
     try:
         # Initialize SAX Battery Data
         sax_data = SAXBatteryData(hass, entry)
+
         # Get battery configurations using new constants
         batteries_config = await _get_battery_configurations(entry)
         if not batteries_config:
@@ -70,14 +72,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
             "sax_data": sax_data,
             "config": entry.data,
         }
-        # Update sax_data with coordinators for cross-battery calculations
 
+        # Update sax_data with coordinators for cross-battery calculations
         sax_data.coordinators = coordinators
+
+        # Log device and entity registry state before platform setup
+        await _log_registry_state_before_setup(hass, entry, coordinators, sax_data)
 
         # Set up platforms
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-        # Log successful setup
-        _log_setup_summary(coordinators, dict(entry.data))
+
+        # Log comprehensive setup summary with registry information
+        await _log_comprehensive_setup_summary(
+            hass, entry, coordinators, dict(entry.data)
+        )
+
         return True  # noqa: TRY300
 
     except ConfigEntryNotReady:
@@ -105,6 +114,281 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("SAX Battery domain data not found during unload")
 
     return unload_ok
+
+
+async def _log_registry_state_before_setup(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinators: dict[str, SAXBatteryCoordinator],
+    sax_data: SAXBatteryData,
+) -> None:
+    """Log device and entity registry state before platform setup.
+
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        coordinators: Dictionary of coordinators
+        sax_data: SAX Battery data manager
+
+    Security: Only logs non-sensitive registry information
+    Performance: Efficient registry queries with proper filtering
+    """
+    try:
+        device_registry = dr.async_get(hass)
+        entity_registry = er.async_get(hass)
+
+        # Check for existing SAX Battery devices
+        existing_devices = [
+            device
+            for device in device_registry.devices.values()
+            if any(identifier[0] == "sax_battery" for identifier in device.identifiers)
+        ]
+
+        # Check for existing SAX Battery entities
+        existing_entities = [
+            entity
+            for entity in entity_registry.entities.values()
+            if entity.platform == DOMAIN
+        ]
+
+        _LOGGER.debug(
+            "Registry state before setup: %d existing SAX Battery devices, %d existing entities",
+            len(existing_devices),
+            len(existing_entities),
+        )
+
+        # Log device details
+        for device in existing_devices:
+            device_name = next(
+                (
+                    identifier[1]
+                    for identifier in device.identifiers
+                    if identifier[0] == "sax_battery"
+                ),
+                "unknown",
+            )
+            _LOGGER.debug(
+                "Existing device: %s (id=%s, name=%s, disabled=%s)",
+                device_name,
+                device.id,
+                device.name,
+                device.disabled,
+            )
+
+        # Log entity summary by platform
+        entity_summary: dict[str, int] = {}
+        for entity in existing_entities:
+            platform = entity.domain
+            entity_summary[platform] = entity_summary.get(platform, 0) + 1
+
+        for platform, count in entity_summary.items():
+            _LOGGER.debug("Existing %s entities: %d", platform, count)
+
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Error logging registry state: %s", err)
+
+
+async def _log_comprehensive_setup_summary(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinators: dict[str, SAXBatteryCoordinator],
+    config_data: dict[str, Any],
+) -> None:
+    """Log comprehensive setup summary with device and entity registry information.
+
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+        coordinators: Dictionary of initialized coordinators
+        config_data: Configuration data from entry
+
+    Security: OWASP A05 - No sensitive data in logs
+    Performance: Efficient registry queries and data aggregation
+    """
+    try:
+        device_registry = dr.async_get(hass)
+        entity_registry = er.async_get(hass)
+
+        battery_count = len(coordinators)
+
+        # Find master batteries
+        master_batteries = [
+            battery_id
+            for battery_id, coordinator in coordinators.items()
+            if coordinator.battery_config.get(CONF_BATTERY_IS_MASTER, False)
+        ]
+
+        # Get battery phase mappings
+        phase_mappings = [
+            f"{battery_id}→{coordinator.battery_config.get(CONF_BATTERY_PHASE, 'L1')}"
+            for battery_id, coordinator in coordinators.items()
+        ]
+
+        # Get feature flags
+        pilot_from_ha = config_data.get("pilot_from_ha", False)
+        limit_power = config_data.get("limit_power", False)
+        enable_solar = config_data.get("enable_solar_charging", False)
+
+        # Query device registry for SAX Battery devices
+        sax_devices = [
+            device
+            for device in device_registry.devices.values()
+            if any(identifier[0] == "sax_battery" for identifier in device.identifiers)
+        ]
+
+        # Query entity registry for SAX Battery entities
+        sax_entities = [
+            entity
+            for entity in entity_registry.entities.values()
+            if entity.platform == DOMAIN
+        ]
+
+        # Categorize devices by type
+        device_summary = {"battery": 0, "smartmeter": 0, "cluster": 0, "unknown": 0}
+        for device in sax_devices:
+            device_identifier = next(
+                (
+                    identifier[1]
+                    for identifier in device.identifiers
+                    if identifier[0] == "sax_battery"
+                ),
+                "unknown",
+            )
+
+            if device_identifier.startswith("battery_"):
+                device_summary["battery"] += 1
+            elif device_identifier == "sax_smartmeter":
+                device_summary["smartmeter"] += 1
+            elif device_identifier == "sax_battery_cluster":
+                device_summary["cluster"] += 1
+            else:
+                device_summary["unknown"] += 1
+
+        # Categorize entities by platform and enabled state
+        entity_summary = {}
+        for entity in sax_entities:
+            platform = entity.domain
+            if platform not in entity_summary:
+                entity_summary[platform] = {"enabled": 0, "disabled": 0, "total": 0}
+
+            if entity.disabled:
+                entity_summary[platform]["disabled"] += 1
+            else:
+                entity_summary[platform]["enabled"] += 1
+            entity_summary[platform]["total"] += 1
+
+        # Log main setup summary
+        _LOGGER.info(
+            "SAX Battery setup complete - %d batteries [%s], master: %s, "
+            "devices: %d battery + %d smartmeter + %d cluster, "
+            "features: pilot=%s, limits=%s, solar=%s",
+            battery_count,
+            ", ".join(phase_mappings),
+            master_batteries[0] if master_batteries else "none",
+            device_summary["battery"],
+            device_summary["smartmeter"],
+            device_summary["cluster"],
+            pilot_from_ha,
+            limit_power,
+            enable_solar,
+        )
+
+        # Log detailed entity summary by platform
+        for platform, stats in entity_summary.items():
+            _LOGGER.info(
+                "SAX Battery %s entities: %d enabled, %d disabled (%d total)",
+                platform,
+                stats["enabled"],
+                stats["disabled"],
+                stats["total"],
+            )
+
+        # Log device details with unique IDs
+        _LOGGER.debug("SAX Battery devices registered:")
+        for device in sax_devices:
+            device_identifier = next(
+                (
+                    identifier[1]
+                    for identifier in device.identifiers
+                    if identifier[0] == "sax_battery"
+                ),
+                "unknown",
+            )
+            _LOGGER.debug(
+                "  Device: %s (name=%s, id=%s, disabled=%s, manufacturer=%s)",
+                device_identifier,
+                device.name,
+                device.id,
+                device.disabled,
+                device.manufacturer,
+            )
+
+        # Log detailed entity information for each platform
+        for platform in ["sensor", "number", "switch"]:
+            platform_entities = [e for e in sax_entities if e.domain == platform]
+            if platform_entities:
+                enabled_entities = [e for e in platform_entities if not e.disabled]
+                disabled_entities = [e for e in platform_entities if e.disabled]
+
+                _LOGGER.debug(
+                    "SAX Battery %s entities (%d enabled, %d disabled):",
+                    platform,
+                    len(enabled_entities),
+                    len(disabled_entities),
+                )
+
+                # Log enabled entities
+                for entity in enabled_entities:
+                    _LOGGER.debug(
+                        "  ✓ %s: %s (unique_id=%s, device_id=%s)",
+                        platform,
+                        entity.entity_id,
+                        entity.unique_id,
+                        entity.device_id,
+                    )
+
+                # Log disabled entities (limited to avoid spam)
+                if disabled_entities:
+                    shown_disabled = disabled_entities[:5]  # Limit to first 5
+                    for entity in shown_disabled:
+                        _LOGGER.debug(
+                            "  ✗ %s: %s (unique_id=%s, disabled_by=%s)",
+                            platform,
+                            entity.entity_id,
+                            entity.unique_id,
+                            entity.disabled_by,
+                        )
+
+                    if len(disabled_entities) > 5:
+                        _LOGGER.debug(
+                            "  ... and %d more disabled %s entities",
+                            len(disabled_entities) - 5,
+                            platform,
+                        )
+
+        # Log coordinator-specific information
+        _LOGGER.debug("Battery coordinator details:")
+        for battery_id, coordinator in coordinators.items():
+            # Get entity counts for this battery
+            battery_entities = [
+                e for e in sax_entities if e.unique_id and battery_id in e.unique_id
+            ]
+            enabled_count = sum(1 for e in battery_entities if not e.disabled)
+
+            _LOGGER.debug(
+                "  %s: phase=%s, master=%s, entities=%d enabled/%d total, update_interval=%s",
+                battery_id,
+                coordinator.battery_config.get(CONF_BATTERY_PHASE, "L1"),
+                coordinator.battery_config.get(CONF_BATTERY_IS_MASTER, False),
+                enabled_count,
+                len(battery_entities),
+                coordinator.update_interval,
+            )
+
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("Error logging comprehensive setup summary: %s", err)
+        # Fallback to basic summary
+        _log_setup_summary(coordinators, config_data)
 
 
 async def _get_battery_configurations(entry: ConfigEntry) -> dict[str, dict[str, Any]]:
