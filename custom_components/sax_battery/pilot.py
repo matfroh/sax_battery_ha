@@ -597,8 +597,14 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
         # Store the manual power value in the pilot
         self._pilot.calculated_power = value
 
-        # Force entity state update
-        self.async_write_ha_state()
+    def get_solar_charging_enabled(self) -> bool:
+        """Get solar charging state."""
+        # ✅ Only enable if both pilot and solar charging are enabled
+        pilot_enabled = bool(self.entry.data.get(CONF_PILOT_FROM_HA, False))
+        solar_enabled = bool(
+            self.entry.data.get(CONF_ENABLE_SOLAR_CHARGING, False)
+        )  # Changed default to False
+        return pilot_enabled and solar_enabled
 
         # Log to confirm it was set
         _LOGGER.debug(

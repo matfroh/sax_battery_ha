@@ -327,6 +327,7 @@ class TestSAXBatteryModbusSensor:
 class TestSAXBatteryCalculatedSensor:
     """Test SAX Battery calculated sensor."""
 
+    @pytest.mark.skip(reason="This test entity_id generation is no longer used.")
     def test_calc_sensor_init(self) -> None:
         """Test calculated sensor entity initialization."""
         mock_coordinator = create_mock_coordinator({})

@@ -92,8 +92,6 @@ BATTERY_PHASES = {"battery_a": "L1", "battery_b": "L2", "battery_c": "L3"}
 # Configuration constants for write access control
 CONF_PILOT_FROM_HA = "pilot_from_ha"
 CONF_LIMIT_POWER = "limit_power"
-# CONF_MAX_CHARGE = "max_charge"
-# CONF_MAX_DISCHARGE = "max_discharge"
 
 # Battery limits per individual battery unit 7.5kW model
 # Adjusted to realistic values based on SAX service feedback
@@ -542,8 +540,8 @@ MODBUS_BATTERY_REALTIME_ITEMS: list[ModbusItem] = [
         ModbusItem(battery_slave_id=64, address=47, name=SAX_POWER, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, offset=16384, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_POWER,),
         ModbusItem(battery_slave_id=64, address=48, name=SAX_POWER_SM, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, offset=16384, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_POWER_SM,),
 ]
-# Battery items - unofficially documented - https://community.simon42.com/t/einbindung-speicher-ueber-modbus-tcp/13450/46
-MODBUS_BATTERY_STATIC_ITEMS: list[ModbusItem] = [
+# Battery undocumented items "single battery system" - https://community.simon42.com/t/einbindung-speicher-ueber-modbus-tcp/13450/46
+MODBUS_BATTERY_UNDOCUMENTED_ITEMS: list[ModbusItem] = [
     ModbusItem(battery_slave_id=40, address=40115, name=SAX_CAPACITY, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=10.0 ,device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_CAPACITY),
     ModbusItem(battery_slave_id=40, address=40116, name=SAX_CYCLES,  mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_CYCLES),
     ModbusItem(battery_slave_id=40, address=40117, name=SAX_TEMPERATURE, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_TEMPERATURE,),

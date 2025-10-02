@@ -438,7 +438,7 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
 
         # Generate unique ID using simple pattern
         item_name = self._sax_item.name.removeprefix("sax_")
-        self._attr_unique_id = f"sax_{item_name}"
+        self._attr_unique_id = item_name
 
         # Set entity description from sax item if available
         if self._sax_item.entitydescription is not None:
@@ -475,9 +475,17 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
 
         # Get state from config entry or SAX item calculation
         if self._sax_item.name == "solar_charging_switch":
-            return bool(
-                self.coordinator.config_entry.data.get("enable_solar_charging", True)
+            # ✅ Only enable if pilot mode is also enabled
+            pilot_enabled = bool(
+                self.coordinator.config_entry.data.get("pilot_from_ha", False)
             )
+            solar_enabled = bool(
+                self.coordinator.config_entry.data.get(
+                    "enable_solar_charging", False
+                )  # Changed default to False
+            )
+            return pilot_enabled and solar_enabled
+
         if self._sax_item.name == "manual_control_switch":
             return bool(self.coordinator.config_entry.data.get("manual_control", False))
 

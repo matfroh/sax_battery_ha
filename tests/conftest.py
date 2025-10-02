@@ -19,6 +19,7 @@ from custom_components.sax_battery.const import (
     DESCRIPTION_SAX_POWER,
     DESCRIPTION_SAX_SOC,
     DESCRIPTION_SAX_TEMPERATURE,
+    DOMAIN,
     PILOT_ITEMS,
     SAX_COMBINED_SOC,
     SAX_MAX_CHARGE,
@@ -34,6 +35,7 @@ from custom_components.sax_battery.number import SAXBatteryModbusNumber
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 
 pytest_plugins = "pytest_homeassistant_custom_component"
 
@@ -117,13 +119,13 @@ def mock_coordinator_pilot_control_base(mock_hass_base, mock_config_entry_base):
 
 # ModbusItem Fixtures
 @pytest.fixture
-def modbus_item_power_base():
+def modbus_item_max_charge_base():
     """Create power number ModbusItem for testing."""
     return ModbusItem(
         address=100,
         name=SAX_MAX_CHARGE,
         mtype=TypeConstants.NUMBER_WO,
-        device=DeviceConstants.BESS,
+        device=DeviceConstants.SYS,
         entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
     )
 
@@ -135,7 +137,7 @@ def modbus_item_percentage_base():
         address=101,
         name=SAX_MIN_SOC,
         mtype=TypeConstants.NUMBER,
-        device=DeviceConstants.BESS,
+        device=DeviceConstants.SYS,
         entitydescription=DESCRIPTION_SAX_MIN_SOC,
     )
 
@@ -179,12 +181,26 @@ def modbus_item_pilot_factor_base():
 
 # SAXItem Fixtures
 @pytest.fixture
-def sax_item_min_soc_base():
-    """Create SAXItem for MIN_SOC testing."""
-    return next(
-        (item for item in PILOT_ITEMS if item.name == SAX_MIN_SOC),
-        None,
+def sax_item_min_soc_base() -> SAXItem:
+    """Create a test SAX item for min SOC using real const.py data."""
+    # Extract the real SAX item from PILOT_ITEMS
+    min_soc_item = next(
+        (item for item in PILOT_ITEMS if item.name == SAX_MIN_SOC), None
     )
+
+    if min_soc_item is None:
+        # Fallback creation if not found in PILOT_ITEMS
+        min_soc_item = SAXItem(
+            name=SAX_MIN_SOC,
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
+            entitydescription=DESCRIPTION_SAX_MIN_SOC,
+        )
+
+    # Mock the async_write_value method for testing
+    min_soc_item.async_write_value = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    return min_soc_item
 
 
 # Cleanup Fixtures
@@ -692,3 +708,60 @@ def calc_sax_item():
         device=DeviceConstants.BESS,
         entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
     )
+
+
+# simulate Entity ID generation
+
+
+@pytest.fixture
+def mock_device_info_cluster():
+    """Create mock device info for cluster device."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, "cluster")},
+        name="SAX Cluster",
+        manufacturer="SAX",
+        model="Battery System",
+        sw_version="1.0",
+    )
+
+
+@pytest.fixture
+def simulate_unique_id_min_soc(mock_device_info_cluster, sax_item_min_soc_base) -> str:
+    """Generate expected unique ID for SAXBatteryConfigNumber with min SOC."""
+    # Following the pattern: f"number.{device_name.lower()}_{sax_item_name.removeprefix('sax_').replace(' ', '_')}"
+    device_name = mock_device_info_cluster["name"]  # "SAX Cluster"
+    sax_item_name = sax_item_min_soc_base.entitydescription.name  # "Sax Minimum SOC"
+
+    # Clean the item name by removing "Sax " prefix -> "minimum_soc"
+    clean_item_name = sax_item_name.removeprefix("Sax ").lower().replace(" ", "_")
+
+    # Generate the expected unique ID
+    expected_unique_id = (
+        f"number.{device_name.lower().replace(' ', '_')}_{clean_item_name}"
+    )
+    # Result: "number.sax_cluster_min_soc"
+
+    return expected_unique_id  # noqa: RET504
+
+
+@pytest.fixture
+def simulate_unique_id_max_charge(
+    mock_device_info_cluster, modbus_item_max_charge_base
+) -> str:
+    """Generate expected unique ID for SAXBatteryConfigNumber with max charge."""
+    # Following the pattern: f"number.{device_name.lower()}_{sax_item_name.removeprefix('sax_').replace(' ', '_')}"
+    device_name = mock_device_info_cluster["name"]  # "SAX Cluster"
+    sax_item_name = (
+        modbus_item_max_charge_base.entitydescription.name
+    )  # "Sax Maximum Charge"
+
+    # Clean the item name by removing "Sax " prefix -> "maximum_charge"
+    clean_item_name = sax_item_name.removeprefix("Sax ").lower().replace(" ", "_")
+
+    # Generate the expected unique ID
+    expected_unique_id = (
+        f"number.{device_name.lower().replace(' ', '_')}_{clean_item_name}"
+    )
+    # Result: "number.sax_cluster_min_soc"
+
+    return expected_unique_id  # noqa: RET504

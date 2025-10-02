@@ -101,19 +101,23 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._limit_power = user_input[CONF_LIMIT_POWER]
             self._data.update(user_input)
 
+            # ✅ Set solar charging default based on pilot mode
+            if not self._pilot_from_ha:
+                self._data[CONF_ENABLE_SOLAR_CHARGING] = False
+
             # Debug logging to verify configuration storage
             _LOGGER.debug(
-                "Control options saved: pilot_from_ha=%s, limit_power=%s",
+                "Control options saved: pilot_from_ha=%s, limit_power=%s, solar_charging=%s",
                 self._pilot_from_ha,
                 self._limit_power,
+                self._data.get(CONF_ENABLE_SOLAR_CHARGING, False),
             )
 
             # Route to appropriate next step based on selections
             if self._pilot_from_ha:
                 return await self.async_step_pilot_options()
-            else:  # noqa: RET505
-                # Skip pilot-specific steps if not enabled
-                return await self.async_step_battery_config()
+            # Skip pilot-specific steps if not enabled
+            return await self.async_step_battery_config()
 
         return self.async_show_form(
             step_id="control_options",

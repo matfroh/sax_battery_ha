@@ -1247,7 +1247,7 @@ class TestSAXBatteryPilotComprehensive:
 
         assert result is False
 
-    def test_get_solar_charging_enabled_default(self, pilot_with_config_test):
+    def test_get_solar_charging_disabled_default(self, pilot_with_config_test):
         """Test getting solar charging enabled state with default value."""
         # Remove the key to test default
         if CONF_ENABLE_SOLAR_CHARGING in pilot_with_config_test.entry.data:
@@ -1255,7 +1255,7 @@ class TestSAXBatteryPilotComprehensive:
 
         result = pilot_with_config_test.get_solar_charging_enabled()
 
-        assert result is True  # Default is True
+        assert result is False  # Default is False
 
     def test_get_manual_control_enabled_true(self, pilot_with_config_test):
         """Test getting manual control enabled state when True."""

@@ -14,9 +14,10 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from .const import (
     AGGREGATED_ITEMS,
     DEFAULT_DEVICE_INFO,
+    DOMAIN,
     MODBUS_BATTERY_SMARTMETER_ITEMS,
-    MODBUS_BATTERY_STATIC_ITEMS,
     MODBUS_BATTERY_SWITCH_ITEMS,
+    MODBUS_BATTERY_UNDOCUMENTED_ITEMS,
     PILOT_ITEMS,
 )
 from .enums import DeviceConstants
@@ -47,14 +48,6 @@ class BaseModel(ABC):
     def set_value(self, key: str, value: Any) -> None:
         """Set value for a specific key."""
         self._data[key] = value
-
-    # def update_data(self, new_data: dict[str, Any]) -> None:
-    #     """Update multiple data values."""
-    #     self._data.update(new_data)
-
-    # @abstractmethod
-    # def get_device_info(self) -> DeviceInfo:
-    #     """Get device info for Home Assistant."""
 
     @abstractmethod
     def get_modbus_items(self) -> list[ModbusItem]:
@@ -99,14 +92,18 @@ class BatteryModel(BaseModel):
 
         # All batteries get realtime and static items
         items = list(get_battery_realtime_items(access_config))
-        items.extend(MODBUS_BATTERY_STATIC_ITEMS)
-        items.extend(MODBUS_BATTERY_SWITCH_ITEMS)
+        if not self.is_master:
+            items.extend(MODBUS_BATTERY_SWITCH_ITEMS)
 
         # Master battery also gets consolidated smart meter items
         if self.is_master:
             # MODBUS_BATTERY_SMARTMETER_ITEMS already includes all smart meter data
             # Including basic items, phase items, and battery-accessible smart meter data
             items.extend(MODBUS_BATTERY_SMARTMETER_ITEMS)
+            items.extend(MODBUS_BATTERY_UNDOCUMENTED_ITEMS)
+            switch_item: ModbusItem = MODBUS_BATTERY_SWITCH_ITEMS[0]
+            switch_item.device = DeviceConstants.SYS
+            items.append(switch_item)  # Add system-level switch for master battery
             _LOGGER.debug(
                 "Added %d smart meter items to master battery",
                 len(MODBUS_BATTERY_SMARTMETER_ITEMS),
@@ -221,28 +218,29 @@ class SAXBatteryData:
     def get_device_info(self, battery_id: str, device: DeviceConstants) -> DeviceInfo:
         """Get device info for a specific battery."""
         if device == DeviceConstants.SYS:
-            # Cluster device info for aggregated entities
+            # Cluster device info for aggregated and control entities
             return DeviceInfo(
-                identifiers={("sax_battery", "sax_battery_cluster")},
-                name="SAX Battery Cluster",
+                identifiers={(DOMAIN, "cluster")},
+                name="SAX Cluster",
                 manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
-                model="Battery Cluster",
+                model=DEFAULT_DEVICE_INFO.model,
                 sw_version=DEFAULT_DEVICE_INFO.sw_version,
             )
+
         if device == DeviceConstants.SM:
-            # Smartmeter device info for aggregated entities
+            # Smartmeter device info for all devices
             return DeviceInfo(
-                identifiers={("sax_battery", "sax_smartmeter")},
+                identifiers={(DOMAIN, "sax_smartmeter")},
                 name="SAX Smart Meter",
                 manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
-                model="Smart Meter",
+                model=DEFAULT_DEVICE_INFO.model,
                 sw_version=DEFAULT_DEVICE_INFO.sw_version,
             )
 
         if device == DeviceConstants.BESS:
-            # Battery device info for aggregated entities
+            # Battery device info for specific battery
             return DeviceInfo(
-                identifiers={("sax_battery", battery_id)},
+                identifiers={(DOMAIN, battery_id)},
                 name=f"SAX Battery {battery_id.removeprefix('battery_').upper()}",
                 manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
                 model=DEFAULT_DEVICE_INFO.model,
