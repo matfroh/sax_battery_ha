@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from custom_components.sax_battery.const import (
-    CONF_AUTO_PILOT_INTERVAL,
-    CONF_ENABLE_SOLAR_CHARGING,
-    CONF_MIN_SOC,
-    DEFAULT_AUTO_PILOT_INTERVAL,
-    DEFAULT_MIN_SOC,
     DESCRIPTION_SAX_COMBINED_SOC,
     DESCRIPTION_SAX_MAX_CHARGE,
     DESCRIPTION_SAX_MIN_SOC,
     DESCRIPTION_SAX_NOMINAL_POWER,
-    DESCRIPTION_SAX_POWER,
-    DESCRIPTION_SAX_SOC,
-    DESCRIPTION_SAX_TEMPERATURE,
+    DESCRIPTION_SAX_STATUS_SWITCH,
     DOMAIN,
     PILOT_ITEMS,
     SAX_COMBINED_SOC,
@@ -26,12 +19,12 @@ from custom_components.sax_battery.const import (
     SAX_MIN_SOC,
     SAX_NOMINAL_FACTOR,
     SAX_NOMINAL_POWER,
+    SAX_STATUS,
 )
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem
 from custom_components.sax_battery.modbusobject import ModbusAPI
-from custom_components.sax_battery.number import SAXBatteryModbusNumber
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -203,21 +196,6 @@ def sax_item_min_soc_base() -> SAXItem:
     return min_soc_item
 
 
-# Cleanup Fixtures
-@pytest.fixture(autouse=True)
-def reset_pilot_control_state():
-    """Reset pilot control transactions before each test."""
-    SAXBatteryModbusNumber._pilot_control_transaction.clear()
-    yield
-    SAXBatteryModbusNumber._pilot_control_transaction.clear()
-
-
-@pytest.fixture
-def auto_enable_custom_integrations(enable_custom_integrations):
-    """Enable loading custom integrations in all tests."""
-    return
-
-
 # Core fixtures
 @pytest.fixture
 def mock_smart_meter_data():
@@ -299,22 +277,6 @@ def mock_coordinator(mock_sax_data, mock_modbus_api):
     coordinator.modbus_api = mock_modbus_api
 
     return coordinator
-
-
-@pytest.fixture
-def sax_battery_coordinator(hass, mock_sax_data, mock_modbus_api):
-    """Create actual SAXBatteryCoordinator instance for testing."""
-    mock_config_entry = MagicMock(spec=ConfigEntry)
-    mock_config_entry.entry_id = "test_entry_id"
-
-    return SAXBatteryCoordinator(
-        hass=hass,
-        battery_id="battery_a",
-        sax_data=mock_sax_data,
-        modbus_api=mock_modbus_api,
-        config_entry=mock_config_entry,
-        battery_config={"is_master": True, "phase": "L1"},
-    )
 
 
 @pytest.fixture
@@ -435,61 +397,6 @@ def mock_modbus_item():
 
 
 @pytest.fixture
-def smart_meter_modbus_item():
-    """Create a smart meter ModbusItem for testing."""
-    return ModbusItem(
-        name="smartmeter_power",
-        device=DeviceConstants.BESS,
-        mtype=TypeConstants.SENSOR,
-        address=1000,
-        battery_slave_id=1,
-        factor=1.0,
-    )
-
-
-@pytest.fixture
-def temperature_modbus_item():
-    """Create temperature modbus item with proper entity description."""
-    return ModbusItem(
-        address=40117,
-        name="sax_temperature",
-        mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.BESS,
-        battery_slave_id=40,
-        factor=10.0,
-        entitydescription=DESCRIPTION_SAX_TEMPERATURE,
-    )
-
-
-@pytest.fixture
-def percentage_modbus_item():
-    """Create percentage modbus item with proper entity description."""
-    return ModbusItem(
-        address=46,
-        name="sax_soc",
-        mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.BESS,
-        battery_slave_id=64,
-        factor=1.0,
-        entitydescription=DESCRIPTION_SAX_SOC,
-    )
-
-
-@pytest.fixture
-def power_modbus_item():
-    """Create power modbus item with proper entity description."""
-    return ModbusItem(
-        address=47,
-        name="sax_power",
-        mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.BESS,
-        battery_slave_id=64,
-        factor=1.0,
-        entitydescription=DESCRIPTION_SAX_POWER,
-    )
-
-
-@pytest.fixture
 def battery_model_data_basic():
     """Provide basic battery model data for testing."""
     return {
@@ -513,44 +420,7 @@ def battery_model_data_slave():
     }
 
 
-@pytest.fixture
-def battery_data_values():
-    """Provide sample battery data values for testing."""
-    return {
-        "sax_soc": 75.0,
-        "sax_power": 2000.0,
-        "voltage_l1": 48.5,
-        "current_l1": 41.2,
-        "sax_temperature": 25.5,
-        "sax_status": "normal",
-    }
-
-
-# Number-specific fixtures
-@pytest.fixture
-def mock_coordinator_number():
-    """Create a mock coordinator for number tests."""
-    coordinator = MagicMock(spec=SAXBatteryCoordinator)
-    coordinator.data = {}
-    coordinator.config_entry = MagicMock()
-    coordinator.config_entry.data = {"battery_count": 1}
-    coordinator.sax_data = MagicMock()
-    coordinator.sax_data.get_device_info.return_value = {"name": "Test Battery"}
-    coordinator.async_write_number_value = AsyncMock(return_value=True)
-    return coordinator
-
-
 # Config Flow Test Fixtures
-@pytest.fixture
-def config_flow_user_input_pilot_config():
-    """Create pilot config input for config flow tests."""
-    return {
-        CONF_MIN_SOC: DEFAULT_MIN_SOC,
-        CONF_AUTO_PILOT_INTERVAL: DEFAULT_AUTO_PILOT_INTERVAL,
-        CONF_ENABLE_SOLAR_CHARGING: True,
-    }
-
-
 @pytest.fixture
 def mock_config_entry_with_features():
     """Create mock config entry with features."""
@@ -560,81 +430,6 @@ def mock_config_entry_with_features():
         "batteries": {"battery_a": {"role": "master"}},
     }
     return mock_entry
-
-
-@pytest.fixture
-def mock_async_setup_entry():
-    """Mock async_setup_entry for successful setup."""
-    with patch("custom_components.sax_battery.async_setup_entry") as mock:
-        mock.return_value = True
-        yield mock
-
-
-@pytest.fixture
-def mock_async_setup_entry_failure():
-    """Mock async_setup_entry for failed setup."""
-    with patch("custom_components.sax_battery.async_setup_entry") as mock:
-        mock.return_value = False
-        yield mock
-
-
-@pytest.fixture
-def config_flow_user_input_battery_count():
-    """Provide battery count user input for config flow tests."""
-    return {"battery_count": 1}
-
-
-@pytest.fixture
-def config_flow_user_input_control_options():
-    """Provide control options user input for config flow tests."""
-    return {
-        "pilot_from_ha": False,
-        "limit_power": False,
-    }
-
-
-@pytest.fixture
-def config_flow_user_input_battery_config():
-    """Provide battery config user input for config flow tests."""
-    return {
-        "battery_a_host": "192.168.1.100",
-        "battery_a_port": 502,
-    }
-
-
-@pytest.fixture
-def single_battery_config_data():
-    """Provide single battery configuration data."""
-    return {
-        "battery_count": 1,
-        "master_battery": "battery_a",
-        "battery_a_host": "192.168.1.100",
-        "battery_a_port": 502,
-        "pilot_from_ha": False,
-        "limit_power": False,
-        "device_id": "test-device-id",
-    }
-
-
-# Pilot Test Fixtures
-@pytest.fixture
-def pilot_enabled_config_data():
-    """Provide pilot-enabled configuration data."""
-    return {
-        "battery_count": 1,
-        "master_battery": "battery_a",
-        "battery_a_host": "192.168.1.100",
-        "battery_a_port": 502,
-        "pilot_from_ha": True,
-        "limit_power": True,
-        "power_sensor": "sensor.grid_power",
-        "pf_sensor": "sensor.power_factor",
-        "min_soc": 20,
-        "auto_pilot_interval": 60,
-        "enable_solar_charging": True,
-        "manual_control": False,
-        "device_id": "test-pilot-device-id",
-    }
 
 
 @pytest.fixture
@@ -684,20 +479,7 @@ def pilot_items_mixed():
     ]
 
 
-@pytest.fixture
-def mock_pilot_power_entity():
-    """Create mock pilot for power entity."""
-    mock_pilot = MagicMock()
-    mock_pilot.set_manual_power = AsyncMock()
-    mock_pilot.calculated_power = 1500.0
-    mock_pilot.max_charge_power = 3600
-    mock_pilot.max_discharge_power = 3600
-    return mock_pilot
-
-
 # Sensor Test Fixtures
-
-
 @pytest.fixture
 def calc_sax_item():
     """Create calculated SAX item for sensor tests."""
@@ -711,8 +493,6 @@ def calc_sax_item():
 
 
 # simulate Entity ID generation
-
-
 @pytest.fixture
 def mock_device_info_cluster():
     """Create mock device info for cluster device."""
@@ -726,20 +506,24 @@ def mock_device_info_cluster():
 
 
 @pytest.fixture
-def simulate_unique_id_min_soc(mock_device_info_cluster, sax_item_min_soc_base) -> str:
+def simulate_unique_id_min_soc(mock_device_info_cluster, sax_item_min_soc_base):
     """Generate expected unique ID for SAXBatteryConfigNumber with min SOC."""
-    # Following the pattern: f"number.{device_name.lower()}_{sax_item_name.removeprefix('sax_').replace(' ', '_')}"
+    # Following the pattern: f"number.{device_name.lower()}_{clean_item_name}"
     device_name = mock_device_info_cluster["name"]  # "SAX Cluster"
-    sax_item_name = sax_item_min_soc_base.entitydescription.name  # "Sax Minimum SOC"
 
-    # Clean the item name by removing "Sax " prefix -> "minimum_soc"
-    clean_item_name = sax_item_name.removeprefix("Sax ").lower().replace(" ", "_")
+    # Get the actual entity description name from the SAX item
+    entity_desc_name = sax_item_min_soc_base.entitydescription.name  # "Sax Minimum SOC"
 
-    # Generate the expected unique ID
+    # Clean the entity description name by removing "Sax " prefix and converting to lowercase
+    clean_item_name = (
+        entity_desc_name.removeprefix("Sax ").lower().replace(" ", "_")
+    )  # "minimum_soc"
+
+    # Generate the expected unique ID for number platform
     expected_unique_id = (
         f"number.{device_name.lower().replace(' ', '_')}_{clean_item_name}"
     )
-    # Result: "number.sax_cluster_min_soc"
+    # Result: "number.sax_cluster_minimum_soc"
 
     return expected_unique_id  # noqa: RET504
 
@@ -763,5 +547,95 @@ def simulate_unique_id_max_charge(
         f"number.{device_name.lower().replace(' ', '_')}_{clean_item_name}"
     )
     # Result: "number.sax_cluster_min_soc"
+
+    return expected_unique_id  # noqa: RET504
+
+
+@pytest.fixture
+def modbus_item_on_off_base() -> ModbusItem:
+    """Create mock ModBus item for ON/OFF switch."""
+    return ModbusItem(
+        address=100,
+        name=SAX_STATUS,
+        mtype=TypeConstants.SWITCH,
+        device=DeviceConstants.SYS,
+        entitydescription=DESCRIPTION_SAX_STATUS_SWITCH,
+    )
+
+
+@pytest.fixture
+def simulate_unique_id_on_off(mock_device_info_cluster, modbus_item_on_off_base) -> str:
+    """Generate expected unique ID for SAXBatteryConfigNumber with max charge."""
+    # Following the pattern: f"switch.{device_name.lower()}_{sax_item_name.removeprefix('sax_').replace(' ', '_')}"
+    device_name = mock_device_info_cluster["name"]  # "SAX Cluster"
+    sax_item_name = (
+        modbus_item_on_off_base.entitydescription.name
+    )  # "Sax Status Switch"
+
+    # Clean the item name by removing "Sax " prefix -> "status_switch"
+    clean_item_name = (
+        sax_item_name.removeprefix("Sax ").lower().replace(" ", "_").replace("/", "_")
+    )
+
+    # Generate the expected unique ID
+    expected_unique_id = (
+        f"switch.{device_name.lower().replace(' ', '_')}_{clean_item_name}"
+    )
+    # Result: "number.sax_cluster_min_soc"
+
+    return expected_unique_id  # noqa: RET504
+
+
+@pytest.fixture
+def simulate_unique_id_combined_soc(mock_device_info_cluster, calc_sax_item) -> str:
+    """Generate expected unique ID for SAXBatteryCalculatedSensor with combined SOC."""
+    # Following the pattern: f"sensor.{device_name.lower()}_{sax_item_name.removeprefix('sax_').replace(' ', '_')}"
+    device_name = mock_device_info_cluster["name"]  # "SAX Cluster"
+    sax_item_name = calc_sax_item.entitydescription.name  # "Combined SOC"
+
+    # Clean the item name -> "combined_soc" (no "Sax " prefix to remove in this case)
+    clean_item_name = sax_item_name.removeprefix("Sax ").lower().replace(" ", "_")
+
+    # Generate the expected unique ID for sensor platform
+    expected_unique_id = (
+        f"sensor.{device_name.lower().replace(' ', '_')}_{clean_item_name}"
+    )
+    # Result: "sensor.sax_cluster_combined_soc"
+
+    return expected_unique_id  # noqa: RET504
+
+
+@pytest.fixture
+def mock_device_info_battery_a():
+    """Create mock device info for battery A device."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, "battery_a")},
+        name="SAX Battery A",
+        manufacturer="SAX",
+        model="Battery System",
+        sw_version="1.0",
+    )
+
+
+@pytest.fixture
+def simulate_unique_id_temperature(
+    mock_device_info_battery_a, temperature_modbus_item_sensor
+) -> str:
+    """Generate expected unique ID for SAXBatteryModbusSensor with temperature."""
+    # Following the pattern: f"sensor.{device_name.lower()}_{battery_id}_{clean_item_name}"
+    device_name = mock_device_info_battery_a["name"]  # "Battery A"
+    modbus_item_name = (
+        temperature_modbus_item_sensor.entitydescription.name
+    )  # "Temperature"
+
+    # Clean the item name -> "temperature" (lowercase, no prefix to remove)
+    clean_item_name = modbus_item_name.removeprefix("Sax ").lower().replace(" ", "_")
+
+    # Generate the expected unique ID for modbus sensor platform
+    # Pattern: sax_{battery_id}_{clean_item_name}
+    expected_unique_id = (
+        f"sensor.{device_name.lower().replace(' ', '_')}_{clean_item_name}"
+    )
+    # Result: "sensor.sax_battery_a_temperature"
 
     return expected_unique_id  # noqa: RET504

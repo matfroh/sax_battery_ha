@@ -10,11 +10,9 @@ import pytest
 
 from custom_components.sax_battery.const import (
     DESCRIPTION_SAX_MAX_CHARGE,
-    DESCRIPTION_SAX_MAX_DISCHARGE,
     DESCRIPTION_SAX_MIN_SOC,
     PILOT_ITEMS,
     SAX_MAX_CHARGE,
-    SAX_MAX_DISCHARGE,
     SAX_MIN_SOC,
     SAX_NOMINAL_FACTOR,
     SAX_NOMINAL_POWER,
@@ -219,22 +217,6 @@ class TestSAXBatteryNumber:
 class TestSAXBatteryConfigNumber:
     """Test SAX Battery config number entity."""
 
-    @pytest.mark.skip(reason="This test entity_id generation is no longer used.")
-    def test_config_number_init(self, mock_coordinator_config_number_unique) -> None:
-        """Test config number initialization."""
-        sax_min_soc_item = next(
-            (item for item in PILOT_ITEMS if item.name == SAX_MIN_SOC), None
-        )
-        assert sax_min_soc_item is not None
-
-        number = SAXBatteryConfigNumber(
-            coordinator=mock_coordinator_config_number_unique,
-            sax_item=sax_min_soc_item,
-        )
-
-        # assert number.unique_id == "sax_min_soc"
-        assert hasattr(number, "entity_description")
-
     def test_config_number_native_value(
         self, mock_coordinator_config_number_unique
     ) -> None:
@@ -329,29 +311,6 @@ class TestNumberEntityConfiguration:
 
         # Name comes from entity description
         assert number.name == "Test Underscore Name"
-
-    @pytest.mark.skip(reason="This test entity_id generation is no longer used.")
-    def test_number_max_charge_formatting(
-        self, mock_coordinator_number_temperature_unique
-    ) -> None:
-        """Test number name formatting."""
-        item_with_underscores = ModbusItem(
-            name=SAX_MAX_CHARGE,
-            device=DeviceConstants.BESS,
-            mtype=TypeConstants.NUMBER,
-            entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
-        )
-
-        number = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_number_temperature_unique,
-            battery_id="battery_b",
-            modbus_item=item_with_underscores,
-        )
-
-        # Name comes from entity description
-        # assert number._attr_unique_id == "sax_max_charge"
-        assert number.name == "Max Charge"
-        assert number.entity_description.native_unit_of_measurement == UnitOfPower.WATT
 
     def test_number_mode_property(
         self, mock_coordinator_number_temperature_unique
@@ -475,19 +434,6 @@ class TestSAXBatteryNumberDynamicLimits:
         )
 
     @pytest.fixture
-    def max_discharge_modbus_item_unique(self):
-        """Create max discharge ModbusItem for limits tests."""
-        return ModbusItem(
-            name=SAX_MAX_DISCHARGE,
-            device=DeviceConstants.BESS,
-            mtype=TypeConstants.NUMBER,
-            entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE,
-            address=101,
-            battery_slave_id=1,
-            factor=1.0,
-        )
-
-    @pytest.fixture
     def regular_modbus_item_unique(self):
         """Create regular ModbusItem (not charge/discharge) for limits tests."""
         return ModbusItem(
@@ -506,31 +452,6 @@ class TestSAXBatteryNumberDynamicLimits:
             battery_slave_id=1,
             factor=1.0,
         )
-
-    @pytest.mark.skip(reason="This test entity_id generation is no longer used.")
-    def test_apply_dynamic_limits_max_charge_single_battery(
-        self, mock_coordinator_number_temperature_unique, max_charge_modbus_item_unique
-    ):
-        """Test dynamic limits for max charge with single battery."""
-        # If the function doesn't exist, skip dynamic limits testing
-        with patch(
-            "custom_components.sax_battery.utils.calculate_system_max_charge",
-            return_value=4500,
-            create=True,
-        ) as mock_calc:
-            number_entity = SAXBatteryModbusNumber(
-                coordinator=mock_coordinator_number_temperature_unique,
-                battery_id="battery_a",
-                modbus_item=max_charge_modbus_item_unique,
-            )
-
-            # If dynamic limits are implemented, test them
-            if hasattr(number_entity, "_apply_dynamic_limits"):
-                mock_calc.assert_called_once_with(1)
-                assert number_entity._attr_native_max_value == 4500.0
-            else:
-                # Just verify entity creation works
-                assert number_entity.unique_id == "sax_max_charge"
 
     def test_apply_dynamic_limits_regular_item_unchanged(
         self, mock_coordinator_number_temperature_unique, regular_modbus_item_unique
@@ -618,15 +539,6 @@ class TestSAXBatteryNumberDynamicLimits:
 class TestSAXBatteryModbusPilotControl:
     """Test pilot control transaction functionality."""
 
-    @pytest.fixture(autouse=True)
-    def reset_pilot_control_transactions(self):
-        """Reset pilot control transactions before each test for isolation."""
-        # Clear any existing transactions before each test
-        SAXBatteryModbusNumber._pilot_control_transaction.clear()
-        yield
-        # Clean up after test
-        SAXBatteryModbusNumber._pilot_control_transaction.clear()
-
     @pytest.fixture
     def pilot_power_item_unique(self):
         """Create pilot control power item."""
@@ -684,15 +596,6 @@ class TestSAXBatteryModbusPilotControl:
 
         coordinator.last_update_success_time = MagicMock()
         return coordinator
-
-    @pytest.fixture
-    def mock_hass_pilot_control(self):
-        """Create mock Home Assistant instance for pilot control tests."""
-        hass = MagicMock(spec=HomeAssistant)
-        hass.config_entries = MagicMock()
-        hass.config_entries.async_update_entry = MagicMock(return_value=True)
-        hass.data = {}
-        return hass
 
     def test_pilot_control_item_detection(
         self, mock_coordinator_pilot_control_unique, pilot_power_item_unique
@@ -1040,56 +943,6 @@ class TestSAXBatteryNumberUniqueIdAndName:
             device=DeviceConstants.BESS,
             entitydescription=DESCRIPTION_SAX_MAX_CHARGE,
         )
-
-    @pytest.fixture
-    def mock_hass_unique_id_test(self):
-        """Create mock Home Assistant instance for unique ID tests."""
-        hass = MagicMock(spec=HomeAssistant)
-        hass.config_entries = MagicMock()
-        hass.config_entries.async_update_entry = MagicMock(return_value=True)
-        hass.data = {}
-        return hass
-
-    @pytest.mark.skip(reason="This test entity_id generation is no longer used.")
-    def test_modbus_number_unique_id_generation(
-        self, mock_coordinator_unique_id_test, power_number_item_for_unique_id
-    ):
-        """Test unique ID generation for modbus number entities."""
-        number = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_unique_id_test,
-            battery_id="battery_a",
-            modbus_item=power_number_item_for_unique_id,
-        )
-
-        # Should strip 'sax_' prefix and add battery_id
-        assert number.unique_id == "sax_max_charge"
-        assert number._attr_unique_id == "sax_max_charge"
-        assert number._attr_name == "Max Charge"
-
-    @pytest.mark.skip(reason="This test entity_id generation is no longer used.")
-    def test_modbus_number_unique_id_without_sax_prefix(
-        self, mock_coordinator_unique_id_test
-    ):
-        """Test unique ID generation when item name doesn't have sax_ prefix."""
-        item_without_prefix = ModbusItem(
-            address=105,
-            name="temperature_sensor",
-            mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.BESS,
-            entitydescription=NumberEntityDescription(
-                key="temperature",
-                name="Temperature",
-                native_unit_of_measurement="°C",
-            ),
-        )
-
-        number = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_unique_id_test,
-            battery_id="battery_b",
-            modbus_item=item_without_prefix,
-        )
-
-        assert number.unique_id == "sax_temperature_sensor"
 
     def test_modbus_number_name_from_entity_description(
         self, mock_coordinator_unique_id_test, power_number_item_for_unique_id
@@ -1534,7 +1387,6 @@ class TestModbusAPI:
             no_response_expected=True,
         )
 
-    @pytest.mark.skip(reason="This test fails - no_response_expected")
     async def test_write_nominal_power_default_params(
         self, modbus_api_instance, mock_modbus_client_api
     ):
@@ -1546,13 +1398,26 @@ class TestModbusAPI:
         mock_result.isError.return_value = False
         mock_modbus_client_api.write_registers.return_value = mock_result
 
-        result = await modbus_api_instance.write_nominal_power(2000.0, 9000)
+        # Create a default modbus item for nominal power
+        default_modbus_item = ModbusItem(
+            name="sax_nominal_power",
+            mtype=TypeConstants.NUMBER_WO,
+            device=DeviceConstants.BESS,
+            address=41,  # SAX default
+            battery_slave_id=64,  # SAX default
+            factor=1.0,
+        )
+
+        result = await modbus_api_instance.write_nominal_power(
+            2000.0, 9000, default_modbus_item
+        )
 
         assert result is True
         mock_modbus_client_api.write_registers.assert_called_once_with(
-            address=41,  # SAX default
+            address=41,  # From modbus_item
             values=[2000, 9000],
-            device_id=64,  # SAX default
+            device_id=64,  # From modbus_item
+            no_response_expected=True,
         )
 
     async def test_write_nominal_power_invalid_inputs(self, modbus_api_instance):
@@ -1574,7 +1439,6 @@ class TestModbusAPI:
         result = await modbus_api_instance.write_nominal_power(1000.0, 10001)
         assert result is False
 
-    @pytest.mark.skip(reason="This test fails - no_response_expected")
     async def test_write_nominal_power_value_clamping(
         self, modbus_api_instance, mock_modbus_client_api
     ):
@@ -1585,8 +1449,20 @@ class TestModbusAPI:
         mock_result.isError.return_value = False
         mock_modbus_client_api.write_registers.return_value = mock_result
 
+        # Create a modbus item for the test
+        test_modbus_item = ModbusItem(
+            name="sax_nominal_power",
+            mtype=TypeConstants.NUMBER_WO,
+            device=DeviceConstants.BESS,
+            address=41,  # SAX default
+            battery_slave_id=64,  # SAX default
+            factor=1.0,
+        )
+
         # Test value above 16-bit maximum
-        result = await modbus_api_instance.write_nominal_power(70000.0, 9500)
+        result = await modbus_api_instance.write_nominal_power(
+            70000.0, 9500, test_modbus_item
+        )
 
         assert result is True
         # Should clamp to 65535 (16-bit max)
@@ -1594,14 +1470,15 @@ class TestModbusAPI:
         assert call_args[1]["values"][0] == 65535
 
         # Test negative value clamping
-        result = await modbus_api_instance.write_nominal_power(-1000.0, 9500)
+        result = await modbus_api_instance.write_nominal_power(
+            -1000.0, 9500, test_modbus_item
+        )
 
         assert result is True
         # Should clamp to 0
         call_args = mock_modbus_client_api.write_registers.call_args
         assert call_args[1]["values"][0] == 0
 
-    @pytest.mark.skip(reason="This test fails - no_response_expected")
     async def test_write_nominal_power_sax_error_handling(
         self, modbus_api_instance, mock_modbus_client_api
     ):
@@ -1611,15 +1488,43 @@ class TestModbusAPI:
         # Test real failure pattern
         mock_result = MagicMock()
         mock_result.isError.return_value = True
-        mock_result.__str__.return_value = "Connection timeout error"  # pyright: ignore[reportAttributeAccessIssue]
+        mock_result.__str__.return_value = "Connection timeout error"
         mock_modbus_client_api.write_registers.return_value = mock_result
 
-        result = await modbus_api_instance.write_nominal_power(1000.0, 9500)
-        assert result is False
+        # Create a modbus item for the test
+        test_modbus_item = ModbusItem(
+            name="sax_nominal_power",
+            mtype=TypeConstants.NUMBER_WO,
+            device=DeviceConstants.BESS,
+            address=41,  # SAX default
+            battery_slave_id=64,  # SAX default
+            factor=1.0,
+        )
+
+        # Test with specific values to check in warning message
+        test_power = 1000.0
+        test_factor = 9500
+
+        # Capture log messages using pytest's caplog fixture
+        with patch("custom_components.sax_battery.modbusobject._LOGGER") as mock_logger:
+            result = await modbus_api_instance.write_nominal_power(
+                test_power, test_factor, test_modbus_item
+            )
+
+            assert result is False
+
+            # Verify the warning message was logged with correct parameters
+            mock_logger.warning.assert_called_once_with(
+                "Failed to write nominal power control: power=%s, factor=%s",
+                test_power,
+                test_factor,
+            )
 
         # Test SAX-specific error assumed as success
-        mock_result.__str__.return_value = "Transaction ID mismatch"  # pyright: ignore[reportAttributeAccessIssue]
-        result = await modbus_api_instance.write_nominal_power(1000.0, 9500)
+        mock_result.__str__.return_value = "Transaction ID mismatch"
+        result = await modbus_api_instance.write_nominal_power(
+            test_power, test_factor, test_modbus_item
+        )
         assert result is True
 
     def test_connection_health_detailed(self, modbus_api_instance):

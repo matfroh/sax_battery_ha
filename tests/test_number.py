@@ -15,25 +15,34 @@ from custom_components.sax_battery.const import (
 )
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem
+from custom_components.sax_battery.models import SAXBatteryData
 from custom_components.sax_battery.number import (
     SAXBatteryConfigNumber,
     SAXBatteryModbusNumber,
     async_setup_entry,
 )
 from homeassistant.components.number import NumberEntityDescription
+from homeassistant.const import UnitOfPower
 from homeassistant.exceptions import HomeAssistantError
 
 
 class TestSAXBatteryModbusNumber:
     """Test SAX Battery modbus number entity - consolidated tests."""
 
-    def test_initialization_basic(
+    def test_initialization_modbus_item(
         self,
         mock_coordinator_modbus_base,
         modbus_item_max_charge_base,
         simulate_unique_id_max_charge,
     ) -> None:
         """Test basic number entity initialization."""
+
+        mock_config_entry = MagicMock()
+        mock_config_entry.data = {"battery_count": 1, "master_battery": "battery_a"}
+
+        sax_data = SAXBatteryData(mock_coordinator_modbus_base.hass, mock_config_entry)
+        mock_coordinator_modbus_base.sax_data = sax_data
+
         number = SAXBatteryModbusNumber(
             coordinator=mock_coordinator_modbus_base,
             battery_id="battery_a",
@@ -43,6 +52,9 @@ class TestSAXBatteryModbusNumber:
         assert number.name == "Max Charge"
         assert number._battery_id == "battery_a"
         assert number._modbus_item == modbus_item_max_charge_base
+        assert number.entity_description.native_unit_of_measurement == UnitOfPower.WATT
+        # Device info should come from actual get_device_info method
+        assert number.device_info["name"] == "SAX Cluster"  # type: ignore[index]
         assert simulate_unique_id_max_charge == "number.sax_cluster_max_charge"
 
     def test_initialization_write_only(self, mock_coordinator_modbus_base) -> None:
@@ -625,41 +637,6 @@ class TestSAXBatteryModbusNumberAdvanced:
         # Should generate clean name from item name
         assert number2.name == "Another Setting"
 
-    @pytest.mark.skip(reason="This test entity_id generation is no longer used.")
-    def test_unique_id_generation(self, mock_coordinator_modbus_base) -> None:
-        """Test unique ID generation."""
-        # Test with "sax_" prefix in name
-        item_with_prefix = ModbusItem(
-            address=41,  # Fixed: Use valid address
-            name="sax_test_setting",
-            mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.BESS,
-        )
-
-        number = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_modbus_base,
-            battery_id="battery_b",
-            modbus_item=item_with_prefix,
-        )
-
-        assert number.unique_id == "sax_test_setting"
-
-        # Test without "sax_" prefix in name
-        item_without_prefix = ModbusItem(
-            address=42,  # Fixed: Use valid address
-            name="another_setting",
-            mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.BESS,
-        )
-
-        number2 = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_modbus_base,
-            battery_id="battery_c",
-            modbus_item=item_without_prefix,
-        )
-
-        assert number2.unique_id == "sax_another_setting"
-
     def test_device_info_assignment(self, mock_coordinator_modbus_base) -> None:
         """Test device info assignment during initialization."""
         test_item = ModbusItem(
@@ -685,7 +662,7 @@ class TestSAXBatteryModbusNumberAdvanced:
 class TestSAXBatteryConfigNumber:
     """Test SAX Battery config number entity - consolidated tests."""
 
-    def test_initialization(
+    def test_initialization_sax_item(
         self,
         mock_coordinator_config_base,
         sax_item_min_soc_base,
@@ -693,10 +670,12 @@ class TestSAXBatteryConfigNumber:
         simulate_unique_id_min_soc,
     ) -> None:
         """Test config number initialization with proper unique ID generation."""
-        # Mock the device info to return the expected cluster device info
-        mock_coordinator_config_base.sax_data.get_device_info.return_value = (
-            mock_device_info_cluster
-        )
+
+        mock_config_entry = MagicMock()
+        mock_config_entry.data = {"battery_count": 1, "master_battery": "battery_a"}
+
+        sax_data = SAXBatteryData(mock_coordinator_config_base.hass, mock_config_entry)
+        mock_coordinator_config_base.sax_data = sax_data
 
         # Ensure the SAX item has the correct device reference
         sax_item_min_soc_base.device = DeviceConstants.SYS
@@ -706,21 +685,16 @@ class TestSAXBatteryConfigNumber:
             sax_item=sax_item_min_soc_base,
         )
 
-        # Verify the device info is properly assigned
-        assert number.device_info == mock_device_info_cluster
+        # Verify the device info comes from actual get_device_info method
+        assert number.device_info["name"] == "SAX Cluster"  # type: ignore[index]
 
         # Verify entity description came from the real const.py data
         assert number.entity_description.name == "Sax Minimum SOC"
         assert number.entity_description.key == SAX_MIN_SOC
-
-        # Verify the unique ID matches the expected pattern
-        assert simulate_unique_id_min_soc == "number.sax_cluster_minimum_soc"
         assert hasattr(number, "entity_description")
 
-        # Verify device info was requested correctly
-        mock_coordinator_config_base.sax_data.get_device_info.assert_called_with(
-            "cluster", DeviceConstants.SYS
-        )
+        # Verify the simulation function generates the expected format
+        assert simulate_unique_id_min_soc == "number.sax_cluster_minimum_soc"
 
     def test_native_value_scenarios(
         self, mock_coordinator_config_base, sax_item_min_soc_base
@@ -975,13 +949,6 @@ class TestSAXBatteryPilotControl:
 
 class TestSAXBatteryPilotControlAdvanced:
     """Test advanced pilot control scenarios."""
-
-    @pytest.fixture(autouse=True)
-    def reset_pilot_control_transactions(self):
-        """Reset pilot control transactions before each test."""
-        SAXBatteryModbusNumber._pilot_control_transaction.clear()
-        yield
-        SAXBatteryModbusNumber._pilot_control_transaction.clear()
 
     def test_power_factor_validation_edge_cases(
         self, mock_coordinator_pilot_control_base

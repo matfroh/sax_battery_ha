@@ -111,33 +111,6 @@ class TestShouldIncludeEntity:
         )
         assert result is False
 
-    @pytest.mark.skip(reason="This test might be useless")
-    def test_exclude_master_only_item_no_battery_config(
-        self, mock_config_entry
-    ) -> None:
-        """Test master-only item behavior when no master battery is configured."""
-        # When no master_battery is configured in data, master_only items
-        # should still be included (this matches the actual implementation behavior)
-        mock_config_entry.data = {
-            "batteries": {},
-            # No master_battery key at all
-        }
-
-        api_item = ModbusItem(
-            name="smart_meter_data",
-            device=DeviceConstants.BESS,
-            mtype=TypeConstants.SENSOR,
-            address=100,
-            battery_slave_id=1,
-            factor=1.0,
-        )
-        # Dynamically add attribute
-        setattr(api_item, "master_only", True)
-
-        result = should_include_entity(api_item, mock_config_entry, "battery_a")
-        # Based on the actual implementation, this returns True when no master_battery is configured
-        assert result is True
-
     def test_exclude_master_only_item_for_non_master_battery(
         self, mock_config_entry
     ) -> None:

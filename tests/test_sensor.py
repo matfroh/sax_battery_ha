@@ -26,6 +26,7 @@ from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.entity_keys import SAX_POWER, SAX_SOC
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem
+from custom_components.sax_battery.models import SAXBatteryData
 from custom_components.sax_battery.sensor import (
     SAXBatteryCalculatedSensor,
     SAXBatteryModbusSensor,
@@ -188,19 +189,31 @@ class TestSAXBatteryModbusSensor:
         assert len(entities_created) >= 0  # Should handle empty entity list gracefully
 
     def test_modbus_sensor_init(
-        self, mock_coordinator_sensor, temperature_modbus_item_sensor
+        self,
+        mock_coordinator_sensor,
+        temperature_modbus_item_sensor,
+        simulate_unique_id_temperature,
     ) -> None:
         """Test modbus sensor entity initialization."""
+
+        mock_config_entry = MagicMock()
+        mock_config_entry.data = {"battery_count": 1, "master_battery": "battery_a"}
+
+        sax_data = SAXBatteryData(mock_coordinator_sensor.hass, mock_config_entry)
+        mock_coordinator_sensor.sax_data = sax_data
+
         sensor = SAXBatteryModbusSensor(
             coordinator=mock_coordinator_sensor,
             battery_id="battery_a",
             modbus_item=temperature_modbus_item_sensor,
         )
 
+        assert sensor.name == "Temperature"
         assert sensor._battery_id == "battery_a"
         assert sensor._modbus_item == temperature_modbus_item_sensor
-        assert sensor.unique_id == "sax_battery_a_temperature"
-        assert sensor.name == "Temperature"
+        # Device info should come from actual get_device_info method
+        assert sensor.device_info["name"] == "SAX Battery A"  # type: ignore[index]
+        assert simulate_unique_id_temperature == "sensor.sax_battery_a_temperature"
 
     def test_modbus_sensor_init_with_entity_description(
         self, mock_coordinator_sensor, temperature_modbus_item_sensor
@@ -327,15 +340,21 @@ class TestSAXBatteryModbusSensor:
 class TestSAXBatteryCalculatedSensor:
     """Test SAX Battery calculated sensor."""
 
-    @pytest.mark.skip(reason="This test entity_id generation is no longer used.")
-    def test_calc_sensor_init(self) -> None:
+    def test_calc_sensor_init(self, simulate_unique_id_combined_soc) -> None:
         """Test calculated sensor entity initialization."""
         mock_coordinator = create_mock_coordinator({})
+
+        # Create a minimal SAXBatteryData instance for testing
+        mock_config_entry = MagicMock()
+        mock_config_entry.data = {"battery_count": 1, "master_battery": "battery_a"}
+
+        sax_data = SAXBatteryData(mock_coordinator.hass, mock_config_entry)
+        mock_coordinator.sax_data = sax_data
 
         calc_item = SAXItem(
             name=SAX_COMBINED_SOC,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
+            device=DeviceConstants.SYS,  # System device for cluster info
             entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
         )
 
@@ -349,10 +368,10 @@ class TestSAXBatteryCalculatedSensor:
 
         assert sensor._sax_item == calc_item
         assert sensor._coordinators == coordinators
-        # Unique ID should match the actual implementation
-        assert sensor.unique_id == SAX_COMBINED_SOC
-        # Name format: Sax Combined SOC (without battery prefix for system items)
         assert sensor.name == "Combined SOC"
+        # The device info should now come from actual get_device_info method
+        assert sensor.device_info["name"] == "SAX Cluster"  # type: ignore[index]
+        assert simulate_unique_id_combined_soc == "sensor.sax_cluster_combined_soc"
 
     def test_calc_sensor_uses_sax_item_calculate_value(self) -> None:
         """Test calculated sensor uses SAXItem calculate_value method."""
