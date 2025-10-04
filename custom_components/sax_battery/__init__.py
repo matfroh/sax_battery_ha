@@ -521,7 +521,7 @@ async def _setup_battery_coordinator(
         await coordinator.async_config_entry_first_refresh()
     except Exception as err:
         # Ensure connection is closed on failure
-        modbus_api.close()
+        await modbus_api.close()
         raise ConfigEntryNotReady(
             f"Initial data fetch failed for {battery_id}: {err}"
         ) from err

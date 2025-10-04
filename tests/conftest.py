@@ -389,7 +389,7 @@ def mock_modbus_item():
     return ModbusItem(
         name="test_item",
         address=100,
-        battery_slave_id=1,
+        battery_device_id=1,
         mtype=TypeConstants.NUMBER,
         device=DeviceConstants.BESS,
         factor=10,

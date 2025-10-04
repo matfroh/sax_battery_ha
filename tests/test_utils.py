@@ -47,7 +47,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.BESS,  # Different from config
             mtype=TypeConstants.SENSOR,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=10.0,
         )
 
@@ -63,7 +63,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.BESS,  # Matches config
             mtype=TypeConstants.SENSOR,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=10.0,
         )
 
@@ -80,7 +80,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.SENSOR,
             entitydescription=DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         # Dynamically add attribute - ModbusItem supports this
@@ -100,7 +100,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         # Dynamically add attribute
@@ -128,7 +128,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         # Dynamically add attribute
@@ -151,7 +151,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         # Dynamically add attribute
@@ -171,7 +171,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         # Dynamically add attribute
@@ -189,7 +189,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         # Dynamically add attribute
@@ -216,7 +216,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         # Dynamically add attributes
@@ -243,7 +243,7 @@ class TestShouldIncludeEntity:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.NUMBER,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         # Dynamically add attributes
@@ -261,7 +261,7 @@ class TestShouldIncludeEntity:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -311,7 +311,7 @@ class TestWriteOnlyRegisterHandling:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=41,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -324,7 +324,7 @@ class TestWriteOnlyRegisterHandling:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=42,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -344,7 +344,7 @@ class TestWriteOnlyRegisterHandling:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=41,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -364,7 +364,7 @@ class TestWriteOnlyRegisterHandling:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=41,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -385,7 +385,7 @@ class TestWriteOnlyRegisterHandling:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=43,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -398,7 +398,7 @@ class TestWriteOnlyRegisterHandling:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=44,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -418,7 +418,7 @@ class TestWriteOnlyRegisterHandling:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=43,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -438,7 +438,7 @@ class TestWriteOnlyRegisterHandling:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=43,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -456,7 +456,7 @@ class TestWriteOnlyRegisterHandling:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         delattr(item, "address")
@@ -920,7 +920,7 @@ class TestEdgeCasesAndBoundaryConditions:
             mtype=TypeConstants.SENSOR,
             device=None,  # type: ignore[arg-type]
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -937,7 +937,7 @@ class TestEdgeCasesAndBoundaryConditions:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -954,7 +954,7 @@ class TestEdgeCasesAndBoundaryConditions:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         setattr(item, "required_features", [])  # Empty list

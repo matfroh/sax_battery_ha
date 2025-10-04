@@ -61,7 +61,7 @@ class TestSAXBatterySwitch:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,  # Use valid Modbus address instead of 0
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
             entitydescription=DESCRIPTION_SAX_STATUS_SWITCH,
         )
@@ -90,7 +90,7 @@ class TestSAXBatterySwitch:
             mtype=TypeConstants.SWITCH,
             device=DeviceConstants.BESS,
             address=99,  # Regular register, not write-only
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -123,7 +123,7 @@ class TestSAXBatterySwitch:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1001,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
             entitydescription=None,  # No entity description
         )
@@ -300,7 +300,7 @@ class TestSAXBatterySwitch:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
             entitydescription=None,
         )
@@ -362,7 +362,7 @@ class TestSAXBatterySwitch:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
             entitydescription=None,
         )
@@ -1120,7 +1120,7 @@ class TestAsyncSetupEntry:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -1283,7 +1283,7 @@ class TestAsyncSetupEntry:
             device=DeviceConstants.BESS,
             mtype=TypeConstants.SWITCH,
             address=1000,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 

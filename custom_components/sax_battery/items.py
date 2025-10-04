@@ -87,7 +87,7 @@ class ModbusItem(BaseItem):
     """Modbus-specific item with physical register communication."""
 
     address: int = 0
-    battery_slave_id: int = 1
+    battery_device_id: int = 1
     data_type: ModbusClientMixin.DATATYPE = ModbusClientMixin.DATATYPE.UINT16
     enabled_by_default: bool = True
     factor: float = 1.0

@@ -80,7 +80,7 @@ class TestSAXBatteryCoordinator:
         # Connection health methods
         api.should_force_reconnect.return_value = False  # Default to healthy connection
         api.connection_health = {"health_status": "good", "success_rate": 100}
-        api.close = MagicMock()  # Synchronous close method
+        api.close = AsyncMock()  # Async close method
 
         return api
 
@@ -124,7 +124,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.SWITCH,
             device=DeviceConstants.BESS,
             address=10,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         item.modbus_api = mock_modbus_api_coord_unique
@@ -138,7 +138,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=43,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         item.modbus_api = mock_modbus_api_coord_unique
@@ -152,7 +152,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
             address=20,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         item.modbus_api = mock_modbus_api_coord_unique
@@ -612,7 +612,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.SM,
             address=100,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         smart_meter_item.modbus_api = mock_modbus_api_coord_unique
@@ -798,7 +798,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
             address=10,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -807,7 +807,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
             address=11,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -816,7 +816,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.SM,
             address=20,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
 
@@ -1278,7 +1278,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=10,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         item.modbus_api = None  # No API reference
@@ -1332,7 +1332,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.SWITCH,
             device=DeviceConstants.BESS,
             address=10,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         item.modbus_api = None  # No API reference
@@ -1499,7 +1499,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=10,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         power_item.modbus_api = None
@@ -1509,7 +1509,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=11,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         power_factor_item.modbus_api = None
@@ -1932,7 +1932,7 @@ class TestSAXBatteryCoordinator:
                 mtype=TypeConstants.SENSOR,
                 device=DeviceConstants.BESS,
                 address=10 + i,
-                battery_slave_id=1,
+                battery_device_id=1,
                 factor=1.0,
             )
             sys_items.append(item)
@@ -1945,7 +1945,7 @@ class TestSAXBatteryCoordinator:
                 mtype=TypeConstants.SENSOR,
                 device=DeviceConstants.SM,  # Smart Meter device
                 address=20 + i,
-                battery_slave_id=1,
+                battery_device_id=1,
                 factor=1.0,
             )
             sm_items.append(item)
@@ -2192,7 +2192,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.NUMBER,
             device=DeviceConstants.BESS,
             address=50,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         number_item.modbus_api = mock_modbus_api_coord_unique
@@ -2204,7 +2204,7 @@ class TestSAXBatteryCoordinator:
             mtype=TypeConstants.SWITCH,
             device=DeviceConstants.BESS,
             address=51,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
         )
         switch_item.modbus_api = mock_modbus_api_coord_unique

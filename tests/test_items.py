@@ -37,7 +37,7 @@ class TestModbusItem:
             address=100,
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
-            battery_slave_id=1,
+            battery_device_id=1,
             factor=1.0,
             offset=0,
         )
@@ -48,7 +48,7 @@ class TestModbusItem:
         assert modbus_item.address == 100
         assert modbus_item.mtype == TypeConstants.SENSOR
         assert modbus_item.device == DeviceConstants.BESS
-        assert modbus_item.battery_slave_id == 1
+        assert modbus_item.battery_device_id == 1
         assert modbus_item.factor == 1.0
         assert modbus_item.offset == 0
 

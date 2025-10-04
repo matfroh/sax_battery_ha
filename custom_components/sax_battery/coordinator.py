@@ -115,7 +115,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Check connection health and force reconnect if needed
             if self.modbus_api.should_force_reconnect():
                 _LOGGER.info("Poor connection health detected, attempting reconnect")
-                self.modbus_api.close()
+                await self.modbus_api.close()
                 if not await self.modbus_api.connect():
                     raise UpdateFailed(  # noqa: TRY301
                         f"Failed to reconnect to battery {self.battery_id} after health check"
