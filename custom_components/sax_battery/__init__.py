@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any
@@ -104,10 +105,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry_data = hass.data[DOMAIN].pop(entry.entry_id)
 
             # Clean up coordinators and close connections
+            # Security: Properly clean up resources to prevent leaks (OWASP A05)
+            # Performance: Use gather() for parallel connection cleanup
             coordinators = entry_data.get("coordinators", {})
-            for coordinator in coordinators.values():
+
+            close_tasks = []
+            for battery_id, coordinator in coordinators.items():
                 if hasattr(coordinator, "modbus_api") and coordinator.modbus_api:
-                    coordinator.modbus_api.close()
+                    _LOGGER.debug("Closing Modbus connection for %s", battery_id)
+                    close_tasks.append(coordinator.modbus_api.close())
+
+            # Await all close operations in parallel for better performance
+            if close_tasks:
+                await asyncio.gather(*close_tasks, return_exceptions=True)
 
             _LOGGER.debug("Successfully unloaded SAX Battery integration")
         else:
