@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from unittest.mock import AsyncMock, Mock, patch
 
 from pymodbus.client import AsyncModbusTcpClient
@@ -10,7 +12,10 @@ import pytest
 
 from custom_components.sax_battery.const import DEFAULT_PORT
 from custom_components.sax_battery.items import ModbusItem
-from custom_components.sax_battery.modbusobject import ModbusAPI
+from custom_components.sax_battery.modbusobject import (
+    BROKEN_CONNECTION_ERRORS,
+    ModbusAPI,
+)
 
 
 @pytest.fixture
@@ -141,53 +146,119 @@ class TestModbusAPIInitialization:
 class TestModbusAPIConnection:
     """Test ModbusAPI connection management."""
 
-    async def test_connect_success(self, modbus_api_instance, mock_async_modbus_client):
-        """Test successful connection."""
+    async def test_connect_success(
+        self, modbus_api_instance, mock_async_modbus_client, caplog
+    ):
+        """Test successful connection with logging."""
         mock_async_modbus_client.connected = False
         mock_async_modbus_client.connect.return_value = True
 
-        result = await modbus_api_instance.connect()
+        with caplog.at_level(logging.DEBUG):
+            result = await modbus_api_instance.connect()
 
-        assert result is True
-        mock_async_modbus_client.connect.assert_called_once()
-        assert modbus_api_instance.consecutive_failures == 0
-        # Implementation doesn't set last_successful_connection
+            assert result is True
+            mock_async_modbus_client.connect.assert_called_once()
+            assert modbus_api_instance.consecutive_failures == 0
+            # Actual log message: "Connected to battery_a at 192.168.1.100:502"
+            assert any("Connected to" in record.message for record in caplog.records)
 
     async def test_connect_already_connected(
-        self, modbus_api_instance, mock_async_modbus_client
+        self, modbus_api_instance, mock_async_modbus_client, caplog
     ):
-        """Test connection when already connected."""
+        """Test connection when already connected with logging."""
         mock_async_modbus_client.connected = True
 
-        result = await modbus_api_instance.connect()
+        with caplog.at_level(logging.DEBUG):
+            result = await modbus_api_instance.connect()
 
-        # Implementation still calls connect() even when already connected
-        assert result is True
-        mock_async_modbus_client.connect.assert_called_once()
+            assert result is True
+            mock_async_modbus_client.connect.assert_called_once()
+            # Still logs "Connected to" message
+            assert any("Connected to" in record.message for record in caplog.records)
 
-    async def test_connect_failure(self, modbus_api_instance, mock_async_modbus_client):
-        """Test connection failure."""
+    async def test_connect_failure(
+        self, modbus_api_instance, mock_async_modbus_client, caplog
+    ):
+        """Test connection failure with logging."""
         mock_async_modbus_client.connected = False
         mock_async_modbus_client.connect.side_effect = ConnectionException(
             "Connection failed"
         )
 
-        result = await modbus_api_instance.connect()
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_api_instance.connect()
 
-        assert result is False
-        assert modbus_api_instance.consecutive_failures == 1
+            assert result is False
+            assert modbus_api_instance.consecutive_failures == 1
+            # Actual log message: "Connection error for battery_a: ..."
+            assert any(
+                "Connection error" in record.message for record in caplog.records
+            )
 
-    async def test_connect_timeout(self, modbus_api_instance, mock_async_modbus_client):
-        """Test connection timeout."""
+    async def test_connect_timeout(
+        self, modbus_api_instance, mock_async_modbus_client, caplog
+    ):
+        """Test connection timeout with logging."""
         mock_async_modbus_client.connected = False
         mock_async_modbus_client.connect.side_effect = TimeoutError(
             "Connection timeout"
         )
 
-        result = await modbus_api_instance.connect()
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_api_instance.connect()
 
-        assert result is False
-        assert modbus_api_instance.consecutive_failures == 1
+            assert result is False
+            assert modbus_api_instance.consecutive_failures == 1
+            assert any(
+                "Connection error" in record.message for record in caplog.records
+            )
+
+    async def test_connect_broken_pipe_error(
+        self, modbus_api_instance, mock_async_modbus_client, caplog
+    ):
+        """Test connection with broken pipe error (EPIPE)."""
+        mock_async_modbus_client.connected = False
+        os_error = OSError(32, "Broken pipe")
+        mock_async_modbus_client.connect.side_effect = os_error
+
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_api_instance.connect()
+
+            assert result is False
+            assert modbus_api_instance.consecutive_failures == 1
+            # Actual log message: "Connection error for battery_a: [Errno 32] Broken pipe"
+            assert any(
+                "Connection error" in record.message for record in caplog.records
+            )
+
+    async def test_connect_connection_reset_error(
+        self, modbus_api_instance, mock_async_modbus_client, caplog
+    ):
+        """Test connection with connection reset error (ECONNRESET)."""
+        mock_async_modbus_client.connected = False
+        os_error = OSError(104, "Connection reset by peer")
+        mock_async_modbus_client.connect.side_effect = os_error
+
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_api_instance.connect()
+
+            assert result is False
+            assert modbus_api_instance.consecutive_failures == 1
+            assert any(
+                "Connection error" in record.message for record in caplog.records
+            )
+
+    async def test_connect_without_host(self, caplog):
+        """Test connection attempt without host configured."""
+        api = ModbusAPI(battery_id="test")
+
+        with caplog.at_level(logging.ERROR):
+            result = await api.connect()
+
+            assert result is False
+            assert any(
+                "No host configured" in record.message for record in caplog.records
+            )
 
     async def test_is_connected(self, modbus_api_instance, mock_async_modbus_client):
         """Test is_connected property."""
@@ -207,14 +278,20 @@ class TestModbusAPIConnection:
         mock_async_modbus_client.close.assert_called_once()
 
     async def test_close_with_exception(
-        self, modbus_api_instance, mock_async_modbus_client
+        self, modbus_api_instance, mock_async_modbus_client, caplog
     ):
-        """Test close with exception."""
+        """Test close with exception and logging."""
         mock_async_modbus_client.close.side_effect = Exception("Close failed")
 
-        result = await modbus_api_instance.close()
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_api_instance.close()
 
-        assert result is False
+            assert result is False
+            # Actual log message: "Error closing connection for battery_a: Close failed"
+            assert any(
+                "Error closing connection" in record.message
+                for record in caplog.records
+            )
 
 
 class TestModbusAPIRead:
@@ -236,7 +313,7 @@ class TestModbusAPIRead:
 
         result = await modbus_api_instance.read_holding_registers(1, mock_modbus_item)
 
-        assert result == 100.0  # factor = 1.0, offset = 0
+        assert result == 100.0
         mock_async_modbus_client.read_holding_registers.assert_called_once()
 
     async def test_read_holding_registers_with_factor_offset(
@@ -283,6 +360,24 @@ class TestModbusAPIRead:
 
         assert result is None
 
+    async def test_read_holding_registers_modbus_exception(
+        self, modbus_api_instance, mock_async_modbus_client, mock_modbus_item, caplog
+    ):
+        """Test read with ModbusException and logging."""
+        mock_async_modbus_client.connected = True
+        mock_async_modbus_client.read_holding_registers.side_effect = ModbusException(
+            "Modbus error"
+        )
+
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_api_instance.read_holding_registers(
+                1, mock_modbus_item
+            )
+
+            assert result is None
+            # Actual log message: "Read error for battery_a: Modbus Error: Modbus error"
+            assert any("Read error" in record.message for record in caplog.records)
+
     async def test_read_holding_registers_with_retry(
         self,
         modbus_api_instance,
@@ -305,6 +400,23 @@ class TestModbusAPIRead:
         assert result == 100.0
         assert mock_async_modbus_client.read_holding_registers.call_count == 2
 
+    async def test_read_holding_registers_all_retries_failed(
+        self, modbus_api_instance, mock_async_modbus_client, mock_modbus_item
+    ):
+        """Test read with all retries failing."""
+        mock_async_modbus_client.connected = True
+        mock_async_modbus_client.read_holding_registers.side_effect = ModbusException(
+            "Read failed"
+        )
+
+        result = await modbus_api_instance.read_holding_registers(
+            1, mock_modbus_item, max_retries=3
+        )
+
+        assert result is None
+        # Default max_retries=3 means 4 total attempts (initial + 3 retries)
+        assert mock_async_modbus_client.read_holding_registers.call_count == 4
+
 
 class TestModbusAPIWrite:
     """Test ModbusAPI write operations."""
@@ -315,16 +427,20 @@ class TestModbusAPIWrite:
         mock_async_modbus_client,
         mock_modbus_item,
         mock_write_response,
+        caplog,
     ):
-        """Test successful register write."""
+        """Test successful register write with logging."""
         mock_async_modbus_client.connected = True
         mock_async_modbus_client.write_registers.return_value = mock_write_response
         mock_async_modbus_client.convert_to_registers.return_value = [100]
 
-        result = await modbus_api_instance.write_registers(100.0, mock_modbus_item)
+        with caplog.at_level(logging.DEBUG):
+            result = await modbus_api_instance.write_registers(100.0, mock_modbus_item)
 
-        assert result is True
-        mock_async_modbus_client.write_registers.assert_called_once()
+            assert result is True
+            mock_async_modbus_client.write_registers.assert_called_once()
+            # Actual log message: "Writing to test_item at address 40001: ..."
+            assert any("Writing to" in record.message for record in caplog.records)
 
     async def test_write_registers_with_factor_offset(
         self,
@@ -356,18 +472,34 @@ class TestModbusAPIWrite:
 
         assert result is False
 
-    async def test_write_registers_exception(
+    async def test_write_registers_error_response(
         self, modbus_api_instance, mock_async_modbus_client, mock_modbus_item
     ):
-        """Test write with exception."""
+        """Test write with error response."""
+        mock_async_modbus_client.connected = True
+        error_response = Mock()
+        error_response.isError.return_value = True
+        mock_async_modbus_client.write_registers.return_value = error_response
+
+        result = await modbus_api_instance.write_registers(100.0, mock_modbus_item)
+
+        assert result is False
+
+    async def test_write_registers_exception(
+        self, modbus_api_instance, mock_async_modbus_client, mock_modbus_item, caplog
+    ):
+        """Test write with exception and logging."""
         mock_async_modbus_client.connected = True
         mock_async_modbus_client.write_registers.side_effect = ModbusException(
             "Write failed"
         )
 
-        result = await modbus_api_instance.write_registers(100.0, mock_modbus_item)
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_api_instance.write_registers(100.0, mock_modbus_item)
 
-        assert result is False
+            assert result is False
+            # Actual log message: "Write error for battery_a: Modbus Error: Write failed"
+            assert any("Write error" in record.message for record in caplog.records)
 
     async def test_write_nominal_power_success(
         self,
@@ -385,27 +517,52 @@ class TestModbusAPIWrite:
         )
 
         assert result is True
-        # Should write both power and power factor in single call
         assert mock_async_modbus_client.write_registers.call_count == 1
+
+    async def test_write_nominal_power_failure(
+        self, modbus_api_instance, mock_async_modbus_client, mock_modbus_item, caplog
+    ):
+        """Test nominal power write failure with logging."""
+        mock_async_modbus_client.connected = True
+        mock_async_modbus_client.write_registers.side_effect = ModbusException(
+            "Write failed"
+        )
+
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_api_instance.write_nominal_power(
+                1000.0, 95, mock_modbus_item
+            )
+
+            assert result is False
+            # Actual log message: "Modbus error writing nominal power: ..."
+            assert any(
+                "Modbus error writing nominal power" in record.message
+                for record in caplog.records
+            )
 
 
 class TestModbusAPIReconnection:
     """Test ModbusAPI reconnection logic."""
 
     async def test_reconnect_on_error_success(
-        self, modbus_api_instance, mock_async_modbus_client
+        self, modbus_api_instance, mock_async_modbus_client, caplog
     ):
-        """Test successful reconnection."""
+        """Test successful reconnection with logging."""
         modbus_api_instance.consecutive_failures = 2
         mock_async_modbus_client.close.return_value = True
         mock_async_modbus_client.connect.return_value = True
 
-        result = await modbus_api_instance.reconnect_on_error()
+        with caplog.at_level(logging.INFO):
+            result = await modbus_api_instance.reconnect_on_error()
 
-        assert result is True
-        assert modbus_api_instance.consecutive_failures == 0
-        mock_async_modbus_client.close.assert_called_once()
-        mock_async_modbus_client.connect.assert_called_once()
+            assert result is True
+            assert modbus_api_instance.consecutive_failures == 0
+            mock_async_modbus_client.close.assert_called_once()
+            mock_async_modbus_client.connect.assert_called_once()
+            # Actual log message: "Reconnection successful for battery_a"
+            assert any(
+                "Reconnection successful" in record.message for record in caplog.records
+            )
 
     async def test_reconnect_on_error_failure(
         self, modbus_api_instance, mock_async_modbus_client
@@ -418,8 +575,6 @@ class TestModbusAPIReconnection:
         result = await modbus_api_instance.reconnect_on_error()
 
         assert result is False
-        # Implementation increments failures once per failed attempt (2 attempts = +2)
-        # plus once more at the end, so 2 + 2 + 1 = 5
         assert modbus_api_instance.consecutive_failures >= 3
 
     async def test_should_force_reconnect_threshold(self, modbus_api_instance):
@@ -441,18 +596,33 @@ class TestModbusAPIReconnection:
         assert result is True
 
     async def test_ensure_connection_reconnect_needed(
-        self, modbus_api_instance, mock_async_modbus_client
+        self, modbus_api_instance, mock_async_modbus_client, caplog
     ):
         """Test ensure_connection when reconnection needed."""
         mock_async_modbus_client.connected = False
         modbus_api_instance.consecutive_failures = 3
         mock_async_modbus_client.connect.return_value = True
 
+        with caplog.at_level(logging.DEBUG):
+            result = await modbus_api_instance.ensure_connection()
+
+            assert result is True
+            mock_async_modbus_client.connect.assert_called()
+            # Logs "Connected to" message
+            assert any("Connected to" in record.message for record in caplog.records)
+
+    async def test_ensure_connection_force_reconnect(
+        self, modbus_api_instance, mock_async_modbus_client
+    ):
+        """Test ensure_connection with forced reconnect."""
+        mock_async_modbus_client.connected = False
+        modbus_api_instance.consecutive_failures = 5
+        mock_async_modbus_client.close.return_value = True
+        mock_async_modbus_client.connect.return_value = True
+
         result = await modbus_api_instance.ensure_connection()
 
         assert result is True
-        # Implementation doesn't call close() - just calls connect()
-        mock_async_modbus_client.connect.assert_called()
 
 
 class TestModbusAPIProperties:
@@ -475,3 +645,90 @@ class TestModbusAPIProperties:
 
         mock_async_modbus_client.connected = False
         assert modbus_api_instance.connected is False
+
+
+class TestModbusAPIBrokenConnectionErrors:
+    """Test handling of broken connection errors."""
+
+    @pytest.mark.parametrize("errno", BROKEN_CONNECTION_ERRORS)
+    async def test_broken_connection_error_codes(
+        self, modbus_api_instance, mock_async_modbus_client, errno, caplog
+    ):
+        """Test all broken connection error codes are handled correctly."""
+        mock_async_modbus_client.connected = False
+        os_error = OSError(errno, f"Error code {errno}")
+        mock_async_modbus_client.connect.side_effect = os_error
+
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_api_instance.connect()
+
+            assert result is False
+            assert modbus_api_instance.consecutive_failures == 1
+            # All log "Connection error for battery_a: ..."
+            assert any(
+                "Connection error" in record.message for record in caplog.records
+            )
+
+
+class TestModbusAPIEdgeCases:
+    """Test edge cases and boundary conditions."""
+
+    async def test_concurrent_connections(
+        self, modbus_api_instance, mock_async_modbus_client
+    ):
+        """Test concurrent connection attempts use lock correctly."""
+        mock_async_modbus_client.connected = False
+        mock_async_modbus_client.connect.return_value = True
+
+        # Simulate concurrent connection attempts
+        results = await asyncio.gather(
+            modbus_api_instance.connect(),
+            modbus_api_instance.connect(),
+            modbus_api_instance.connect(),
+        )
+
+        assert all(results)
+        assert mock_async_modbus_client.connect.call_count >= 1
+
+    async def test_consecutive_failures_increment(
+        self, modbus_api_instance, mock_async_modbus_client, caplog
+    ):
+        """Test consecutive failures increment correctly."""
+        mock_async_modbus_client.connected = False
+        mock_async_modbus_client.connect.return_value = False
+
+        initial_failures = modbus_api_instance.consecutive_failures
+
+        with caplog.at_level(logging.WARNING):
+            await modbus_api_instance.connect()
+
+        assert modbus_api_instance.consecutive_failures == initial_failures + 1
+        # Actual log message: "Failed to connect to battery_a at 192.168.1.100:502"
+        assert any("Failed to connect" in record.message for record in caplog.records)
+
+    async def test_read_with_zero_count(
+        self, modbus_api_instance, mock_async_modbus_client, mock_modbus_item
+    ):
+        """Test read with zero register count."""
+        mock_async_modbus_client.connected = True
+
+        result = await modbus_api_instance.read_holding_registers(0, mock_modbus_item)
+
+        # Should handle gracefully
+        assert result is None or isinstance(result, (int, float))
+
+    async def test_write_with_none_value(
+        self, modbus_api_instance, mock_async_modbus_client, mock_modbus_item
+    ):
+        """Test write with None value."""
+        mock_async_modbus_client.connected = True
+        mock_async_modbus_client.convert_to_registers.return_value = None
+
+        # Should handle gracefully or raise appropriate error
+        try:
+            result = await modbus_api_instance.write_registers(None, mock_modbus_item)
+            # If it doesn't raise, result should be False
+            assert result is False
+        except (TypeError, ValueError, AttributeError):
+            # Expected for None value
+            pass

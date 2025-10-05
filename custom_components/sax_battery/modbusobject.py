@@ -291,6 +291,7 @@ class ModbusAPI:
                 address=modbus_item.address,
                 values=converted_registers,
                 device_id=modbus_item.battery_device_id,
+                no_response_expected=True,
             )
 
             # Handle SAX battery quirks - some results don't have isError method
@@ -338,10 +339,10 @@ class ModbusAPI:
         if not await self.ensure_connection():
             return False
 
-        # if not (0 <= power_factor <= 10000):
-        #     raise ValueError(
-        #         f"Power factor {power_factor} outside valid range [0, 10000]"
-        #     )
+        if not (0 <= power_factor <= 10000):
+            raise ValueError(
+                f"Power factor {power_factor} outside valid range [0, 10000]"
+            )
 
         if not modbus_item:
             _LOGGER.warning("No Modbus item provided for nominal power write")
@@ -358,6 +359,7 @@ class ModbusAPI:
                 address=modbus_item.address,
                 values=[power_int, pf_int],
                 device_id=modbus_item.battery_device_id,
+                no_response_expected=True,
             )
 
             _LOGGER.debug(

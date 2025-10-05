@@ -1,15 +1,20 @@
-"""Test items module for SAX Battery integration."""
+"""Comprehensive tests for items module."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import logging
+from unittest.mock import AsyncMock, Mock
 
+from pymodbus.client.mixin import ModbusClientMixin
+from pymodbus.exceptions import ModbusException
 import pytest
 
 from custom_components.sax_battery.entity_keys import (
     SAX_COMBINED_SOC,
     SAX_CUMULATIVE_ENERGY_CONSUMED,
     SAX_CUMULATIVE_ENERGY_PRODUCED,
+    SAX_MIN_SOC,
+    SAX_PILOT_POWER,
     SAX_SMARTMETER_ENERGY_CONSUMED,
     SAX_SMARTMETER_ENERGY_PRODUCED,
     SAX_SOC,
@@ -18,466 +23,564 @@ from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem, WebAPIItem
 
 
-class TestModbusItem:
-    """Test ModbusItem functionality."""
+@pytest.fixture
+def mock_modbus_api_for_items():
+    """Create mock ModbusAPI for item tests."""
+    api = AsyncMock()
+    api.read_holding_registers = AsyncMock()
+    api.write_registers = AsyncMock()
+    return api
 
-    @pytest.fixture
-    def mock_modbus_api_for_item(self):
-        """Create mock ModbusAPI for item testing."""
-        api = MagicMock()
-        api.read_holding_registers = AsyncMock(return_value=100)
-        api.write_registers = AsyncMock(return_value=True)
-        return api
 
-    @pytest.fixture
-    def modbus_item(self):
-        """Create test ModbusItem."""
-        return ModbusItem(
-            name="test_item",
-            address=100,
-            mtype=TypeConstants.SENSOR,
-            device=DeviceConstants.BESS,
-            battery_device_id=1,
-            factor=1.0,
-            offset=0,
-        )
+@pytest.fixture
+def modbus_item_fixture(mock_modbus_api_for_items):
+    """Create ModbusItem fixture."""
+    item = ModbusItem(
+        name="test_item",
+        mtype=TypeConstants.NUMBER,
+        device=DeviceConstants.BESS,
+        address=40001,
+        battery_device_id=1,
+        data_type=ModbusClientMixin.DATATYPE.UINT16,
+    )
+    item.modbus_api = mock_modbus_api_for_items
+    return item
 
-    def test_initialization(self, modbus_item):
-        """Test ModbusItem initialization."""
-        assert modbus_item.name == "test_item"
-        assert modbus_item.address == 100
-        assert modbus_item.mtype == TypeConstants.SENSOR
-        assert modbus_item.device == DeviceConstants.BESS
-        assert modbus_item.battery_device_id == 1
-        assert modbus_item.factor == 1.0
-        assert modbus_item.offset == 0
 
-    async def test_async_read_value_success(
-        self, modbus_item, mock_modbus_api_for_item
-    ):
+@pytest.fixture
+def sax_item_fixture():
+    """Create SAXItem fixture."""
+    return SAXItem(
+        name=SAX_COMBINED_SOC,
+        mtype=TypeConstants.SENSOR_CALC,
+        device=DeviceConstants.SYS,
+    )
+
+
+class TestModbusItemRead:
+    """Test ModbusItem read operations."""
+
+    async def test_read_when_invalid(self, modbus_item_fixture):
+        """Test read returns None when item is invalid."""
+        modbus_item_fixture.is_invalid = True
+        result = await modbus_item_fixture.async_read_value()
+        assert result is None
+
+    async def test_read_write_only_item(self, modbus_item_fixture):
+        """Test read skips write-only items."""
+        modbus_item_fixture.mtype = TypeConstants.NUMBER_WO
+        result = await modbus_item_fixture.async_read_value()
+        assert result is None
+
+    async def test_read_without_api(self, modbus_item_fixture, caplog):
+        """Test read fails without ModbusAPI."""
+        modbus_item_fixture._modbus_api = None
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_read_value()
+            assert result is None
+            assert "ModbusAPI not set" in caplog.text
+
+    async def test_read_success(self, modbus_item_fixture, mock_modbus_api_for_items):
         """Test successful read operation."""
-        modbus_item.modbus_api = mock_modbus_api_for_item
+        mock_modbus_api_for_items.read_holding_registers.return_value = 100
+        result = await modbus_item_fixture.async_read_value()
+        assert result == 100
 
-        value = await modbus_item.async_read_value()
-        assert value == 100
-        mock_modbus_api_for_item.read_holding_registers.assert_called_once_with(
-            count=1, modbus_item=modbus_item
-        )
-
-    async def test_async_read_value_no_api(self, modbus_item):
-        """Test read operation without API."""
-        value = await modbus_item.async_read_value()
-        assert value is None
-
-    async def test_async_read_value_write_only(self, mock_modbus_api_for_item):
-        """Test read operation on write-only item."""
-        item = ModbusItem(
-            name="write_only",
-            address=100,
-            mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.BESS,
-        )
-        item.modbus_api = mock_modbus_api_for_item
-
-        value = await item.async_read_value()
-        assert value is None
-        mock_modbus_api_for_item.read_holding_registers.assert_not_called()
-
-    async def test_async_write_value_success(self, mock_modbus_api_for_item):
-        """Test successful write operation."""
-        item = ModbusItem(
-            name="writable_number",
-            address=100,
-            mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.BESS,
-        )
-        item.modbus_api = mock_modbus_api_for_item
-
-        result = await item.async_write_value(50.0)
-        assert result is True
-        mock_modbus_api_for_item.write_registers.assert_called_once_with(
-            value=50.0, modbus_item=item
-        )
-
-    async def test_async_write_value_read_only(
-        self, modbus_item, mock_modbus_api_for_item
+    async def test_read_modbus_exception(
+        self, modbus_item_fixture, mock_modbus_api_for_items, caplog
     ):
-        """Test write operation on read-only item."""
-        modbus_item.modbus_api = mock_modbus_api_for_item
+        """Test read handles ModbusException."""
+        mock_modbus_api_for_items.read_holding_registers.side_effect = ModbusException(
+            "Read failed"
+        )
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_read_value()
+            assert result is None
+            assert "Failed to read value" in caplog.text
 
-        result = await modbus_item.async_write_value(50.0)
+
+class TestModbusItemWrite:
+    """Test ModbusItem write operations."""
+
+    async def test_write_read_only_sensor(self, modbus_item_fixture, caplog):
+        """Test write fails for read-only SENSOR type."""
+        modbus_item_fixture.mtype = TypeConstants.SENSOR
+        with caplog.at_level(logging.WARNING):
+            result = await modbus_item_fixture.async_write_value(100)
+            assert result is False
+            assert "read-only" in caplog.text
+
+    async def test_write_read_only_number_ro(self, modbus_item_fixture, caplog):
+        """Test write fails for NUMBER_RO type."""
+        modbus_item_fixture.mtype = TypeConstants.NUMBER_RO
+        with caplog.at_level(logging.WARNING):
+            result = await modbus_item_fixture.async_write_value(100)
+            assert result is False
+
+    async def test_write_read_only_sensor_calc(self, modbus_item_fixture, caplog):
+        """Test write fails for SENSOR_CALC type."""
+        modbus_item_fixture.mtype = TypeConstants.SENSOR_CALC
+        with caplog.at_level(logging.WARNING):
+            result = await modbus_item_fixture.async_write_value(100)
+            assert result is False
+
+    async def test_write_without_api(self, modbus_item_fixture, caplog):
+        """Test write fails without ModbusAPI."""
+        modbus_item_fixture._modbus_api = None
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_write_value(100)
+            assert result is False
+            assert "ModbusAPI not set" in caplog.text
+
+    async def test_write_bool_true(
+        self, modbus_item_fixture, mock_modbus_api_for_items
+    ):
+        """Test write boolean true value."""
+        mock_modbus_api_for_items.write_registers.return_value = True
+        result = await modbus_item_fixture.async_write_value(True)
+        assert result is True
+        mock_modbus_api_for_items.write_registers.assert_called_once_with(
+            value=2, modbus_item=modbus_item_fixture
+        )
+
+    async def test_write_bool_false(
+        self, modbus_item_fixture, mock_modbus_api_for_items
+    ):
+        """Test write boolean false value."""
+        mock_modbus_api_for_items.write_registers.return_value = True
+        result = await modbus_item_fixture.async_write_value(False)
+        assert result is True
+        mock_modbus_api_for_items.write_registers.assert_called_once_with(
+            value=1, modbus_item=modbus_item_fixture
+        )
+
+    async def test_write_uint16_valid_range(
+        self, modbus_item_fixture, mock_modbus_api_for_items
+    ):
+        """Test write UINT16 in valid range."""
+        mock_modbus_api_for_items.write_registers.return_value = True
+        result = await modbus_item_fixture.async_write_value(100.5)
+        assert result is True
+        mock_modbus_api_for_items.write_registers.assert_called_once_with(
+            value=100, modbus_item=modbus_item_fixture
+        )
+
+    async def test_write_uint16_out_of_range_low(self, modbus_item_fixture, caplog):
+        """Test write UINT16 below valid range."""
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_write_value(-1)
+            assert result is False
+            assert "out of range for UINT16" in caplog.text
+
+    async def test_write_uint16_out_of_range_high(self, modbus_item_fixture, caplog):
+        """Test write UINT16 above valid range."""
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_write_value(70000)
+            assert result is False
+            assert "out of range for UINT16" in caplog.text
+
+    async def test_write_int16_valid_range(
+        self, modbus_item_fixture, mock_modbus_api_for_items
+    ):
+        """Test write INT16 in valid range."""
+        modbus_item_fixture.data_type = ModbusClientMixin.DATATYPE.INT16
+        mock_modbus_api_for_items.write_registers.return_value = True
+        result = await modbus_item_fixture.async_write_value(-100.5)
+        assert result is True
+        mock_modbus_api_for_items.write_registers.assert_called_once_with(
+            value=-100, modbus_item=modbus_item_fixture
+        )
+
+    async def test_write_int16_out_of_range_low(self, modbus_item_fixture, caplog):
+        """Test write INT16 below valid range."""
+        modbus_item_fixture.data_type = ModbusClientMixin.DATATYPE.INT16
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_write_value(-40000)
+            assert result is False
+            assert "out of range for INT16" in caplog.text
+
+    async def test_write_int16_out_of_range_high(self, modbus_item_fixture, caplog):
+        """Test write INT16 above valid range."""
+        modbus_item_fixture.data_type = ModbusClientMixin.DATATYPE.INT16
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_write_value(40000)
+            assert result is False
+            assert "out of range for INT16" in caplog.text
+
+    async def test_write_uint32_supported(
+        self, modbus_item_fixture, mock_modbus_api_for_items
+    ):
+        """Test write UINT32 is supported."""
+        modbus_item_fixture.data_type = ModbusClientMixin.DATATYPE.UINT32
+        mock_modbus_api_for_items.write_registers.return_value = True
+        result = await modbus_item_fixture.async_write_value(100000)
+        assert result is True
+
+    async def test_write_int32_supported(
+        self, modbus_item_fixture, mock_modbus_api_for_items
+    ):
+        """Test write INT32 is supported."""
+        modbus_item_fixture.data_type = ModbusClientMixin.DATATYPE.INT32
+        mock_modbus_api_for_items.write_registers.return_value = True
+        result = await modbus_item_fixture.async_write_value(-100000)
+        assert result is True
+
+    async def test_write_unsupported_datatype(self, modbus_item_fixture, caplog):
+        """Test write fails for unsupported data type."""
+        modbus_item_fixture.data_type = "INVALID_TYPE"
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_write_value(100)
+            assert result is False
+            assert "Unsupported data type" in caplog.text
+
+    async def test_write_value_error(self, modbus_item_fixture, caplog):
+        """Test write handles ValueError."""
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_write_value("invalid")
+            assert result is False
+            assert "Invalid value" in caplog.text
+
+    async def test_write_modbus_exception(
+        self, modbus_item_fixture, mock_modbus_api_for_items, caplog
+    ):
+        """Test write handles ModbusException."""
+        mock_modbus_api_for_items.write_registers.side_effect = ModbusException(
+            "Write failed"
+        )
+        with caplog.at_level(logging.ERROR):
+            result = await modbus_item_fixture.async_write_value(100)
+            assert result is False
+            assert "Modbus error" in caplog.text
+
+    async def test_write_returns_none(
+        self, modbus_item_fixture, mock_modbus_api_for_items
+    ):
+        """Test write handles None return from API."""
+        mock_modbus_api_for_items.write_registers.return_value = None
+        result = await modbus_item_fixture.async_write_value(100)
         assert result is False
-        mock_modbus_api_for_item.write_registers.assert_not_called()
-
-    def test_switch_values(self, modbus_item):
-        """Test switch on/off values."""
-        # SAX Battery uses 2 for "on" and 1 for "off" by default
-        assert modbus_item.get_switch_on_value() == 2
-        assert modbus_item.get_switch_off_value() == 1
 
 
-class TestSAXItem:
-    """Test SAXItem functionality."""
+class TestModbusItemSwitchMethods:
+    """Test ModbusItem switch helper methods."""
 
-    @pytest.fixture
-    def mock_coordinators_for_sax(self):
-        """Create mock coordinators for SAX item testing."""
-        coordinator1 = MagicMock()
-        coordinator1.data = {
-            SAX_SOC: 80.0,
-            SAX_SMARTMETER_ENERGY_PRODUCED: 10000.0,
-            SAX_SMARTMETER_ENERGY_CONSUMED: 7000.0,
+    def test_get_switch_on_value_default(self, modbus_item_fixture):
+        """Test get_switch_on_value returns default."""
+        assert modbus_item_fixture.get_switch_on_value() == 2
+
+    def test_get_switch_on_value_custom(self, modbus_item_fixture):
+        """Test get_switch_on_value with custom value."""
+        modbus_item_fixture.switch_on_value = 5
+        assert modbus_item_fixture.get_switch_on_value() == 5
+
+    def test_get_switch_off_value_default(self, modbus_item_fixture):
+        """Test get_switch_off_value returns default."""
+        assert modbus_item_fixture.get_switch_off_value() == 1
+
+    def test_get_switch_off_value_custom(self, modbus_item_fixture):
+        """Test get_switch_off_value with custom value."""
+        modbus_item_fixture.switch_off_value = 0
+        assert modbus_item_fixture.get_switch_off_value() == 0
+
+    def test_get_switch_connected_value(self, modbus_item_fixture):
+        """Test get_switch_connected_value."""
+        assert modbus_item_fixture.get_switch_connected_value() == 3
+
+    def test_get_switch_standby_value(self, modbus_item_fixture):
+        """Test get_switch_standby_value."""
+        assert modbus_item_fixture.get_switch_standby_value() == 4
+
+    def test_is_tri_state_switch_default(self, modbus_item_fixture):
+        """Test is_tri_state_switch default."""
+        assert modbus_item_fixture.is_tri_state_switch() is True
+
+    def test_is_tri_state_switch_false(self, modbus_item_fixture):
+        """Test is_tri_state_switch when disabled."""
+        modbus_item_fixture.supports_connected_state = False
+        assert modbus_item_fixture.is_tri_state_switch() is False
+
+    def test_get_switch_state_name_on(self, modbus_item_fixture):
+        """Test get_switch_state_name for on state."""
+        assert modbus_item_fixture.get_switch_state_name(2) == "on"
+
+    def test_get_switch_state_name_off(self, modbus_item_fixture):
+        """Test get_switch_state_name for off state."""
+        assert modbus_item_fixture.get_switch_state_name(1) == "off"
+
+    def test_get_switch_state_name_connected(self, modbus_item_fixture):
+        """Test get_switch_state_name for connected state."""
+        assert modbus_item_fixture.get_switch_state_name(3) == "connected"
+
+    def test_get_switch_state_name_standby(self, modbus_item_fixture):
+        """Test get_switch_state_name for standby state."""
+        assert modbus_item_fixture.get_switch_state_name(4) == "standby"
+
+    def test_get_switch_state_name_unknown(self, modbus_item_fixture):
+        """Test get_switch_state_name for unknown value."""
+        assert modbus_item_fixture.get_switch_state_name(99) == "unknown"
+
+    def test_get_switch_state_name_invalid_type(self, modbus_item_fixture):
+        """Test get_switch_state_name with invalid type."""
+        assert modbus_item_fixture.get_switch_state_name("invalid") == "unknown"
+
+    def test_is_read_only_sensor(self, modbus_item_fixture):
+        """Test is_read_only for SENSOR type."""
+        modbus_item_fixture.mtype = TypeConstants.SENSOR
+        assert modbus_item_fixture.is_read_only() is True
+
+    def test_is_read_only_number_ro(self, modbus_item_fixture):
+        """Test is_read_only for NUMBER_RO type."""
+        modbus_item_fixture.mtype = TypeConstants.NUMBER_RO
+        assert modbus_item_fixture.is_read_only() is True
+
+    def test_is_read_only_sensor_calc(self, modbus_item_fixture):
+        """Test is_read_only for SENSOR_CALC type."""
+        modbus_item_fixture.mtype = TypeConstants.SENSOR_CALC
+        assert modbus_item_fixture.is_read_only() is True
+
+    def test_is_read_only_writable(self, modbus_item_fixture):
+        """Test is_read_only for writable type."""
+        modbus_item_fixture.mtype = TypeConstants.NUMBER
+        assert modbus_item_fixture.is_read_only() is False
+
+    def test_is_read_only_custom_attribute(self, modbus_item_fixture):
+        """Test is_read_only with custom read_only attribute."""
+        modbus_item_fixture.read_only = True
+        assert modbus_item_fixture.is_read_only() is True
+
+
+class TestSAXItemRead:
+    """Test SAXItem read operations."""
+
+    async def test_read_combined_soc(self, sax_item_fixture):
+        """Test read combined SOC calculation."""
+        coordinators = {
+            "battery_a": Mock(data={SAX_SOC: 80.0}),
+            "battery_b": Mock(data={SAX_SOC: 90.0}),
         }
+        sax_item_fixture.set_coordinators(coordinators)
+        result = await sax_item_fixture.async_read_value()
+        assert result == 85.0
 
-        coordinator2 = MagicMock()
-        coordinator2.data = {
-            SAX_SOC: 75.0,
-            SAX_SMARTMETER_ENERGY_PRODUCED: 15000.0,
-            SAX_SMARTMETER_ENERGY_CONSUMED: 9000.0,
-        }
+    async def test_read_combined_soc_empty(self, sax_item_fixture):
+        """Test read combined SOC with no data."""
+        sax_item_fixture.set_coordinators({})
+        result = await sax_item_fixture.async_read_value()
+        assert result is None
 
-        return {"battery_1": coordinator1, "battery_2": coordinator2}
-
-    @pytest.fixture
-    def sax_item(self):
-        """Create test SAXItem."""
-        return SAXItem(
-            name="sax_test_calculation",
+    async def test_read_cumulative_energy_produced(self):
+        """Test read cumulative energy produced."""
+        item = SAXItem(
+            name=SAX_CUMULATIVE_ENERGY_PRODUCED,
             mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
+            device=DeviceConstants.SYS,
         )
+        coordinators = {
+            "battery_a": Mock(data={SAX_SMARTMETER_ENERGY_PRODUCED: 100.0}),
+            "battery_b": Mock(data={SAX_SMARTMETER_ENERGY_PRODUCED: 150.0}),
+        }
+        item.set_coordinators(coordinators)
+        result = await item.async_read_value()
+        assert result == 250.0
 
-    def test_initialization(self, sax_item):
-        """Test SAXItem initialization."""
-        assert sax_item.name == "sax_test_calculation"
-        assert sax_item.mtype == TypeConstants.SENSOR_CALC
-        assert sax_item.device == DeviceConstants.BESS
+    async def test_read_cumulative_energy_consumed(self):
+        """Test read cumulative energy consumed."""
+        item = SAXItem(
+            name=SAX_CUMULATIVE_ENERGY_CONSUMED,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+        )
+        coordinators = {
+            "battery_a": Mock(data={SAX_SMARTMETER_ENERGY_CONSUMED: 80.0}),
+            "battery_b": Mock(data={SAX_SMARTMETER_ENERGY_CONSUMED: 120.0}),
+        }
+        item.set_coordinators(coordinators)
+        result = await item.async_read_value()
+        assert result == 200.0
 
-    def test_is_invalid_always_false(self, sax_item):
-        """Test SAXItem is never invalid."""
-        assert sax_item.is_invalid is False
+    async def test_read_pilot_power(self):
+        """Test read pilot power value."""
+        item = SAXItem(
+            name=SAX_PILOT_POWER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+        )
+        mock_pilot = Mock()
+        mock_pilot.calculated_power = 500.0
+        mock_sax_data = Mock(pilot=mock_pilot)
+        coordinators = {"battery_a": Mock(sax_data=mock_sax_data)}
+        item.set_coordinators(coordinators)
+        result = await item.async_read_value()
+        assert result == 500.0
 
-    def test_set_coordinators(self, sax_item, mock_coordinators_for_sax):
-        """Test setting coordinators."""
-        sax_item.set_coordinators(mock_coordinators_for_sax)
-        assert sax_item.coordinators == mock_coordinators_for_sax
+    async def test_read_pilot_power_no_pilot(self):
+        """Test read pilot power when no pilot service."""
+        item = SAXItem(
+            name=SAX_PILOT_POWER,
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+        )
+        item.set_coordinators({})
+        result = await item.async_read_value()
+        assert result == 0.0
 
-    async def test_async_read_value(self, sax_item, mock_coordinators_for_sax):
-        """Test async read value delegates to calculate_value."""
-        sax_item.set_coordinators(mock_coordinators_for_sax)
-        sax_item.name = SAX_COMBINED_SOC  # Set name to trigger calculation
+    async def test_read_unknown_calculation(self, caplog):
+        """Test read with unknown calculation type."""
+        item = SAXItem(
+            name="unknown_calc",
+            mtype=TypeConstants.SENSOR_CALC,
+            device=DeviceConstants.SYS,
+        )
+        item.set_coordinators({})
+        with caplog.at_level(logging.WARNING):
+            result = await item.async_read_value()
+            assert result is None
+            assert "Unknown calculation type" in caplog.text
 
-        value = await sax_item.async_read_value()
-        assert value == 77.5  # (80 + 75) / 2
+    async def test_read_min_soc_no_warning(self):
+        """Test SAX_MIN_SOC doesn't log warning."""
+        item = SAXItem(
+            name=SAX_MIN_SOC,
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
+        )
+        item.set_coordinators({})
+        result = await item.async_read_value()
+        assert result is None
 
-    async def test_async_write_value_read_only(self, sax_item):
-        """Test write on read-only SAXItem."""
-        result = await sax_item.async_write_value(100.0)
+
+class TestSAXItemWrite:
+    """Test SAXItem write operations."""
+
+    async def test_write_read_only(self, sax_item_fixture, caplog):
+        """Test write fails for read-only SAX item."""
+        with caplog.at_level(logging.WARNING):
+            result = await sax_item_fixture.async_write_value(100)
+            assert result is False
+            assert "read-only SAX item" in caplog.text
+
+    async def test_write_pilot_power_success(self):
+        """Test write pilot power successfully."""
+        item = SAXItem(
+            name=SAX_PILOT_POWER,
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
+        )
+        mock_pilot = AsyncMock()
+        mock_pilot.set_manual_power = AsyncMock()
+        mock_sax_data = Mock(pilot=mock_pilot)
+        coordinators = {"battery_a": Mock(sax_data=mock_sax_data)}
+        item.set_coordinators(coordinators)
+
+        result = await item.async_write_value(500.0)
+        assert result is True
+        mock_pilot.set_manual_power.assert_called_once_with(500.0)
+
+    async def test_write_pilot_power_no_pilot(self, caplog):
+        """Test write pilot power when no pilot service."""
+        item = SAXItem(
+            name=SAX_PILOT_POWER,
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
+        )
+        item.set_coordinators({})
+
+        with caplog.at_level(logging.ERROR):
+            result = await item.async_write_value(500.0)
+            assert result is False
+            assert "No pilot service found" in caplog.text
+
+    async def test_write_pilot_power_exception(self, caplog):
+        """Test write pilot power handles exceptions."""
+        item = SAXItem(
+            name=SAX_PILOT_POWER,
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
+        )
+        mock_pilot = AsyncMock()
+        mock_pilot.set_manual_power.side_effect = Exception("Test error")
+        mock_sax_data = Mock(pilot=mock_pilot)
+        coordinators = {"battery_a": Mock(sax_data=mock_sax_data)}
+        item.set_coordinators(coordinators)
+
+        with caplog.at_level(logging.ERROR):
+            result = await item.async_write_value(500.0)
+            assert result is False
+            assert "Failed to write pilot power" in caplog.text
+
+    async def test_write_not_implemented(self):
+        """Test write for non-pilot SAX items."""
+        item = SAXItem(
+            name="other_item",
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.SYS,
+        )
+        result = await item.async_write_value(100)
         assert result is False
-
-    def test_calculate_value_unknown_type(self, sax_item, mock_coordinators_for_sax):
-        """Test calculation with unknown type."""
-        sax_item.name = "unknown_calculation"
-        result = sax_item.calculate_value(mock_coordinators_for_sax)
-        assert result is None
-
-    def test_calculate_value_empty_coordinators(self, sax_item):
-        """Test calculation with empty coordinators."""
-        result = sax_item.calculate_value({})
-        assert result is None
-
-
-class TestSAXItemCalculationFunctions:
-    """Test SAX Battery calculated item calculation functions."""
-
-    @pytest.fixture
-    def mock_coordinators_calc(self):
-        """Create mock coordinators for calculation testing."""
-
-        def create_mock_coordinator(data: dict[str, float | None]) -> MagicMock:
-            mock_coordinator = MagicMock()
-            mock_coordinator.data = data
-            mock_coordinator.battery_id = "battery_a"
-            return mock_coordinator
-
-        return create_mock_coordinator
-
-    def test_calculate_combined_soc_single_battery(
-        self, mock_coordinators_calc
-    ) -> None:
-        """Test combined SOC calculation with single battery."""
-        sax_item = SAXItem(
-            name=SAX_COMBINED_SOC,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        mock_coordinator = mock_coordinators_calc({SAX_SOC: 85.5})
-        coordinators = {"battery_a": mock_coordinator}
-        result = sax_item.calculate_value(coordinators)
-
-        assert result == 85.5
-
-    def test_calculate_combined_soc_multiple_batteries(
-        self, mock_coordinators_calc
-    ) -> None:
-        """Test combined SOC calculation with multiple batteries."""
-        sax_item = SAXItem(
-            name=SAX_COMBINED_SOC,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        mock_coord_a = mock_coordinators_calc({SAX_SOC: 80.0})
-        mock_coord_b = mock_coordinators_calc({SAX_SOC: 90.0})
-
-        coordinators = {
-            "battery_a": mock_coord_a,
-            "battery_b": mock_coord_b,
-        }
-        result = sax_item.calculate_value(coordinators)
-
-        assert result == 85.0  # (80 + 90) / 2
-
-    def test_calculate_combined_soc_missing_data(self, mock_coordinators_calc) -> None:
-        """Test combined SOC calculation with missing data."""
-        sax_item = SAXItem(
-            name=SAX_COMBINED_SOC,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        mock_coordinator = mock_coordinators_calc({})
-        coordinators = {"battery_a": mock_coordinator}
-        result = sax_item.calculate_value(coordinators)
-
-        assert result is None
-
-    def test_calculate_combined_soc_mixed_data(self, mock_coordinators_calc) -> None:
-        """Test combined SOC calculation with mixed valid/invalid data."""
-        sax_item = SAXItem(
-            name=SAX_COMBINED_SOC,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        mock_coord_a = mock_coordinators_calc({SAX_SOC: 75.0})
-        mock_coord_b = mock_coordinators_calc({SAX_SOC: None})
-        mock_coord_c = mock_coordinators_calc({SAX_SOC: 85.0})
-
-        coordinators = {
-            "battery_a": mock_coord_a,
-            "battery_b": mock_coord_b,
-            "battery_c": mock_coord_c,
-        }
-        result = sax_item.calculate_value(coordinators)
-
-        assert result == 80.0  # (75 + 85) / 2
-
-    def test_calculate_cumulative_energy_produced_single_battery(
-        self, mock_coordinators_calc
-    ) -> None:
-        """Test cumulative energy produced calculation with single battery."""
-        sax_item = SAXItem(
-            name=SAX_CUMULATIVE_ENERGY_PRODUCED,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        mock_coordinator = mock_coordinators_calc(
-            {SAX_SMARTMETER_ENERGY_PRODUCED: 12500.0}
-        )
-        coordinators = {"battery_a": mock_coordinator}
-        result = sax_item.calculate_value(coordinators)
-
-        assert result == 12500.0
-
-    def test_calculate_cumulative_energy_produced_multiple_batteries(
-        self, mock_coordinators_calc
-    ) -> None:
-        """Test cumulative energy produced calculation with multiple batteries."""
-        sax_item = SAXItem(
-            name=SAX_CUMULATIVE_ENERGY_PRODUCED,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        mock_coord_a = mock_coordinators_calc({SAX_SMARTMETER_ENERGY_PRODUCED: 10000.0})
-        mock_coord_b = mock_coordinators_calc({SAX_SMARTMETER_ENERGY_PRODUCED: 15000.0})
-
-        coordinators = {
-            "battery_a": mock_coord_a,
-            "battery_b": mock_coord_b,
-        }
-        result = sax_item.calculate_value(coordinators)
-
-        assert result == 25000.0
-
-    def test_calculate_cumulative_energy_consumed_single_battery(
-        self, mock_coordinators_calc
-    ) -> None:
-        """Test cumulative energy consumed calculation with single battery."""
-        sax_item = SAXItem(
-            name=SAX_CUMULATIVE_ENERGY_CONSUMED,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        mock_coordinator = mock_coordinators_calc(
-            {SAX_SMARTMETER_ENERGY_CONSUMED: 8500.0}
-        )
-        coordinators = {"battery_a": mock_coordinator}
-        result = sax_item.calculate_value(coordinators)
-
-        assert result == 8500.0
-
-    def test_calculate_cumulative_energy_consumed_multiple_batteries(
-        self, mock_coordinators_calc
-    ) -> None:
-        """Test cumulative energy consumed calculation with multiple batteries."""
-        sax_item = SAXItem(
-            name=SAX_CUMULATIVE_ENERGY_CONSUMED,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        mock_coord_a = mock_coordinators_calc({SAX_SMARTMETER_ENERGY_CONSUMED: 7000.0})
-        mock_coord_b = mock_coordinators_calc({SAX_SMARTMETER_ENERGY_CONSUMED: 9000.0})
-
-        coordinators = {
-            "battery_a": mock_coord_a,
-            "battery_b": mock_coord_b,
-        }
-        result = sax_item.calculate_value(coordinators)
-
-        assert result == 16000.0
-
-    def test_calculation_functions_handle_empty_coordinators(self) -> None:
-        """Test calculation functions with empty coordinator dict."""
-        sax_item_soc = SAXItem(
-            name=SAX_COMBINED_SOC,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-        sax_item_produced = SAXItem(
-            name=SAX_CUMULATIVE_ENERGY_PRODUCED,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-        sax_item_consumed = SAXItem(
-            name=SAX_CUMULATIVE_ENERGY_CONSUMED,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        assert sax_item_soc.calculate_value({}) is None
-        assert sax_item_produced.calculate_value({}) is None
-        assert sax_item_consumed.calculate_value({}) is None
-
-    def test_calculation_functions_handle_none_values(
-        self, mock_coordinators_calc
-    ) -> None:
-        """Test calculation functions with None data values."""
-        sax_item = SAXItem(
-            name=SAX_COMBINED_SOC,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-        )
-
-        mock_coordinator = mock_coordinators_calc({SAX_SOC: None})
-        coordinators = {"battery_a": mock_coordinator}
-
-        assert sax_item.calculate_value(coordinators) is None
 
 
 class TestWebAPIItem:
-    """Test WebAPIItem functionality."""
+    """Test WebAPIItem operations."""
 
-    @pytest.fixture
-    def web_api_item(self):
-        """Create test WebAPIItem."""
-        return WebAPIItem(
-            name="web_analytics",
+    async def test_read_invalid(self):
+        """Test read when invalid."""
+        item = WebAPIItem(
+            name="web_api_test",
             mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
-            api_endpoint="https://api.saxpower.com/analytics",
         )
+        item.is_invalid = True
+        result = await item.async_read_value()
+        assert result is None
 
-    def test_initialization(self, web_api_item):
-        """Test WebAPIItem initialization."""
-        assert web_api_item.name == "web_analytics"
-        assert web_api_item.api_endpoint == "https://api.saxpower.com/analytics"
-        assert web_api_item.refresh_interval == 300
-
-    def test_is_invalid_valid_config(self, web_api_item):
-        """Test is_invalid with valid configuration."""
-        mock_client = MagicMock()
-        web_api_item.set_api_client(mock_client)
-        assert web_api_item.is_invalid is False
-
-    async def test_async_read_value_not_implemented(self, web_api_item):
-        """Test async read value (not yet implemented)."""
-        mock_client = MagicMock()
-        web_api_item.set_api_client(mock_client)
-
-        value = await web_api_item.async_read_value()
-        assert value is None
-
-    async def test_async_write_value_not_implemented(self):
-        """Test async write value (not yet implemented)."""
+    async def test_read_not_implemented(self):
+        """Test read returns None (not implemented)."""
         item = WebAPIItem(
-            name="web_config",
-            mtype=TypeConstants.NUMBER,
+            name="web_api_test",
+            mtype=TypeConstants.SENSOR,
             device=DeviceConstants.BESS,
-            api_endpoint="https://api.saxpower.com/config",
         )
-        mock_client = MagicMock()
-        item.set_api_client(mock_client)
+        result = await item.async_read_value()
+        assert result is None
 
-        result = await item.async_write_value(100.0)
+    async def test_write_read_only(self):
+        """Test write fails for read-only types."""
+        item = WebAPIItem(
+            name="web_api_test",
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.BESS,
+        )
+        result = await item.async_write_value(100)
         assert result is False
 
+    async def test_write_invalid(self):
+        """Test write fails when invalid."""
+        item = WebAPIItem(
+            name="web_api_test",
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.BESS,
+        )
+        item.is_invalid = True
+        result = await item.async_write_value(100)
+        assert result is False
 
-class TestHelperFunctions:
-    """Test helper functions."""
+    async def test_write_not_implemented(self):
+        """Test write returns False (not implemented)."""
+        item = WebAPIItem(
+            name="web_api_test",
+            mtype=TypeConstants.NUMBER,
+            device=DeviceConstants.BESS,
+        )
+        result = await item.async_write_value(100)
+        assert result is False
 
-    @pytest.fixture
-    def test_items(self):
-        """Create test items for filtering."""
-        return [
-            ModbusItem(
-                name="sensor1",
-                address=100,
-                mtype=TypeConstants.SENSOR,
-                device=DeviceConstants.BESS,
-            ),
-            ModbusItem(
-                name="number1",
-                address=101,
-                mtype=TypeConstants.NUMBER,
-                device=DeviceConstants.BESS,
-            ),
-            ModbusItem(
-                name="switch1",
-                address=102,
-                mtype=TypeConstants.SWITCH,
-                device=DeviceConstants.BESS,
-            ),
-            SAXItem(
-                name="sax1",
-                mtype=TypeConstants.SENSOR_CALC,
-                device=DeviceConstants.BESS,
-            ),
-            WebAPIItem(
-                name="web1", mtype=TypeConstants.SENSOR, device=DeviceConstants.BESS
-            ),
-        ]
-
-    def test_filter_items_by_type(self, test_items):
-        """Test filtering items by type."""
-        # Use the simple helper function from items module without additional parameters
-        sensors = [item for item in test_items if item.mtype == TypeConstants.SENSOR]
-        assert len(sensors) == 2  # sensor1 and web1
-
-        numbers = [item for item in test_items if item.mtype == TypeConstants.NUMBER]
-        assert len(numbers) == 1  # number1
+    def test_set_api_client(self):
+        """Test set_api_client method."""
+        item = WebAPIItem(
+            name="web_api_test",
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.BESS,
+        )
+        mock_client = Mock()
+        item.set_api_client(mock_client)
+        assert item._web_api_client is mock_client

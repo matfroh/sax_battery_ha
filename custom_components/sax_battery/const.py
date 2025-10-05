@@ -97,6 +97,7 @@ CONF_LIMIT_POWER = "limit_power"
 # Adjusted to realistic values based on SAX service feedback
 LIMIT_MAX_CHARGE_PER_BATTERY = 3500  # Watts per battery
 LIMIT_MAX_DISCHARGE_PER_BATTERY = 4600  # Watts per battery
+LIMIT_REFRESH_INTERVAL = 3  # minutes for periodic refresh of write-only registers
 
 # Maximum supported batteries in a system
 MAX_SUPPORTED_BATTERIES = 3

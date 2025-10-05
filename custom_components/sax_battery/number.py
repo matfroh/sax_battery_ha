@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import timedelta
 import logging
 import time
 from typing import Any
@@ -12,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -21,6 +24,7 @@ from .const import (
     DOMAIN,
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
+    LIMIT_REFRESH_INTERVAL,
     MODBUS_BATTERY_PILOT_CONTROL_ITEMS,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
@@ -242,6 +246,9 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             )
             self._attr_name = clean_name
 
+        # Set up periodic writes
+        self._track_time_remove: Callable[[], None] | None = None
+
         # Set device info for the specific battery (unchanged)
         self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
             battery_id, self._modbus_item.device
@@ -340,6 +347,16 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             and self.coordinator.data is not None
             and self._modbus_item.name in self.coordinator.data
         )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up when entity is removed."""
+        if self._track_time_remove:
+            self._track_time_remove()
+
+    async def _periodic_write(self, _: Any) -> None:
+        """Write the value periodically."""
+        if self._local_value is not None:
+            await self.async_set_native_value(self._local_value)
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the native value of the number entity.
@@ -725,6 +742,14 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         # For write-only registers, restore value from config if available
         if self._is_write_only and self._local_value is None:
             self._initialize_write_only_defaults()
+
+        # Set up periodic writes
+        if self._modbus_item.name in [SAX_MAX_CHARGE, SAX_MAX_DISCHARGE]:
+            self._track_time_remove = async_track_time_interval(
+                self.hass,
+                self._periodic_write,
+                timedelta(minutes=LIMIT_REFRESH_INTERVAL),
+            )
 
 
 class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
