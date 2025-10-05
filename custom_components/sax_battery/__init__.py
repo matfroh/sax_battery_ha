@@ -98,8 +98,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a SAX Battery config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+    """Unload a SAX Battery config entry.
+
+    Args:
+        hass: Home Assistant instance
+        entry: Configuration entry to unload
+
+    Returns:
+        True if unload was successful, False otherwise
+
+    Security:
+        OWASP A05: Properly clean up resources to prevent leaks
+
+    Performance:
+        Use gather() for parallel connection cleanup of all batteries
+    """
+    # Unload all platforms first
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    if unload_ok:
         # OWASP A05: Secure error handling - check if domain exists before accessing
         if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
             entry_data = hass.data[DOMAIN].pop(entry.entry_id)
@@ -113,6 +130,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for battery_id, coordinator in coordinators.items():
                 if hasattr(coordinator, "modbus_api") and coordinator.modbus_api:
                     _LOGGER.debug("Closing Modbus connection for %s", battery_id)
+                    # Add the close() coroutine to the task list
                     close_tasks.append(coordinator.modbus_api.close())
 
             # Await all close operations in parallel for better performance

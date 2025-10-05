@@ -42,8 +42,11 @@
     }
   },
   "cSpell.words": [
+    "caplog",
     "codeowners",
+    "ECONNRESET",
     "entitydescription",
+    "EPIPE",
     "mformat",
     "mtype",
     "Mult",

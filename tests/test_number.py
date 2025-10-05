@@ -487,7 +487,7 @@ class TestSAXBatteryModbusNumberAdvanced:
     async def test_async_added_to_hass_write_only_restoration(
         self, mock_coordinator_modbus_base, mock_hass_base
     ) -> None:
-        """Test async_added_to_hass when restoration is needed."""
+        """Test async_added_to_hass when restoration is needed for write-only register."""
         write_only_item = ModbusItem(
             address=41,
             name=SAX_MAX_CHARGE,
@@ -504,13 +504,26 @@ class TestSAXBatteryModbusNumberAdvanced:
             modbus_item=write_only_item,
         )
 
+        # Critical: Set hass instance on the entity itself
+        number.hass = mock_hass_base
+
         # Clear local value to simulate need for restoration
         number._local_value = None
 
-        await number.async_added_to_hass()
+        # Mock restore_last_state at the RestoreEntity level
+        mock_state = MagicMock()
+        mock_state.state = "3000.0"
 
-        # Verify periodic write was set up
-        assert number._track_time_remove is not None
+        with patch(
+            "homeassistant.helpers.restore_state.RestoreEntity.async_get_last_state",
+            return_value=mock_state,
+        ):
+            await number.async_added_to_hass()
+
+            # Verify restoration occurred
+            assert number._local_value == 3000.0
+            # Verify periodic write was set up
+            assert number._track_time_remove is not None
 
     @pytest.mark.skip(reason="Requires Home Assistant event loop")
     async def test_async_added_to_hass_no_restoration_needed(
@@ -532,6 +545,9 @@ class TestSAXBatteryModbusNumberAdvanced:
             battery_id="battery_a",
             modbus_item=write_only_item,
         )
+
+        # Critical: Set hass instance on the entity itself
+        number.hass = mock_hass_base
 
         # Set a local value (simulating already initialized)
         number._local_value = 3000.0
