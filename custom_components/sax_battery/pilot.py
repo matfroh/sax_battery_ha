@@ -21,13 +21,11 @@ from .const import (
     CONF_AUTO_PILOT_INTERVAL,
     CONF_ENABLE_SOLAR_CHARGING,
     CONF_MANUAL_CONTROL,
-    CONF_MIN_SOC,
     CONF_PF_SENSOR,
     CONF_PILOT_FROM_HA,
     CONF_POWER_SENSOR,
     CONF_PRIORITY_DEVICES,
     DEFAULT_AUTO_PILOT_INTERVAL,
-    DEFAULT_MIN_SOC,
     DOMAIN,
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
@@ -88,7 +86,7 @@ class SAXBatteryPilot:
         self.power_sensor_entity_id = self.entry.data.get(CONF_POWER_SENSOR)
         self.pf_sensor_entity_id = self.entry.data.get(CONF_PF_SENSOR)
         self.priority_devices = self.entry.data.get(CONF_PRIORITY_DEVICES, [])
-        self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
+        # self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
         self.update_interval = self.entry.data.get(
             CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
         )
@@ -111,7 +109,7 @@ class SAXBatteryPilot:
         self.power_sensor_entity_id = self.entry.data.get(CONF_POWER_SENSOR)
         self.pf_sensor_entity_id = self.entry.data.get(CONF_PF_SENSOR)
         self.priority_devices = self.entry.data.get(CONF_PRIORITY_DEVICES, [])
-        self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
+        # self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
         self.update_interval = self.entry.data.get(
             CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
         )
@@ -119,8 +117,7 @@ class SAXBatteryPilot:
             CONF_ENABLE_SOLAR_CHARGING, True
         )
         _LOGGER.debug(
-            "Updated config values - min_soc: %s%%, update_interval: %ss",
-            self.min_soc,
+            "Updated config value update_interval: %ss",
             self.update_interval,
         )
 
@@ -410,46 +407,14 @@ class SAXBatteryPilot:
             return 0.0
 
     async def _apply_soc_constraints(self, power_value: float) -> float:
-        """Apply SOC constraints to a power value."""
-        # Get current battery SOC
-        master_soc = await self._get_combined_soc()
+        """Apply SOC constraints using coordinator's SOC manager.
 
-        # Log the input values
-        _LOGGER.debug(
-            "Applying SOC constraints - Current SOC: %s%%, Min SOC: %s%%, Power: %sW",
-            master_soc,
-            self.min_soc,
-            power_value,
-        )
-
-        # Apply constraints
-        original_value = power_value
-
-        # Don't discharge below min SOC
-        if master_soc < self.min_soc and power_value > 0:
-            power_value = 0
-            _LOGGER.debug(
-                "Battery SOC at minimum (%s%%), preventing discharge", master_soc
-            )
-
-        # Don't charge above 100%
-        if master_soc >= 100 and power_value < 0:
-            power_value = 0
-            _LOGGER.debug("Battery SOC at maximum (100%), preventing charge")
-
-        # Log if any change was made
-        if original_value != power_value:
-            _LOGGER.info(
-                "SOC constraint applied: changed power from %sW to %sW",
-                original_value,
-                power_value,
-            )
-        else:
-            _LOGGER.debug(
-                "SOC constraint check: no change needed to power value %sW", power_value
-            )
-
-        return power_value
+        Deprecated:
+            Use coordinator.soc_manager.apply_constraints() directly
+            Kept for backward compatibility
+        """
+        result = await self.coordinator.soc_manager.apply_constraints(power_value)
+        return result.constrained_value
 
     async def set_solar_charging(self, enabled: bool) -> None:
         """Enable or disable solar charging."""

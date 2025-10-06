@@ -1,4 +1,18 @@
 {
+    "config": {
+        "step": {
+            "pilot_config": {
+                "data": {
+                    "limit_power": "Enable SOC-based power constraints",
+                    "min_soc": "Minimum SOC for discharge protection (%)"
+                },
+                "description": "Configure battery protection settings. When enabled, the system will prevent discharge below the minimum SOC."
+            }
+        },
+        "error": {
+            "min_soc_out_of_range": "Minimum SOC must be between 0 and 100"
+        }
+    },
     "entity": {
         "sensor": {
             "sax_cumulative_energy_produced": {

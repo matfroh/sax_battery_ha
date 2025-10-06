@@ -18,12 +18,18 @@ from .const import (
     BATTERY_POLL_INTERVAL,
     BATTERY_POLL_SLAVE_INTERVAL,
     CONF_BATTERY_IS_MASTER,
+    CONF_LIMIT_POWER,
+    CONF_MIN_SOC,
+    DEFAULT_MIN_SOC,
     DOMAIN,
+    SAX_MAX_DISCHARGE,
+    SAX_NOMINAL_POWER,
 )
 from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
 from .models import SAXBatteryData
+from .soc_manager import SOCManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,6 +73,22 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.update_interval = timedelta(seconds=BATTERY_POLL_INTERVAL)
         else:
             self.update_interval = timedelta(seconds=BATTERY_POLL_SLAVE_INTERVAL)
+
+        # Initialize SOC manager
+        min_soc = self.config_entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
+        limit_power_enabled = self.config_entry.data.get(CONF_LIMIT_POWER, False)
+
+        self.soc_manager = SOCManager(
+            coordinator=self,
+            min_soc=min_soc,
+            enabled=limit_power_enabled,
+        )
+
+        _LOGGER.debug(
+            "SOC manager initialized: min_soc=%s%%, enabled=%s",
+            min_soc,
+            limit_power_enabled,
+        )
 
     @property
     def is_master(self) -> bool:
@@ -545,6 +567,29 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Ensure API is set
         if item.modbus_api is None:
             item.modbus_api = self.modbus_api
+
+        # Apply SOC constraints for discharge-related items
+        if item.name in (SAX_MAX_DISCHARGE, SAX_NOMINAL_POWER):
+            result = await self.soc_manager.apply_constraints(value)
+
+            if not result.allowed:
+                _LOGGER.warning(
+                    "Write blocked by SOC constraints: %s = %sW (reason: %s)",
+                    item.name,
+                    value,
+                    result.reason,
+                )
+                return False
+
+            # Use constrained value if different
+            if result.constrained_value != value:
+                _LOGGER.info(
+                    "Write value constrained: %sW → %sW for %s",
+                    value,
+                    result.constrained_value,
+                    item.name,
+                )
+                value = result.constrained_value
 
         try:
             # Delegate to ModbusItem for actual write operation

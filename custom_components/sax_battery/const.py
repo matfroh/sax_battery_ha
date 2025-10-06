@@ -136,6 +136,8 @@ CONF_MANUAL_CONTROL = "manual_control"
 DEFAULT_PORT = 502  # Default Modbus port
 DEFAULT_MIN_SOC = 15
 DEFAULT_AUTO_PILOT_INTERVAL = 60  # seconds
+DEFAULT_LIMIT_POWER = False  # Disabled by default for safety
+DEFAULT_MIN_SOC = 10  # 10% default minimum SOC
 
 # Write-only register addresses that require configuration checks
 WRITE_ONLY_REGISTERS = {41, 42, 43, 44}

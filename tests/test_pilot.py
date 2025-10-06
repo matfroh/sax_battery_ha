@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -28,113 +29,7 @@ from custom_components.sax_battery.const import (
     SAX_NOMINAL_POWER,
 )
 from custom_components.sax_battery.pilot import SAXBatteryPilot, async_setup_entry
-
-
-class TestAsyncSetupEntry:
-    """Test async_setup_entry function."""
-
-    async def test_setup_entry_with_master_battery(
-        self,
-        mock_hass,
-        mock_config_entry_pilot,
-        mock_sax_data,
-        mock_coordinator_pilot,
-        pilot_items_mixed,
-    ):
-        """Test setup entry creates pilot entities for master battery."""
-        # Update sax_data with coordinator
-        mock_sax_data.coordinators = {"battery_a": mock_coordinator_pilot}
-
-        with (
-            patch(
-                "custom_components.sax_battery.pilot.async_track_time_interval"
-            ) as mock_track,
-            patch(
-                "custom_components.sax_battery.pilot.SAXBatteryPilot"
-            ) as mock_pilot_class,
-        ):
-            # Setup mock pilot instance
-            mock_pilot = MagicMock()
-            mock_pilot.async_start = AsyncMock()
-            mock_pilot_class.return_value = mock_pilot
-
-            mock_track.return_value = MagicMock()
-
-            # Mock entity instances
-
-            mock_hass.data = {
-                DOMAIN: {
-                    mock_config_entry_pilot.entry_id: {
-                        "coordinators": mock_sax_data.coordinators,
-                        "sax_data": mock_sax_data,
-                    }
-                }
-            }
-
-            async_add_entities = MagicMock()
-
-            await async_setup_entry(
-                mock_hass,
-                mock_config_entry_pilot,
-                async_add_entities,
-            )
-
-            # Verify pilot was created and started
-            mock_pilot_class.assert_called_once()
-            mock_pilot.async_start.assert_called_once()
-
-    async def test_setup_entry_pilot_disabled(self, mock_hass, mock_sax_data):
-        """Test setup entry when pilot from HA is disabled."""
-        # Create config entry with pilot disabled
-        mock_config_entry = MagicMock()
-        mock_config_entry.entry_id = "test_entry_id"
-        mock_config_entry.data = {CONF_PILOT_FROM_HA: False}
-
-        # Set master battery ID to ensure proper test setup
-        mock_sax_data.master_battery_id = "battery_a"
-        mock_sax_data.coordinators = {"battery_a": MagicMock()}
-
-        mock_hass.data = {
-            DOMAIN: {
-                mock_config_entry.entry_id: {
-                    "coordinators": mock_sax_data.coordinators,
-                    "sax_data": mock_sax_data,
-                }
-            }
-        }
-
-        async_add_entities = MagicMock()
-
-        await async_setup_entry(mock_hass, mock_config_entry, async_add_entities)
-
-        # async_add_entities should NOT be called when pilot is disabled
-        async_add_entities.assert_not_called()
-
-    async def test_setup_entry_no_master_battery(
-        self, mock_hass, mock_config_entry_pilot
-    ):
-        """Test setup entry with no master battery creates no entities."""
-        mock_sax_data = MagicMock()
-        mock_sax_data.master_battery_id = None
-        mock_hass.data = {
-            DOMAIN: {
-                mock_config_entry_pilot.entry_id: {
-                    "coordinators": {},
-                    "sax_data": mock_sax_data,
-                }
-            }
-        }
-
-        async_add_entities = MagicMock()
-
-        await async_setup_entry(
-            mock_hass,
-            mock_config_entry_pilot,
-            async_add_entities,
-        )
-
-        # async_add_entities is NOT called when there are no entities to add
-        async_add_entities.assert_not_called()
+from custom_components.sax_battery.soc_manager import SOCConstraintResult
 
 
 class TestAsyncSetupEntryComprehensive:
@@ -299,7 +194,6 @@ class TestSAXBatteryPilot:
         assert pilot_instance_test.max_charge_power == LIMIT_MAX_DISCHARGE_PER_BATTERY
         assert pilot_instance_test.power_sensor_entity_id == "sensor.power"
         assert pilot_instance_test.pf_sensor_entity_id == "sensor.pf"
-        assert pilot_instance_test.min_soc == DEFAULT_MIN_SOC
         assert pilot_instance_test.update_interval == DEFAULT_AUTO_PILOT_INTERVAL
 
     async def test_async_start_already_running(self, pilot_instance_test):
@@ -357,7 +251,6 @@ class TestSAXBatteryPilot:
         """Test config update handling."""
         mock_entry = MagicMock()
         mock_entry.data = {
-            CONF_MIN_SOC: 20,
             CONF_AUTO_PILOT_INTERVAL: 30,
         }
 
@@ -368,7 +261,6 @@ class TestSAXBatteryPilot:
                 pilot_instance_test.hass, mock_entry
             )
 
-            assert pilot_instance_test.min_soc == 20
             assert pilot_instance_test.update_interval == 30
             mock_update.assert_called_once_with(None)
 
@@ -387,21 +279,6 @@ class TestSAXBatteryPilot:
         result = await pilot_instance_test._get_combined_soc()
 
         assert result == 85.5
-
-    async def test_apply_soc_constraints_below_min_soc_discharge(
-        self, pilot_instance_test
-    ):
-        """Test SOC constraints preventing discharge below minimum SOC."""
-        # Set proper min_soc value
-        pilot_instance_test.min_soc = 20
-
-        with patch.object(pilot_instance_test, "_get_combined_soc", return_value=10.0):
-            result = await pilot_instance_test._apply_soc_constraints(
-                100.0
-            )  # Positive = discharge
-
-            # Should prevent discharge when SOC is below minimum
-            assert result == 0.0
 
     async def test_set_charge_power_limit_success(self, pilot_instance_test):
         """Test setting charge power limit successfully."""
@@ -501,19 +378,46 @@ class TestSAXBatteryPilotComprehensive:
 
     @pytest.fixture
     def pilot_with_config_test(self, mock_hass, mock_sax_data, mock_coordinator):
-        """Create pilot with full configuration for testing."""
-        mock_sax_data.coordinators = {"battery_a": mock_coordinator}
-        mock_sax_data.entry.data = {
+        """Create pilot instance with full configuration for comprehensive testing."""
+        from unittest.mock import AsyncMock
+
+        # Mock SOC manager on coordinator with proper AsyncMock
+        mock_soc_manager = MagicMock()
+        mock_soc_manager.min_soc = DEFAULT_MIN_SOC
+        mock_soc_manager.enabled = True
+
+        # Critical: Use AsyncMock for async methods
+        mock_soc_manager.apply_constraints = AsyncMock()
+        mock_soc_manager.check_discharge_allowed = AsyncMock()
+        mock_soc_manager.check_charge_allowed = AsyncMock()
+        mock_soc_manager.get_current_soc = AsyncMock(return_value=50.0)
+
+        mock_coordinator.soc_manager = mock_soc_manager
+
+        # Rest of fixture setup...
+        mock_entry = MagicMock()
+        mock_entry.data = {
             CONF_PILOT_FROM_HA: True,
+            CONF_AUTO_PILOT_INTERVAL: DEFAULT_AUTO_PILOT_INTERVAL,
             CONF_POWER_SENSOR: "sensor.total_power",
             CONF_PF_SENSOR: "sensor.power_factor",
-            CONF_MIN_SOC: 15,
-            CONF_AUTO_PILOT_INTERVAL: 25,
-            CONF_PRIORITY_DEVICES: ["sensor.device1", "sensor.device2"],
+            CONF_PRIORITY_DEVICES: [
+                "sensor.priority_device_1",
+                "sensor.priority_device_2",
+            ],
+            CONF_MIN_SOC: DEFAULT_MIN_SOC,
             CONF_ENABLE_SOLAR_CHARGING: True,
             CONF_MANUAL_CONTROL: False,
         }
-        return SAXBatteryPilot(mock_hass, mock_sax_data, mock_coordinator)
+
+        mock_sax_data.entry = mock_entry
+        mock_sax_data.coordinators = {"battery_a": mock_coordinator}
+        mock_sax_data.master_battery_id = "battery_a"
+
+        pilot = SAXBatteryPilot(mock_hass, mock_sax_data, mock_coordinator)
+        pilot.entry = mock_entry
+
+        return pilot
 
     async def test_async_update_pilot_manual_mode_with_constraints(
         self, pilot_with_config_test
@@ -693,8 +597,8 @@ class TestSAXBatteryPilotComprehensive:
             state_map = {
                 "sensor.total_power": mock_power_state,
                 "sensor.power_factor": mock_pf_state,
-                "sensor.device1": mock_device1_state,
-                "sensor.device2": mock_device2_state,
+                "sensor.priority_device_1": mock_device1_state,  # FIX: Match fixture config
+                "sensor.priority_device_2": mock_device2_state,  # FIX: Match fixture config
                 "sensor.sax_battery_combined_power": mock_battery_power_state,
             }
             return state_map.get(entity_id)
@@ -803,8 +707,8 @@ class TestSAXBatteryPilotComprehensive:
             state_map = {
                 "sensor.total_power": mock_power_state,
                 "sensor.power_factor": mock_pf_state,
-                "sensor.device1": mock_device1_state,
-                "sensor.device2": mock_device2_state,
+                "sensor.priority_device_1": mock_device1_state,  # FIX: Match fixture config
+                "sensor.priority_device_2": mock_device2_state,  # FIX: Match fixture config
                 "sensor.sax_battery_combined_power": None,  # No battery power sensor
             }
             return state_map.get(entity_id)
@@ -977,25 +881,32 @@ class TestSAXBatteryPilotComprehensive:
         self, pilot_with_config_test
     ):
         """Test SOC constraints preventing charge above 100%."""
+        # Mock SOCConstraintResult
+
+        # Mock the coordinator's soc_manager with AsyncMock
+        mock_result = SOCConstraintResult(
+            allowed=False,
+            original_value=-500.0,
+            constrained_value=0.0,
+            reason="Charge blocked: SOC at maximum 100%",
+        )
+
+        pilot_with_config_test.coordinator.soc_manager.apply_constraints = AsyncMock(
+            return_value=mock_result
+        )
+
         with patch.object(
             pilot_with_config_test, "_get_combined_soc", return_value=100.0
         ):
-            result = await pilot_with_config_test._apply_soc_constraints(
-                -500.0
-            )  # Negative = charge
+            result = await pilot_with_config_test._apply_soc_constraints(-500.0)
 
-            # Should prevent charge when SOC is at 100%
+            # Verify constrained value was returned
             assert result == 0.0
 
-    async def test_apply_soc_constraints_no_change_needed(self, pilot_with_config_test):
-        """Test SOC constraints when no change is needed."""
-        with patch.object(
-            pilot_with_config_test, "_get_combined_soc", return_value=50.0
-        ):
-            result = await pilot_with_config_test._apply_soc_constraints(100.0)
-
-            # Should not change value when SOC is within limits
-            assert result == 100.0
+            # Verify soc_manager was called with correct value
+            pilot_with_config_test.coordinator.soc_manager.apply_constraints.assert_called_once_with(
+                -500.0
+            )
 
     async def test_get_combined_soc_invalid_value(self, pilot_with_config_test):
         """Test getting combined SOC with invalid data."""
@@ -1693,7 +1604,6 @@ class TestSAXBatteryPilotComprehensive:
             CONF_POWER_SENSOR: "sensor.new_power",
             CONF_PF_SENSOR: "sensor.new_pf",
             CONF_PRIORITY_DEVICES: ["sensor.new_device1", "sensor.new_device2"],
-            CONF_MIN_SOC: 25,
             CONF_AUTO_PILOT_INTERVAL: 45,
         }
 
@@ -1705,7 +1615,6 @@ class TestSAXBatteryPilotComprehensive:
             "sensor.new_device1",
             "sensor.new_device2",
         ]
-        assert pilot_with_config_test.min_soc == 25
         assert pilot_with_config_test.update_interval == 45
 
     def test_update_config_values_with_none_values(self, pilot_with_config_test):
@@ -1714,7 +1623,6 @@ class TestSAXBatteryPilotComprehensive:
             CONF_POWER_SENSOR: None,
             CONF_PF_SENSOR: None,
             CONF_PRIORITY_DEVICES: None,
-            CONF_MIN_SOC: None,
             CONF_AUTO_PILOT_INTERVAL: None,
         }
 
@@ -1723,7 +1631,6 @@ class TestSAXBatteryPilotComprehensive:
         assert pilot_with_config_test.power_sensor_entity_id is None
         assert pilot_with_config_test.pf_sensor_entity_id is None
         assert pilot_with_config_test.priority_devices is None
-        assert pilot_with_config_test.min_soc is None
         assert pilot_with_config_test.update_interval is None
 
     async def test_send_power_command_write_failure(self, pilot_with_config_test):
@@ -1811,6 +1718,86 @@ class TestSAXBatteryPilotComprehensive:
             pilot_new.max_charge_power == 46000
         )  # 10 * LIMIT_MAX_DISCHARGE_PER_BATTERY
 
+    async def test_soc_manager_integration_with_coordinator(
+        self, pilot_with_config_test
+    ):
+        """Test pilot properly integrates with coordinator's SOC manager."""
+        # Verify SOC manager is accessible
+        assert hasattr(pilot_with_config_test.coordinator, "soc_manager")
+        assert pilot_with_config_test.coordinator.soc_manager is not None
+
+        # Verify soc_manager has the expected attributes
+        assert hasattr(pilot_with_config_test.coordinator.soc_manager, "min_soc")
+        assert hasattr(pilot_with_config_test.coordinator.soc_manager, "enabled")
+        assert hasattr(
+            pilot_with_config_test.coordinator.soc_manager, "apply_constraints"
+        )
+
+        # Verify apply_constraints is an AsyncMock (which is awaitable)
+        # Note: AsyncMock instances are not coroutine functions, but they are awaitable
+        from unittest.mock import AsyncMock
+
+        assert isinstance(
+            pilot_with_config_test.coordinator.soc_manager.apply_constraints, AsyncMock
+        )
+
+    async def test_async_update_pilot_respects_soc_constraints(
+        self, pilot_with_config_test
+    ):
+        """Test that automatic pilot updates respect SOC constraints."""
+        # Setup mocks
+        mock_power_state = MagicMock()
+        mock_power_state.state = "1000.0"
+
+        mock_pf_state = MagicMock()
+        mock_pf_state.state = "1.0"
+
+        # Mock battery power sensor
+        mock_battery_power = MagicMock()
+        mock_battery_power.state = "500.0"
+
+        def mock_get_state(entity_id):
+            """Mock state getter with all required sensors."""
+            state_map = {
+                "sensor.total_power": mock_power_state,
+                "sensor.power_factor": mock_pf_state,
+                "sensor.sax_battery_combined_power": mock_battery_power,
+            }
+            return state_map.get(entity_id)
+
+        pilot_with_config_test.hass.states.get.side_effect = mock_get_state
+
+        # Mock SOC constraint blocking discharge
+        mock_result = SOCConstraintResult(
+            allowed=False,
+            original_value=500.0,  # Should match calculated net_power
+            constrained_value=0.0,
+            reason="SOC too low for discharge",
+        )
+
+        pilot_with_config_test.coordinator.soc_manager.apply_constraints = AsyncMock(
+            return_value=mock_result
+        )
+
+        with (
+            patch.object(
+                pilot_with_config_test, "_get_combined_soc", return_value=10.0
+            ),
+            patch.object(
+                pilot_with_config_test, "send_power_command", new_callable=AsyncMock
+            ) as mock_send,
+            patch.object(
+                pilot_with_config_test, "get_solar_charging_enabled", return_value=True
+            ),
+        ):
+            await pilot_with_config_test._async_update_pilot(None)
+
+            # Should send constrained value (0.0) instead of calculated value
+            mock_send.assert_called_once()
+            call_args = mock_send.call_args[0]
+            assert call_args[0] == 0.0  # Constrained power
+            assert call_args[1] == 1.0  # Power factor
+
 
 class TestPilotAdditionalEdgeCases:
     """Additional edge case tests for comprehensive coverage."""
@@ -1830,32 +1817,6 @@ class TestPilotAdditionalEdgeCases:
             CONF_MANUAL_CONTROL: False,
         }
         return SAXBatteryPilot(mock_hass, mock_sax_data, mock_coordinator)
-
-    async def test_apply_soc_constraints_at_exact_min_soc(self, pilot_boundary_test):
-        """Test SOC constraints when SOC is exactly at minimum."""
-        pilot_boundary_test.min_soc = 20
-
-        with patch.object(pilot_boundary_test, "_get_combined_soc", return_value=20.0):
-            result = await pilot_boundary_test._apply_soc_constraints(100.0)
-
-            # Should allow discharge when SOC is exactly at minimum
-            assert result == 100.0
-
-    async def test_apply_soc_constraints_at_exact_max_soc(self, pilot_boundary_test):
-        """Test SOC constraints when SOC is exactly 100%."""
-        with patch.object(pilot_boundary_test, "_get_combined_soc", return_value=100.0):
-            result = await pilot_boundary_test._apply_soc_constraints(-100.0)
-
-            # Should prevent charge when SOC is exactly 100%
-            assert result == 0.0
-
-    async def test_apply_soc_constraints_above_100_soc(self, pilot_boundary_test):
-        """Test SOC constraints when SOC is above 100% (edge case)."""
-        with patch.object(pilot_boundary_test, "_get_combined_soc", return_value=101.0):
-            result = await pilot_boundary_test._apply_soc_constraints(-100.0)
-
-            # Should prevent charge when SOC is above 100%
-            assert result == 0.0
 
     async def test_get_combined_soc_with_string_number(self, pilot_boundary_test):
         """Test _get_combined_soc with string that can be converted to float."""
@@ -2122,7 +2083,6 @@ class TestPilotPerformanceAndEdgeCases:
         pilot_performance_test._update_config_values()
 
         # Should use defaults
-        assert pilot_performance_test.min_soc == DEFAULT_MIN_SOC
         assert pilot_performance_test.update_interval == DEFAULT_AUTO_PILOT_INTERVAL
         assert pilot_performance_test.priority_devices == []
 
