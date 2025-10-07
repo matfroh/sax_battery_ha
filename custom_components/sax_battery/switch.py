@@ -14,7 +14,17 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import BATTERY_IDS, CONF_BATTERY_IS_MASTER, CONF_BATTERY_PHASE, DOMAIN
+from .const import (
+    BATTERY_IDS,
+    CONF_BATTERY_IS_MASTER,
+    CONF_BATTERY_PHASE,
+    CONF_ENABLE_SOLAR_CHARGING,
+    CONF_MANUAL_CONTROL,
+    CONF_PILOT_FROM_HA,
+    DOMAIN,
+    MANUAL_CONTROL_SWITCH,
+    SOLAR_CHARGING_SWITCH,
+)
 from .coordinator import SAXBatteryCoordinator
 from .entity_utils import filter_items_by_type, filter_sax_items_by_type
 from .enums import TypeConstants
@@ -153,6 +163,68 @@ async def async_setup_entry(
                     detail["type"],
                     detail["sax_item_name"],
                 )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:  # type:ignore[no-untyped-def]
+        """Turn on the control switch."""
+        # OWASP A05: Security misconfiguration - Validate config entry exists
+        if self.coordinator.config_entry is None:
+            msg = "Config entry not available"
+            raise HomeAssistantError(msg)
+
+        # Update config entry for control switches
+        if self._sax_item.name == SOLAR_CHARGING_SWITCH:
+            # Disable manual control when enabling solar charging
+            new_data = {
+                **self.coordinator.config_entry.data,
+                CONF_ENABLE_SOLAR_CHARGING: True,
+                CONF_MANUAL_CONTROL: False,
+            }
+            self.hass.config_entries.async_update_entry(
+                self.coordinator.config_entry, data=new_data
+            )
+            _LOGGER.info("Solar charging mode enabled, manual control disabled")
+        elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
+            # Disable solar charging when enabling manual control
+            new_data = {
+                **self.coordinator.config_entry.data,
+                CONF_MANUAL_CONTROL: True,
+                CONF_ENABLE_SOLAR_CHARGING: False,
+            }
+            self.hass.config_entries.async_update_entry(
+                self.coordinator.config_entry, data=new_data
+            )
+            _LOGGER.info("Manual control mode enabled, solar charging disabled")
+
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:  # type:ignore[no-untyped-def]
+        """Turn off the control switch."""
+        # OWASP A05: Security misconfiguration - Validate config entry exists
+        if self.coordinator.config_entry is None:
+            msg = "Config entry not available"
+            raise HomeAssistantError(msg)
+
+        # Update config entry for control switches
+        if self._sax_item.name == SOLAR_CHARGING_SWITCH:
+            new_data = {
+                **self.coordinator.config_entry.data,
+                CONF_ENABLE_SOLAR_CHARGING: False,
+            }
+            self.hass.config_entries.async_update_entry(
+                self.coordinator.config_entry, data=new_data
+            )
+            _LOGGER.info("Solar charging mode disabled")
+        elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
+            new_data = {
+                **self.coordinator.config_entry.data,
+                CONF_MANUAL_CONTROL: False,
+            }
+            self.hass.config_entries.async_update_entry(
+                self.coordinator.config_entry, data=new_data
+            )
+            _LOGGER.info("Manual control mode disabled")
+
+        await self.coordinator.async_request_refresh()
 
 
 class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):
@@ -474,20 +546,22 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
             return None
 
         # Get state from config entry or SAX item calculation
-        if self._sax_item.name == "solar_charging_switch":
+        if self._sax_item.name == SOLAR_CHARGING_SWITCH:
             # ✅ Only enable if pilot mode is also enabled
             pilot_enabled = bool(
-                self.coordinator.config_entry.data.get("pilot_from_ha", False)
+                self.coordinator.config_entry.data.get(CONF_PILOT_FROM_HA, False)
             )
             solar_enabled = bool(
                 self.coordinator.config_entry.data.get(
-                    "enable_solar_charging", False
+                    CONF_ENABLE_SOLAR_CHARGING, False
                 )  # Changed default to False
             )
             return pilot_enabled and solar_enabled
 
-        if self._sax_item.name == "manual_control_switch":
-            return bool(self.coordinator.config_entry.data.get("manual_control", False))
+        if self._sax_item.name == MANUAL_CONTROL_SWITCH:
+            return bool(
+                self.coordinator.config_entry.data.get(CONF_MANUAL_CONTROL, False)
+            )
 
         # Default SAX item calculation
         return bool(self._sax_item.calculate_value(self._coordinators))
@@ -508,18 +582,21 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
             raise HomeAssistantError(msg)
 
         # Update config entry for control switches
-        if self._sax_item.name == "solar_charging_switch":
+        if self._sax_item.name == SOLAR_CHARGING_SWITCH:
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
                 data={
                     **self.coordinator.config_entry.data,
-                    "enable_solar_charging": True,
+                    CONF_ENABLE_SOLAR_CHARGING: True,
                 },
             )
-        elif self._sax_item.name == "manual_control_switch":
+        elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
-                data={**self.coordinator.config_entry.data, "manual_control": True},
+                data={
+                    **self.coordinator.config_entry.data,
+                    CONF_MANUAL_CONTROL: True,
+                },
             )
 
         await self.coordinator.async_request_refresh()
@@ -532,18 +609,21 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
             raise HomeAssistantError(msg)
 
         # Update config entry for control switches
-        if self._sax_item.name == "solar_charging_switch":
+        if self._sax_item.name == SOLAR_CHARGING_SWITCH:
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
                 data={
                     **self.coordinator.config_entry.data,
-                    "enable_solar_charging": False,
+                    CONF_ENABLE_SOLAR_CHARGING: False,
                 },
             )
-        elif self._sax_item.name == "manual_control_switch":
+        elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
-                data={**self.coordinator.config_entry.data, "manual_control": False},
+                data={
+                    **self.coordinator.config_entry.data,
+                    CONF_MANUAL_CONTROL: False,
+                },
             )
 
         await self.coordinator.async_request_refresh()

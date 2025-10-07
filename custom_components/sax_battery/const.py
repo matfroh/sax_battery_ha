@@ -93,6 +93,15 @@ BATTERY_PHASES = {"battery_a": "L1", "battery_b": "L2", "battery_c": "L3"}
 CONF_PILOT_FROM_HA = "pilot_from_ha"
 CONF_LIMIT_POWER = "limit_power"
 
+# Power Manager constants
+CONF_POWER_MANAGER_ENABLED = "power_manager_enabled"
+CONF_GRID_POWER_SENSOR = "grid_power_sensor"
+POWER_MANAGER_UPDATE_INTERVAL = 10  # seconds
+
+# Control modes
+SOLAR_CHARGING_MODE = "solar_charging"
+MANUAL_CONTROL_MODE = "manual_control"
+
 # Battery limits per individual battery unit 7.5kW model
 # Adjusted to realistic values based on SAX service feedback
 LIMIT_MAX_CHARGE_PER_BATTERY = 3500  # Watts per battery

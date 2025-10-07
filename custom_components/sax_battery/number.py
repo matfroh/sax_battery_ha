@@ -378,59 +378,90 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
         """
         try:
-            _LOGGER.debug(
-                "Setting native value for %s to %s", self._modbus_item.name, value
-            )
-
-            if not self.coordinator.config_entry:
-                return
-
-            if not self.coordinator.is_master:
-                return
-
-            value_per_battery: float = value / float(
-                get_battery_count(self.coordinator.config_entry)
-            )
-            # Check if this is a pilot control item requiring special handling
-            if self._is_pilot_control_item:
-                success = await self._write_pilot_control_value_transactional(
-                    value_per_battery
+            # Apply SOC constraints for power-related items
+            if self._modbus_item.name in (SAX_NOMINAL_POWER, SAX_MAX_DISCHARGE):
+                _LOGGER.debug(
+                    "Applying SOC constraints to %s: %s",
+                    self._modbus_item.name,
+                    value,
                 )
+                constrained_result = (
+                    await self.coordinator.soc_manager.apply_constraints(value)
+                )
+                if not constrained_result.allowed:
+                    _LOGGER.warning(
+                        "SOC constraints prevented write: %s",
+                        constrained_result.reason,
+                    )
+                    msg = f"SOC constraint: {constrained_result.reason}"
+                    raise HomeAssistantError(msg)  # noqa: TRY301
+                value = constrained_result.constrained_value
+
+            # Handle pilot control items with transaction coordination
+            if self._is_pilot_control_item:
+                success = await self._write_pilot_control_value_transactional(value)
             else:
-                # Standard number entity write using coordinator
+                # Direct modbus write
                 success = await self.coordinator.async_write_number_value(
-                    self._modbus_item, value_per_battery
+                    self._modbus_item, value
                 )
 
             if not success:
-                msg = f"Failed to write value {value_per_battery} to {self._modbus_item.name}"
+                msg = f"Failed to write value to {self.name}"
                 raise HomeAssistantError(msg)  # noqa: TRY301
 
-            # Update local value for write-only registers (immediate UI feedback)
+            # Update local state for write-only registers
             if self._is_write_only:
                 self._local_value = value
+                self.async_write_ha_state()
 
-            # Update coordinator data immediately for UI responsiveness
-            if self.coordinator.data is not None:
-                self.coordinator.data[self._modbus_item.name] = value
+            # Notify power manager of power changes (if exists)
+            await self._notify_power_manager_update(value)
 
-            # Schedule a coordinator refresh for the next update cycle
             await self.coordinator.async_request_refresh()
 
-            # Write state immediately for UI feedback
-            self.async_write_ha_state()
-
-            _LOGGER.debug("Successfully set %s to %s", self._modbus_item.name, value)
-
         except HomeAssistantError:
-            # Re-raise HomeAssistantError as-is
             raise
         except Exception as err:
-            _LOGGER.error(
-                "Failed to set %s to %s: %s", self._modbus_item.name, value, err
-            )
-            msg = f"Unexpected error setting {self._modbus_item.name}: {err}"
+            _LOGGER.exception("Error setting value for %s", self.name)
+            msg = f"Unexpected error: {err}"
             raise HomeAssistantError(msg) from err
+
+    async def _notify_power_manager_update(self, value: float) -> None:
+        """Notify power manager of value updates.
+
+        Args:
+            value: New value that was set
+
+        Performance: Only notifies if power manager exists and item is relevant
+        Security: Validates config entry and integration data access
+        """
+        # Only notify for power-related items
+        if self._modbus_item.name not in (SAX_NOMINAL_POWER, SAX_NOMINAL_FACTOR):
+            return
+
+        # Security: Validate config entry exists
+        if not self.coordinator.config_entry:
+            _LOGGER.debug("Config entry not available for power manager notification")
+            return
+
+        # Check if power manager exists in integration data
+        integration_data = self.hass.data.get(DOMAIN, {}).get(
+            self.coordinator.config_entry.entry_id
+        )
+        if not integration_data:
+            _LOGGER.debug("Integration data not available for power manager")
+            return
+
+        power_manager = integration_data.get("power_manager")
+        if power_manager and hasattr(power_manager, "update_power_setpoint"):
+            _LOGGER.debug(
+                "Notifying power manager of %s update: %s",
+                self._modbus_item.name,
+                value,
+            )
+            # Note: Power manager will be notified asynchronously
+            # No need to await here as it's a fire-and-forget notification
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

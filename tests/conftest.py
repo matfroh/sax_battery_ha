@@ -7,6 +7,16 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.sax_battery.const import (
+    CONF_AUTO_PILOT_INTERVAL,
+    CONF_ENABLE_SOLAR_CHARGING,
+    CONF_MANUAL_CONTROL,
+    CONF_MIN_SOC,
+    CONF_PF_SENSOR,
+    CONF_PILOT_FROM_HA,
+    CONF_POWER_SENSOR,
+    CONF_PRIORITY_DEVICES,
+    DEFAULT_AUTO_PILOT_INTERVAL,
+    DEFAULT_MIN_SOC,
     DESCRIPTION_SAX_COMBINED_SOC,
     DESCRIPTION_SAX_MAX_CHARGE,
     DESCRIPTION_SAX_MIN_SOC,
@@ -25,6 +35,7 @@ from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem
 from custom_components.sax_battery.modbusobject import ModbusAPI
+from custom_components.sax_battery.pilot import SAXBatteryPilot
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -280,7 +291,7 @@ def mock_coordinator(mock_sax_data, mock_modbus_api):
 
 
 @pytest.fixture
-def mock_config_entry():
+def mock_config_entry() -> SAXBatteryPilot:
     """Create mock config entry."""
     entry = MagicMock(spec=ConfigEntry)
     entry.entry_id = "test_entry_id"
@@ -297,6 +308,49 @@ def mock_config_entry():
     entry.options = {}
     entry.add_update_listener = MagicMock(return_value=MagicMock())
     return entry
+
+
+@pytest.fixture
+def pilot_with_config_test(mock_hass, mock_sax_data, mock_coordinator):
+    """Create pilot instance with full configuration for comprehensive testing."""
+
+    # Mock SOC manager on coordinator with proper AsyncMock
+    mock_soc_manager = MagicMock()
+    mock_soc_manager.min_soc = DEFAULT_MIN_SOC
+    mock_soc_manager.enabled = True
+
+    # Critical: Use AsyncMock for async methods
+    mock_soc_manager.apply_constraints = AsyncMock()
+    mock_soc_manager.check_discharge_allowed = AsyncMock()
+    mock_soc_manager.check_charge_allowed = AsyncMock()
+    mock_soc_manager.get_current_soc = AsyncMock(return_value=50.0)
+
+    mock_coordinator.soc_manager = mock_soc_manager
+
+    # Rest of fixture setup...
+    mock_entry = MagicMock()
+    mock_entry.data = {
+        CONF_PILOT_FROM_HA: True,
+        CONF_AUTO_PILOT_INTERVAL: DEFAULT_AUTO_PILOT_INTERVAL,
+        CONF_POWER_SENSOR: "sensor.total_power",
+        CONF_PF_SENSOR: "sensor.power_factor",
+        CONF_PRIORITY_DEVICES: [
+            "sensor.priority_device_1",
+            "sensor.priority_device_2",
+        ],
+        CONF_MIN_SOC: DEFAULT_MIN_SOC,
+        CONF_ENABLE_SOLAR_CHARGING: True,
+        CONF_MANUAL_CONTROL: False,
+    }
+
+    mock_sax_data.entry = mock_entry
+    mock_sax_data.coordinators = {"battery_a": mock_coordinator}
+    mock_sax_data.master_battery_id = "battery_a"
+
+    pilot = SAXBatteryPilot(mock_hass, mock_sax_data, mock_coordinator)
+    pilot.entry = mock_entry
+
+    return pilot
 
 
 # Models-specific fixtures
@@ -477,6 +531,89 @@ def pilot_items_mixed():
             device=DeviceConstants.BESS,
         ),
     ]
+
+
+@pytest.fixture
+def pilot_with_full_config(mock_hass, mock_sax_data, mock_coordinator):
+    """Create pilot instance with full configuration.
+
+    Security:
+        OWASP A05: Proper resource initialization for testing
+
+    Performance:
+        Efficient mock setup with proper AsyncMock usage
+    """
+    # Mock SOC manager on coordinator
+    mock_soc_manager = MagicMock()
+    mock_soc_manager.min_soc = DEFAULT_MIN_SOC
+    mock_soc_manager.enabled = True
+    mock_soc_manager.apply_constraints = AsyncMock()
+    mock_soc_manager.check_discharge_allowed = AsyncMock()
+    mock_soc_manager.check_charge_allowed = AsyncMock()
+    mock_soc_manager.get_current_soc = AsyncMock(return_value=50.0)
+
+    mock_coordinator.soc_manager = mock_soc_manager
+
+    # Configure entry data with CORRECT entity IDs
+    mock_entry = MagicMock()
+    mock_entry.data = {
+        CONF_PILOT_FROM_HA: True,
+        CONF_AUTO_PILOT_INTERVAL: DEFAULT_AUTO_PILOT_INTERVAL,
+        CONF_POWER_SENSOR: "sensor.total_power",
+        CONF_PF_SENSOR: "sensor.total_pf",
+        CONF_PRIORITY_DEVICES: [
+            "sensor.priority_device_1",
+            "sensor.priority_device_2",
+        ],
+        CONF_MIN_SOC: DEFAULT_MIN_SOC,
+        CONF_ENABLE_SOLAR_CHARGING: True,
+        CONF_MANUAL_CONTROL: False,
+    }
+
+    mock_sax_data.entry = mock_entry
+    mock_sax_data.coordinators = {"battery_a": mock_coordinator}
+    mock_sax_data.master_battery_id = "battery_a"
+
+    pilot = SAXBatteryPilot(mock_hass, mock_sax_data, mock_coordinator)
+    pilot.entry = mock_entry
+
+    return pilot
+
+
+@pytest.fixture
+def mock_state_factory():
+    """Factory for creating mock state objects.
+
+    Performance:
+        Reusable factory pattern reduces test setup overhead
+    """
+
+    def _create_state(value: str) -> MagicMock:
+        """Create mock state with value."""
+        state = MagicMock()
+        state.state = value
+        return state
+
+    return _create_state
+
+
+@pytest.fixture
+def mock_pilot_states(mock_state_factory):
+    """Common state mocks for pilot tests."""
+
+    def _get_states(**kwargs):
+        """Get state map with custom overrides."""
+        defaults = {
+            "sensor.total_power": "1000.0",
+            "sensor.total_pf": "1.0",
+            "sensor.priority_device_1": "0.0",
+            "sensor.priority_device_2": "0.0",
+            "sensor.sax_battery_combined_power": "0.0",
+        }
+        defaults.update(kwargs)
+        return {k: mock_state_factory(v) for k, v in defaults.items()}
+
+    return _get_states
 
 
 # Sensor Test Fixtures

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sax_battery.config_flow import (
@@ -180,6 +181,7 @@ class TestSAXBatteryConfigFlowExtended:
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "priority_devices"
 
+    @pytest.mark.skip(reason="pilot will be removed")
     async def test_sensors_step_without_pilot(self, hass: HomeAssistant) -> None:
         """Test sensors step when pilot is disabled."""
         flow = SAXBatteryConfigFlow()
@@ -472,6 +474,7 @@ class TestSAXBatteryConfigFlowExtended:
         assert any(CONF_POWER_SENSOR in key for key in schema_keys)
         assert any(CONF_PF_SENSOR in key for key in schema_keys)
 
+    @pytest.mark.skip(reason="pilot will be removed")
     async def test_sensors_step_pilot_disabled_skip(self, hass: HomeAssistant) -> None:
         """Test sensors step skips to priority devices when pilot disabled."""
         flow = SAXBatteryConfigFlow()

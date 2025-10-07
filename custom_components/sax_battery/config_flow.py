@@ -27,6 +27,7 @@ from .const import (
     CONF_BATTERY_PORT,
     CONF_DEVICE_ID,
     CONF_ENABLE_SOLAR_CHARGING,
+    CONF_GRID_POWER_SENSOR,
     CONF_LIMIT_POWER,
     CONF_MASTER_BATTERY,
     CONF_MIN_SOC,
@@ -200,21 +201,35 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             self._data.update(user_input)
-            return await self.async_step_priority_devices()
+
+            # If pilot is enabled and sensors configured, go to priority devices
+            if self._pilot_from_ha:
+                return await self.async_step_priority_devices()
+
+            # Otherwise proceed to battery config
+            return await self.async_step_battery_config()
 
         # Create schema based on pilot configuration
         schema = {}
         if self._pilot_from_ha:
             schema.update(
                 {
-                    vol.Required(CONF_POWER_SENSOR): selector.EntitySelector(
+                    vol.Required(CONF_GRID_POWER_SENSOR): selector.EntitySelector(
                         selector.EntitySelectorConfig(
                             domain="sensor",
+                            device_class="power",
                         )
                     ),
-                    vol.Required(CONF_PF_SENSOR): selector.EntitySelector(
+                    vol.Optional(CONF_POWER_SENSOR): selector.EntitySelector(
                         selector.EntitySelectorConfig(
                             domain="sensor",
+                            device_class="power",
+                        )
+                    ),
+                    vol.Optional(CONF_PF_SENSOR): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="sensor",
+                            device_class="power_factor",
                         )
                     ),
                 }
@@ -222,15 +237,16 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # If no sensors are needed, skip this step
         if not schema:
-            return await self.async_step_priority_devices()
+            return await self.async_step_battery_config()
 
         return self.async_show_form(
             step_id="sensors",
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={
-                "power_sensor_description": "Select smart meter power sensor for grid measurements",
-                "pf_sensor_description": "Select power factor sensor for control calculations",
+                "grid_power_description": "Select grid power sensor for power manager (required)",
+                "power_sensor_description": "Select smart meter power sensor (optional, for legacy pilot)",
+                "pf_sensor_description": "Select power factor sensor (optional, for legacy pilot)",
             },
         )
 

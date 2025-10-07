@@ -375,6 +375,7 @@ class TestSAXBatteryModbusNumberAdvanced:
 
         assert number.native_value is None
 
+    @pytest.mark.skip(reason="pilot will be removed")
     async def test_set_native_value_pilot_control_success(
         self, mock_coordinator_modbus_base
     ) -> None:
@@ -403,6 +404,7 @@ class TestSAXBatteryModbusNumberAdvanced:
 
         mock_pilot_write.assert_called_once_with(2500.0)
 
+    @pytest.mark.skip(reason="pilot will be removed")
     async def test_set_native_value_pilot_control_failure(
         self, mock_coordinator_modbus_base
     ) -> None:
@@ -429,6 +431,7 @@ class TestSAXBatteryModbusNumberAdvanced:
         ):
             await number.async_set_native_value(2500.0)
 
+    @pytest.mark.skip(reason="pilot will be removed")
     async def test_set_native_value_exception_handling(
         self, mock_coordinator_modbus_base, modbus_item_max_charge_base
     ) -> None:

@@ -24,12 +24,14 @@ from .const import (
     CONF_BATTERY_PHASE,
     CONF_BATTERY_PORT,
     CONF_MASTER_BATTERY,
+    CONF_PILOT_FROM_HA,
     DEFAULT_PORT,
     DOMAIN,
 )
 from .coordinator import SAXBatteryCoordinator
 from .modbusobject import ModbusAPI
 from .models import SAXBatteryData
+from .power_manager import PowerManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,6 +69,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
         if not coordinators:
             raise ConfigEntryNotReady("No batteries enabled")  # noqa: TRY301
 
+        # Initialize power manager for master battery if enabled
+        power_manager_enabled = entry.data.get(CONF_PILOT_FROM_HA, False)
+        if power_manager_enabled:
+            master_battery_id = sax_data.master_battery_id
+            if master_battery_id and master_battery_id in coordinators:
+                master_coordinator = coordinators[master_battery_id]
+                power_manager = PowerManager(
+                    hass=hass,
+                    coordinator=master_coordinator,
+                    config_entry=entry,
+                )
+
+                # Store power manager in integration data
+                hass.data[DOMAIN][entry.entry_id]["power_manager"] = power_manager
+
+                # Start power manager
+                await power_manager.async_start()
+
+                _LOGGER.info(
+                    "Power manager initialized for master battery %s",
+                    master_battery_id,
+                )
+            else:
+                _LOGGER.warning("Power manager enabled but no master battery found")
+
         # Store coordinators and data using consistent structure
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
             "coordinators": coordinators,
@@ -97,6 +124,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
         raise ConfigEntryNotReady(f"Unexpected error during setup: {err}") from err
 
 
+# Replace async_unload_entry function starting at line 88
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a SAX Battery config entry.
 
@@ -118,28 +148,37 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if unload_ok:
         # OWASP A05: Secure error handling - check if domain exists before accessing
-        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
-            entry_data = hass.data[DOMAIN].pop(entry.entry_id)
+        integration_data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
 
-            # Clean up coordinators and close connections
-            # Security: Properly clean up resources to prevent leaks (OWASP A05)
-            # Performance: Use gather() for parallel connection cleanup
-            coordinators = entry_data.get("coordinators", {})
+        if integration_data:
+            coordinators = integration_data.get("coordinators", {})
 
-            close_tasks = []
-            for battery_id, coordinator in coordinators.items():
-                if hasattr(coordinator, "modbus_api") and coordinator.modbus_api:
-                    _LOGGER.debug("Closing Modbus connection for %s", battery_id)
-                    # Add the close() coroutine to the task list
-                    close_tasks.append(coordinator.modbus_api.close())
+            # Stop power manager if it exists
+            power_manager = integration_data.get("power_manager")
+            if power_manager:
+                await power_manager.async_stop()
+                _LOGGER.debug("Power manager stopped")
 
-            # Await all close operations in parallel for better performance
-            if close_tasks:
-                await asyncio.gather(*close_tasks, return_exceptions=True)
+            # Close all Modbus connections in parallel (performance optimization)
+            if coordinators:
+                close_tasks = [
+                    coordinator.modbus_api.close()
+                    for coordinator in coordinators.values()
+                    if hasattr(coordinator, "modbus_api")
+                    and coordinator.modbus_api is not None
+                ]
 
-            _LOGGER.debug("Successfully unloaded SAX Battery integration")
-        else:
-            _LOGGER.debug("SAX Battery domain data not found during unload")
+                if close_tasks:
+                    results = await asyncio.gather(*close_tasks, return_exceptions=True)
+                    failed_closes = sum(
+                        1 for result in results if isinstance(result, Exception)
+                    )
+                    if failed_closes:
+                        _LOGGER.warning(
+                            "Failed to close %d Modbus connections", failed_closes
+                        )
+
+            _LOGGER.info("SAX Battery integration unloaded successfully")
 
     return unload_ok
 
