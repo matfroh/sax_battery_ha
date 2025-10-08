@@ -69,6 +69,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
         if not coordinators:
             raise ConfigEntryNotReady("No batteries enabled")  # noqa: TRY301
 
+        # Store coordinators and data BEFORE power manager initialization
+        # This prevents KeyError when power manager tries to access hass.data[DOMAIN]
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+            "coordinators": coordinators,
+            "sax_data": sax_data,
+            "config": entry.data,
+        }
+
+        # Update sax_data with coordinators for cross-battery calculations
+        sax_data.coordinators = coordinators
+
         # Initialize power manager for master battery if enabled
         power_manager_enabled = entry.data.get(CONF_PILOT_FROM_HA, False)
         if power_manager_enabled:
@@ -81,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
                     config_entry=entry,
                 )
 
-                # Store power manager in integration data
+                # Store power manager in integration data (now safe)
                 hass.data[DOMAIN][entry.entry_id]["power_manager"] = power_manager
 
                 # Start power manager
@@ -93,16 +104,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
                 )
             else:
                 _LOGGER.warning("Power manager enabled but no master battery found")
-
-        # Store coordinators and data using consistent structure
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-            "coordinators": coordinators,
-            "sax_data": sax_data,
-            "config": entry.data,
-        }
-
-        # Update sax_data with coordinators for cross-battery calculations
-        sax_data.coordinators = coordinators
 
         # Log device and entity registry state before platform setup
         await _log_registry_state_before_setup(hass, entry, coordinators, sax_data)
@@ -122,9 +123,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
     except Exception as err:
         _LOGGER.exception("Failed to setup SAX Battery integration")
         raise ConfigEntryNotReady(f"Unexpected error during setup: {err}") from err
-
-
-# Replace async_unload_entry function starting at line 88
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -634,7 +632,7 @@ def _validate_battery_config(battery_id: str, battery_config: dict[str, Any]) ->
         return False
 
     # OWASP A03: Input validation to prevent injection attacks
-    if not _validate_host_format(host.strip()):
+    if not _validate_host(host=host.strip()):
         _LOGGER.error(
             "Host format validation failed for battery %s: %s", battery_id, host
         )
@@ -699,7 +697,7 @@ def _validate_battery_config(battery_id: str, battery_config: dict[str, Any]) ->
     return True
 
 
-def _validate_host_format(host: str) -> bool:
+def _validate_host(host: str) -> bool:
     """Validate host format for security.
 
     Args:
@@ -709,18 +707,38 @@ def _validate_host_format(host: str) -> bool:
         bool: True if host format is valid
 
     Security:
-        OWASP A03: Injection prevention - validates input format
-        Prevents malformed hosts that could cause network issues
+        Prevents malformed hosts that could cause issues in network operations
 
     """
-    if not host or len(host) > 253:  # RFC 1035 hostname length limit
+    if not host or len(host) > 253:
+        return False
+
+    # Validate IPv4 address with proper octet range checking
+    ipv4_parts = host.split(".")
+    if len(ipv4_parts) == 4:
+        try:
+            # Security: Validate each octet is in valid range 0-255
+            for part in ipv4_parts:
+                # Ensure part is not empty and contains only digits
+                if not part or not part.isdigit():
+                    # Not a valid IPv4, try hostname validation below
+                    break
+                octet = int(part)
+                if not (0 <= octet <= 255):
+                    return False
+            else:
+                # All parts validated successfully as IPv4
+                return True
+        except (ValueError, TypeError):
+            # Not a valid IPv4, check if hostname
+            pass
+    elif len(ipv4_parts) != 1 and ipv4_parts[1].isdigit():
         return False
 
     # Allow hostnames and IPv4 addresses only (no IPv6 for simplicity)
-    hostname_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"
-    ipv4_pattern = r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+    host_pattern = r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9]))$"
 
-    return bool(re.match(hostname_pattern, host) or re.match(ipv4_pattern, host))
+    return bool(re.match(host_pattern, host))
 
 
 def _log_setup_summary(

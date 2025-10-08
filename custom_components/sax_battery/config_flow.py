@@ -393,15 +393,33 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             Prevents malformed hosts that could cause issues in network operations
 
         """
-        # Basic hostname/IP validation
-        # Allow hostnames and IPv4 addresses
-        hostname_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"
-        ipv4_pattern = r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
-
         if not host or len(host) > 253:
             return False
 
-        return bool(re.match(hostname_pattern, host) or re.match(ipv4_pattern, host))
+        # Validate IPv4 address with proper octet range checking
+        ipv4_parts = host.split(".")
+        if len(ipv4_parts) == 4:
+            try:
+                # Security: Validate each octet is in valid range 0-255
+                for part in ipv4_parts:
+                    # Ensure part is not empty and contains only digits
+                    if not part or not part.isdigit():
+                        # Not a valid IPv4, try hostname validation below
+                        break
+                    octet = int(part)
+                    if not (0 <= octet <= 255):
+                        return False
+                else:
+                    # All parts validated successfully as IPv4
+                    return True
+            except (ValueError, TypeError):
+                # Not a valid IPv4, check if hostname
+                pass
+
+        # Allow hostnames only
+        hostname_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"
+
+        return bool(re.match(hostname_pattern, host))
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None

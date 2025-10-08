@@ -13,6 +13,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import (
     AGGREGATED_ITEMS,
+    BATTERY_IDS,
+    CONF_BATTERIES,
+    CONF_BATTERY_COUNT,
+    CONF_BATTERY_HOST,
+    CONF_BATTERY_IS_MASTER,
+    CONF_BATTERY_PORT,
+    CONF_MASTER_BATTERY,
     DEFAULT_DEVICE_INFO,
     DOMAIN,
     MODBUS_BATTERY_SMARTMETER_ITEMS,
@@ -140,28 +147,57 @@ class SAXBatteryData:
 
     def _initialize_batteries(self) -> None:
         """Initialize battery models from config entry."""
-        battery_count = self.entry.data.get("battery_count", 1)
-        master_battery_id = self.entry.data.get("master_battery", "battery_a")
+        # Check for new nested battery configuration format
+        if CONF_BATTERIES in self.entry.data:
+            batteries_config = self.entry.data[CONF_BATTERIES]
 
-        for i in range(1, int(battery_count) + 1):
-            battery_id = f"battery_{chr(96 + i)}"  # battery_a, battery_b, battery_c
-            host = self.entry.data.get(f"{battery_id}_host", "")
-            port = self.entry.data.get(f"{battery_id}_port", 502)
-            is_master = battery_id == master_battery_id
+            for battery_id, battery_config in batteries_config.items():
+                # Security: Validate battery_id is in allowed list
+                if battery_id not in BATTERY_IDS:
+                    _LOGGER.warning("Invalid battery ID %s, skipping", battery_id)
+                    continue
 
-            if is_master:
-                self.master_battery_id = battery_id
+                host = battery_config.get(CONF_BATTERY_HOST, "")
+                port = battery_config.get(CONF_BATTERY_PORT, 502)
+                is_master = battery_config.get(CONF_BATTERY_IS_MASTER, False)
 
-            battery = BatteryModel(
-                device_id=battery_id,
-                name=f"SAX Battery {battery_id.split('_')[1].upper()}",
-                host=host,
-                port=port,
-                is_master=is_master,
-                config_data=dict(self.entry.data),
-            )
+                if is_master:
+                    self.master_battery_id = battery_id
 
-            self.batteries[battery_id] = battery
+                battery = BatteryModel(
+                    device_id=battery_id,
+                    name=f"SAX Battery {battery_id.split('_')[1].upper()}",
+                    host=host,
+                    port=port,
+                    is_master=is_master,
+                    config_data=dict(self.entry.data),
+                )
+
+                self.batteries[battery_id] = battery
+        else:
+            # Legacy configuration format
+            battery_count = self.entry.data.get(CONF_BATTERY_COUNT, 1)
+            master_battery_id = self.entry.data.get(CONF_MASTER_BATTERY, "battery_a")
+
+            for i in range(1, int(battery_count) + 1):
+                battery_id = f"battery_{chr(96 + i)}"  # battery_a, battery_b, battery_c
+                host = self.entry.data.get(f"{battery_id}_host", "")
+                port = self.entry.data.get(f"{battery_id}_port", 502)
+                is_master = battery_id == master_battery_id
+
+                if is_master:
+                    self.master_battery_id = battery_id
+
+                battery = BatteryModel(
+                    device_id=battery_id,
+                    name=f"SAX Battery {battery_id.split('_')[1].upper()}",
+                    host=host,
+                    port=port,
+                    is_master=is_master,
+                    config_data=dict(self.entry.data),
+                )
+
+                self.batteries[battery_id] = battery
 
     def should_poll_smart_meter(self, battery_id: str) -> bool:
         """Check if this battery should poll smart meter data.

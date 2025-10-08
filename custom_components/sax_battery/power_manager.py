@@ -85,9 +85,6 @@ class PowerManager:
         self.config_entry = config_entry
         self.battery_count = len(coordinator.sax_data.coordinators)
 
-        # Configuration values
-        self._update_config_values()
-
         # Power limits based on battery count
         self.max_discharge_power = self.battery_count * LIMIT_MAX_CHARGE_PER_BATTERY
         self.max_charge_power = self.battery_count * LIMIT_MAX_DISCHARGE_PER_BATTERY
@@ -107,6 +104,9 @@ class PowerManager:
         # Entity IDs for number entities
         self._power_entity_id = f"number.{DOMAIN}_{SAX_NOMINAL_POWER}"
         self._power_factor_entity_id = f"number.{DOMAIN}_{SAX_NOMINAL_FACTOR}"
+
+        # Configuration values - now safe to call after state initialization
+        self._update_config_values()
 
     def _update_config_values(self) -> None:
         """Update configuration values from entry data."""
