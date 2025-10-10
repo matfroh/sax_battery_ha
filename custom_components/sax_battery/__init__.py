@@ -8,8 +8,8 @@ import re
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
@@ -108,8 +108,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
         # Log device and entity registry state before platform setup
         await _log_registry_state_before_setup(hass, entry, coordinators, sax_data)
 
+        # Store coordinators
+        entry.runtime_data = coordinators
+
         # Set up platforms
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+        # Register the startup check to run after HA has fully started
+        # Pass hass and entry_id to the listener so it can access stored data
+        async def _startup_check_wrapper(event: Event) -> None:
+            """Wrapper to pass entry_id to startup check."""
+            await _check_soc_constraints_on_startup(hass, entry.entry_id, event)
+
+        # Register the startup check to run after HA has fully started
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _startup_check_wrapper)
 
         # Log comprehensive setup summary with registry information
         await _log_comprehensive_setup_summary(
@@ -123,6 +135,84 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
     except Exception as err:
         _LOGGER.exception("Failed to setup SAX Battery integration")
         raise ConfigEntryNotReady(f"Unexpected error during setup: {err}") from err
+
+
+# Schedule SOC constraint enforcement check after HA startup completes
+async def _check_soc_constraints_on_startup(
+    hass: HomeAssistant, entry_id: str, _event: Event
+) -> None:
+    """Check and enforce SOC discharge limits after Home Assistant startup.
+
+    This ensures that discharge limits are properly enforced on restart,
+    updating both hardware registers and entity UI states to reflect
+    current SOC constraint status.
+
+    Args:
+        hass: Home Assistant instance
+        entry_id: Config entry ID to access stored coordinators
+        _event: Startup event (unused)
+
+    Security:
+        OWASP A05: Hardware-level battery protection on startup
+    """
+    _LOGGER.debug("Home Assistant startup complete, checking SOC constraints")
+
+    # Small delay to ensure all entities are fully initialized
+    await asyncio.sleep(5)
+
+    # Security: Validate domain and entry exist before access
+    if DOMAIN not in hass.data:
+        _LOGGER.warning(
+            "SAX Battery domain not found in hass.data during startup check"
+        )
+        return
+
+    integration_data = hass.data[DOMAIN].get(entry_id)
+    if not integration_data:
+        _LOGGER.warning(
+            "SAX Battery integration data not found for entry %s during startup check",
+            entry_id,
+        )
+        return
+
+    # Get coordinators from stored integration data
+    coordinators = integration_data.get("coordinators", {})
+    if not coordinators:
+        _LOGGER.warning("No coordinators found during startup SOC check")
+        return
+
+    # Check SOC constraints for each battery
+    for battery_id, coordinator in coordinators.items():
+        if coordinator.soc_manager and coordinator.soc_manager.enabled:
+            _LOGGER.debug(
+                "Checking SOC constraints for battery %s on startup", battery_id
+            )
+
+            try:
+                # Check and enforce discharge limit if SOC is below minimum
+                enforced = (
+                    await coordinator.soc_manager.check_and_enforce_discharge_limit()
+                )
+
+                if enforced:
+                    _LOGGER.info(
+                        "Battery %s: Discharge limit enforced on startup (SOC below minimum)",
+                        battery_id,
+                    )
+                else:
+                    current_soc = await coordinator.soc_manager.get_current_soc()
+                    _LOGGER.debug(
+                        "Battery %s: SOC %.1f%% is within limits, no enforcement needed",
+                        battery_id,
+                        current_soc,
+                    )
+
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error(
+                    "Failed to check SOC constraints for battery %s on startup: %s",
+                    battery_id,
+                    err,
+                )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

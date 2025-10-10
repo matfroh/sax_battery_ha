@@ -112,14 +112,19 @@ class SOCManager:
     async def check_and_enforce_discharge_limit(self) -> bool:
         """Check SOC and enforce discharge limit by writing to max_discharge register.
 
-        This method should be called periodically by the coordinator to actively
-        enforce discharge protection at the hardware level.
+        This method writes directly to the Modbus hardware register when SOC
+        is below minimum. State synchronization is handled separately by:
+        - Initial startup check (_check_soc_constraints_on_startup)
+        - Normal coordinator refresh cycle
 
         Returns:
             bool: True if hardware limit was enforced (written to register)
 
         Security:
             OWASP A05: Hardware-level battery protection
+
+        Performance:
+            Minimal overhead - only writes to hardware without state updates
         """
         if not self._enabled:
             return False
@@ -132,6 +137,7 @@ class SOCManager:
         current_soc = await self.get_current_soc()
 
         if current_soc < self._min_soc:
+            # Only enforce if SOC level changed (prevents redundant writes)
             if self._last_enforced_soc != current_soc:
                 _LOGGER.warning(
                     "SOC %s%% below minimum %s%% - enforcing discharge limit",
@@ -139,7 +145,7 @@ class SOCManager:
                     self._min_soc,
                 )
 
-                # Get max_discharge entity directly from state machine
+                # Get max_discharge entity from registry
                 ent_reg = er.async_get(self.coordinator.hass)
 
                 # Find the entity
@@ -159,7 +165,7 @@ class SOCManager:
                     _LOGGER.error("Could not find max_discharge entity for enforcement")
                     return False
 
-                # Get the actual entity component from the platform
+                # Get the entity platform
                 platform = entity_platform.async_get_current_platform()
                 if not platform:
                     _LOGGER.error("Could not access entity platform")
@@ -178,7 +184,7 @@ class SOCManager:
                     )
                     return False
 
-                # Validate entity is a NumberEntity with async_set_native_value
+                # Validate entity supports async_set_native_value
                 if not hasattr(entity_obj, "async_set_native_value"):
                     _LOGGER.error(
                         "Entity %s does not support async_set_native_value",
@@ -187,29 +193,15 @@ class SOCManager:
                     return False
 
                 try:
-                    # Call the entity's async_set_native_value directly
-                    # This writes to Modbus hardware register
+                    # Write 0W to Modbus hardware register
+                    # Entity state synchronization handled by:
+                    # - Startup check (after HA restart)
+                    # - Coordinator refresh cycle (during runtime)
                     await entity_obj.async_set_native_value(0.0)  # type: ignore[attr-defined]
-
-                    # CRITICAL: Update coordinator cache immediately
-                    # This ensures UI and cache stay synchronized with hardware
-                    if self.coordinator.data:
-                        self.coordinator.data[SAX_MAX_DISCHARGE] = 0.0
-                        _LOGGER.debug(
-                            "Updated coordinator cache: %s = 0.0",
-                            SAX_MAX_DISCHARGE,
-                        )
-
-                    # Force entity state update in Home Assistant
-                    entity_obj.async_write_ha_state()
-
-                    # Request coordinator refresh to sync all related entities
-                    # This ensures sensors and other entities reflect the new state
-                    await self.coordinator.async_request_refresh()
 
                     self._last_enforced_soc = current_soc
                     _LOGGER.info(
-                        "Discharge protection enforced: %s set to 0W (SOC: %s%%), cache and state updated",
+                        "Discharge protection enforced: %s set to 0W (SOC: %s%%)",
                         entity_entry.entity_id,
                         current_soc,
                     )
