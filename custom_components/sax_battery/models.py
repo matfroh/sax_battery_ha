@@ -141,12 +141,19 @@ class SAXBatteryData:
         self.coordinators: dict[str, Any] = {}
         self.modbus_api: ModbusAPI | None = None
         self.master_battery_id: str | None = None
+        self._is_unloading = False
 
         # Initialize batteries from config entry
         self._initialize_batteries()
 
     def _initialize_batteries(self) -> None:
         """Initialize battery models from config entry."""
+        # Skip initialization if unloading
+        integration_data = self.hass.data.get(DOMAIN, {}).get(self.entry.entry_id, {})
+        if integration_data.get("_unloading", False) or self._is_unloading:
+            _LOGGER.debug("Skipping battery initialization during unload")
+            return
+
         # Check for new nested battery configuration format
         if CONF_BATTERIES in self.entry.data:
             batteries_config = self.entry.data[CONF_BATTERIES]

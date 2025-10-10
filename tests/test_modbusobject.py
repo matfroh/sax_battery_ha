@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.sax_battery.const import (
+    CONF_MIN_SOC,
     DESCRIPTION_SAX_MAX_CHARGE,
     DESCRIPTION_SAX_MIN_SOC,
     PILOT_ITEMS,
@@ -25,17 +26,6 @@ from custom_components.sax_battery.number import (
 )
 from homeassistant.components.number import NumberEntityDescription, NumberMode
 from homeassistant.const import EntityCategory, UnitOfPower
-from homeassistant.core import HomeAssistant
-
-
-@pytest.fixture
-def mock_hass_number():
-    """Create mock Home Assistant instance for number tests."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.config_entries = MagicMock()
-    hass.config_entries.async_update_entry = MagicMock(return_value=True)
-    hass.data = {}
-    return hass
 
 
 @pytest.fixture
@@ -60,33 +50,6 @@ def mock_coordinator_number_temperature_unique(mock_hass_number):
     coordinator.modbus_api.write_holding_registers = AsyncMock(return_value=True)
     coordinator.modbus_api.write_registers = AsyncMock(return_value=True)
     coordinator.async_write_number_value = AsyncMock(return_value=True)
-
-    coordinator.last_update_success_time = MagicMock()
-    return coordinator
-
-
-@pytest.fixture
-def mock_coordinator_config_number_unique(mock_hass_number):
-    """Create mock coordinator with config data for config number tests."""
-    coordinator = MagicMock(spec=SAXBatteryCoordinator)
-    # Initialize with SAX_MIN_SOC data for config number tests - fix the native_value assertion
-    coordinator.data = {SAX_MIN_SOC: 10.0}  # Changed from 20.0 to 10.0 to match test
-    coordinator.battery_id = "battery_a"
-    coordinator.hass = mock_hass_number
-
-    # Mock sax_data with get_device_info method
-    coordinator.sax_data = MagicMock()
-    coordinator.sax_data.get_device_info.return_value = {"name": "Test Battery"}
-
-    # Mock config entry
-    coordinator.config_entry = MagicMock()
-    coordinator.config_entry.data = {"min_soc": 10}
-    coordinator.config_entry.options = {}
-
-    # Mock modbus_api for write operations - needs to be AsyncMock
-    coordinator.modbus_api = MagicMock()
-    coordinator.modbus_api.write_holding_registers = AsyncMock(return_value=True)
-    coordinator.async_write_sax_value = AsyncMock(return_value=True)
 
     coordinator.last_update_success_time = MagicMock()
     return coordinator
@@ -221,14 +184,18 @@ class TestSAXBatteryConfigNumber:
         )
         assert sax_min_soc_item is not None
 
-        # The config number gets value from coordinator data where we set SAX_MIN_SOC: 10.0
+        # Create config number entity
         number = SAXBatteryConfigNumber(
             coordinator=mock_coordinator_config_number_unique,
             sax_item=sax_min_soc_item,
         )
 
-        # Should return value from coordinator data (10.0 from mock setup)
+        # Should return value from SOC manager (10.0 from mock setup)
         assert number.native_value == 10.0
+
+        # Update SOC manager value
+        mock_coordinator_config_number_unique.soc_manager.min_soc = 25.0
+        assert number.native_value == 25.0
 
     async def test_config_number_set_native_value(
         self, mock_coordinator_config_number_unique, mock_hass_number
@@ -241,25 +208,27 @@ class TestSAXBatteryConfigNumber:
 
         assert sax_min_soc_item is not None, "SAX_MIN_SOC not found in PILOT_ITEMS"
 
-        # Mock the SAXItem's async_write_value method to return success
-        sax_min_soc_item.async_write_value = AsyncMock(return_value=True)  # type: ignore[method-assign]
-
-        # Create number entity - ensure it has proper hass reference
+        # Create number entity
         number = SAXBatteryConfigNumber(
             coordinator=mock_coordinator_config_number_unique,
             sax_item=sax_min_soc_item,
         )
 
-        # Ensure the entity has access to hass through coordinator
-        # Mock both the direct hass attribute and the entity state management
-        with (
-            patch.object(number, "async_write_ha_state"),
-            patch.object(number, "hass", mock_hass_number),
-        ):
+        # Set hass attribute
+        number.hass = mock_hass_number
+
+        # Mock async_write_ha_state
+        with patch.object(number, "async_write_ha_state"):
+            # Set new value
             await number.async_set_native_value(20.0)
 
-        # Verify the SAXItem's async_write_value was called with correct value
-        sax_min_soc_item.async_write_value.assert_called_once_with(20.0)
+        # Verify SOC manager was updated (not SAXItem.async_write_value)
+        assert mock_coordinator_config_number_unique.soc_manager.min_soc == 20.0
+
+        # Verify config entry was updated
+        mock_hass_number.config_entries.async_update_entry.assert_called_once()
+        call_args = mock_hass_number.config_entries.async_update_entry.call_args
+        assert call_args[1]["data"][CONF_MIN_SOC] == 20
 
 
 class TestNumberEntityConfiguration:

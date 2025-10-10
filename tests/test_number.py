@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.sax_battery.const import (
+    CONF_BATTERY_COUNT,
+    CONF_MASTER_BATTERY,
     DOMAIN,
+    PILOT_ITEMS,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
     SAX_MIN_SOC,
@@ -680,10 +683,14 @@ class TestSAXBatteryConfigNumber:
         """Test config number initialization with proper unique ID generation."""
 
         mock_config_entry = MagicMock()
-        mock_config_entry.data = {"battery_count": 1, "master_battery": "battery_a"}
+        mock_config_entry.data = {
+            CONF_BATTERY_COUNT: 2,  # Set battery count in config
+            CONF_MASTER_BATTERY: "battery_a",
+        }
 
         sax_data = SAXBatteryData(mock_coordinator_config_base.hass, mock_config_entry)
         mock_coordinator_config_base.sax_data = sax_data
+        mock_coordinator_config_base.config_entry = mock_config_entry
 
         # Ensure the SAX item has the correct device reference
         sax_item_min_soc_base.device = DeviceConstants.SYS
@@ -691,7 +698,11 @@ class TestSAXBatteryConfigNumber:
         number = SAXBatteryConfigNumber(
             coordinator=mock_coordinator_config_base,
             sax_item=sax_item_min_soc_base,
+            # Removed: battery_count parameter
         )
+
+        # Verify battery_count property reads from config
+        assert number.battery_count == 2
 
         # Verify the device info comes from actual get_device_info method
         assert number.device_info["name"] == "SAX Cluster"  # type: ignore[index]
@@ -713,12 +724,21 @@ class TestSAXBatteryConfigNumber:
             sax_item=sax_item_min_soc_base,
         )
 
-        # With data
-        assert number.native_value == 15.0  # From config entry
+        # Native value comes from SOC manager, not coordinator data
+        mock_coordinator_config_base.soc_manager.min_soc = 15.0
+        assert number.native_value == 15.0
 
-        # Without config entry
-        mock_coordinator_config_base.config_entry = None
-        assert number.native_value is None
+        # Update SOC manager value
+        mock_coordinator_config_base.soc_manager.min_soc = 25.0
+        assert number.native_value == 25.0
+
+        # Without SOC manager, return cached initialization value
+        mock_coordinator_config_base.soc_manager = None
+        # Entity was initialized with soc_manager.min_soc = 10.0
+        assert number.native_value == 10.0
+
+        # After setting soc_manager to None, entity still has cached value from init
+        assert number._attr_native_value == 10.0
 
     def test_availability(
         self, mock_coordinator_config_base, sax_item_min_soc_base
@@ -729,42 +749,95 @@ class TestSAXBatteryConfigNumber:
             sax_item=sax_item_min_soc_base,
         )
 
-        # Available with data
+        # Available with coordinator data
+        mock_coordinator_config_base.last_update_success = True
+        mock_coordinator_config_base.data = {SAX_MIN_SOC: 15.0}
+        # Need to populate cache
         assert number.available is True
 
-        # Unavailable without data
-        mock_coordinator_config_base.data = None
+        # Unavailable when coordinator fails
+        mock_coordinator_config_base.last_update_success = False
         assert number.available is False
 
     async def test_set_native_value_scenarios(
         self, mock_coordinator_config_base, sax_item_min_soc_base, mock_hass_base
     ) -> None:
         """Test setting config number native value."""
-        sax_item_min_soc_base.async_write_value = AsyncMock(return_value=True)
+        number = SAXBatteryConfigNumber(
+            coordinator=mock_coordinator_config_base,
+            sax_item=sax_item_min_soc_base,
+        )
+
+        # Set hass attribute
+        number.hass = mock_hass_base
+
+        # Mock async_write_ha_state
+        with patch.object(number, "async_write_ha_state"):
+            # Test successful write
+            await number.async_set_native_value(25.0)
+
+        # Verify SOC manager was updated
+        assert mock_coordinator_config_base.soc_manager.min_soc == 25.0
+
+        # Verify config entry was updated
+        mock_hass_base.config_entries.async_update_entry.assert_called_once()
+
+        # Test value validation - out of range should raise ValueError/HomeAssistantError
+        with (
+            patch.object(number, "async_write_ha_state"),
+            pytest.raises(
+                (ValueError, HomeAssistantError),
+                match="Minimum SOC must be between 0-100%",
+            ),
+        ):
+            await number.async_set_native_value(150.0)
+
+        # SOC manager should NOT be updated with invalid value
+        assert mock_coordinator_config_base.soc_manager.min_soc == 25.0  # Still 25.0
+
+        # Test invalid negative value
+        with (
+            patch.object(number, "async_write_ha_state"),
+            pytest.raises(
+                (ValueError, HomeAssistantError),
+                match="Minimum SOC must be between 0-100%",
+            ),
+        ):
+            await number.async_set_native_value(-5.0)
+
+    def test_battery_count_property(
+        self, mock_coordinator_config_base, sax_item_min_soc_base
+    ) -> None:
+        """Test battery_count property reads from config dynamically."""
+        mock_coordinator_config_base.config_entry.data = {CONF_BATTERY_COUNT: 3}
 
         number = SAXBatteryConfigNumber(
             coordinator=mock_coordinator_config_base,
             sax_item=sax_item_min_soc_base,
         )
 
-        # Success case
-        with (
-            patch.object(number, "async_write_ha_state"),
-            patch.object(number, "hass", mock_hass_base),
-        ):
-            await number.async_set_native_value(20.0)
+        # Initial value
+        assert number.battery_count == 3
 
-        sax_item_min_soc_base.async_write_value.assert_called_once_with(20.0)
+        # Simulate config update
+        mock_coordinator_config_base.config_entry.data[CONF_BATTERY_COUNT] = 2
 
-        # Failure case
-        sax_item_min_soc_base.async_write_value.return_value = False
+        # Property should return updated value
+        assert number.battery_count == 2
 
-        with (
-            patch.object(number, "async_write_ha_state"),
-            patch.object(number, "hass", mock_hass_base),
-            pytest.raises(HomeAssistantError, match="Failed to write"),
-        ):
-            await number.async_set_native_value(20.0)
+    def test_battery_count_no_config_entry(
+        self, mock_coordinator_config_base, sax_item_min_soc_base
+    ) -> None:
+        """Test battery_count property fallback when no config entry."""
+        mock_coordinator_config_base.config_entry = None
+
+        number = SAXBatteryConfigNumber(
+            coordinator=mock_coordinator_config_base,
+            sax_item=sax_item_min_soc_base,
+        )
+
+        # Should return default value
+        assert number.battery_count == 1
 
 
 @pytest.fixture
@@ -808,41 +881,54 @@ class TestSAXBatteryConfigNumberAdvanced:
     ) -> None:
         """Test config number native value for non-MIN_SOC items."""
         # Create a different SAX item (not MIN_SOC)
-
         other_sax_item = MagicMock(spec=SAXItem)
         other_sax_item.name = "sax_other_setting"
         other_sax_item.entitydescription = None
         other_sax_item.device = DeviceConstants.SYS
+        other_sax_item.state = None  # No state available
 
         number = SAXBatteryConfigNumber(
             coordinator=mock_coordinator_config_base,
             sax_item=other_sax_item,
         )
 
-        # Should return None for non-MIN_SOC items
+        # Clear coordinator data to ensure no fallback values
+        mock_coordinator_config_base.data = {}
+        mock_coordinator_config_base.config_entry.data = {}
+
+        # Should return None for non-MIN_SOC items without any data
         assert number.native_value is None
 
-    async def test_config_number_set_native_value_exception_handling(
-        self, mock_coordinator_config_base, mock_sax_item_min_soc_base, mock_hass_base
+    async def test_config_number_set_native_value(
+        self, mock_coordinator_config_number_unique, mock_hass_number
     ) -> None:
-        """Test config number set_native_value with exception handling."""
-
-        # Mock write failure with generic exception
-        mock_sax_item_min_soc_base.async_write_value = AsyncMock(
-            side_effect=ValueError("Test error")
+        """Test setting config number native value."""
+        sax_min_soc_item: SAXItem | None = next(
+            (item for item in PILOT_ITEMS if item.name == SAX_MIN_SOC),
+            None,
         )
 
+        assert sax_min_soc_item is not None, "SAX_MIN_SOC not found in PILOT_ITEMS"
+
+        # Create number entity
         number = SAXBatteryConfigNumber(
-            coordinator=mock_coordinator_config_base,
-            sax_item=mock_sax_item_min_soc_base,
+            coordinator=mock_coordinator_config_number_unique,
+            sax_item=sax_min_soc_item,
         )
 
-        with (
-            patch.object(number, "async_write_ha_state"),
-            patch.object(number, "hass", mock_hass_base),
-            pytest.raises(HomeAssistantError, match="Unexpected error setting"),
-        ):
-            await number.async_set_native_value(25.0)
+        # Set hass attribute
+        number.hass = mock_hass_number
+
+        # Mock async_write_ha_state
+        with patch.object(number, "async_write_ha_state"):
+            # Set new value
+            await number.async_set_native_value(20.0)
+
+        # Verify SOC manager was updated (not SAXItem.async_write_value)
+        assert mock_coordinator_config_number_unique.soc_manager.min_soc == 20.0
+
+        # Verify config entry was updated
+        mock_hass_number.config_entries.async_update_entry.assert_called_once()
 
 
 class TestSAXBatteryPilotControl:

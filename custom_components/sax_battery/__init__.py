@@ -141,6 +141,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     Performance:
         Use gather() for parallel connection cleanup of all batteries
     """
+
+    # Check if domain exists in hass.data
+    if DOMAIN not in hass.data:
+        _LOGGER.debug("Domain %s not in hass.data, nothing to unload", DOMAIN)
+        return True
+
+    # Mark integration as unloading to prevent re-initialization
+    integration_data = hass.data[DOMAIN].get(entry.entry_id)
+    if integration_data:
+        integration_data["_unloading"] = True
+
     # Unload all platforms first
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 

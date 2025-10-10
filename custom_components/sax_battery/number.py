@@ -21,6 +21,7 @@ from .const import (
     BATTERY_IDS,
     CONF_BATTERY_IS_MASTER,
     CONF_BATTERY_PHASE,
+    CONF_MIN_SOC,
     DOMAIN,
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
@@ -136,6 +137,7 @@ async def async_setup_entry(
                 entity = SAXBatteryConfigNumber(
                     coordinator=master_coordinator,
                     sax_item=sax_item,
+                    # Removed: battery_count parameter
                 )
                 entities.append(entity)
 
@@ -784,7 +786,12 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
 
 class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
-    """Implementation of a SAX Battery configuration number entity using SAXItem."""
+    """Configuration number entity for cluster-wide SAX Battery settings.
+
+    These entities represent calculated or aggregated values across all batteries,
+    not individual Modbus registers. They use the master coordinator but calculate
+    values from all battery coordinators.
+    """
 
     _attr_has_entity_name = True
 
@@ -793,7 +800,15 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         coordinator: SAXBatteryCoordinator,
         sax_item: SAXItem,
     ) -> None:
-        """Initialize the config number entity."""
+        """Initialize the config number entity.
+
+        Args:
+            coordinator: Master battery coordinator (used for update timing only)
+            sax_item: SAX item for system-wide calculations
+
+        Security:
+            OWASP A01: Only master coordinator can create config numbers
+        """
         super().__init__(coordinator)
         self._sax_item = sax_item
 
@@ -801,6 +816,7 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         clean_name: str = self._sax_item.name.removeprefix("sax_")
         self._attr_unique_id = clean_name
 
+        # Set entity description
         if self._sax_item.entitydescription is not None:
             self.entity_description = self._sax_item.entitydescription  # type: ignore[assignment]
 
@@ -820,63 +836,157 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             )
             self._attr_name = clean_name
 
+        # Initialize with current SOC manager value if this is min_soc
+        if sax_item.name == SAX_MIN_SOC and coordinator.soc_manager:
+            self._attr_native_value = float(coordinator.soc_manager.min_soc)
+        else:
+            self._attr_native_value = None
+
         # Set cluster device info - this creates the "SAX Battery Cluster" device
         self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
             "cluster", self._sax_item.device
         )
 
     @property
-    def native_value(self) -> float | None:
-        """Return the current value using SAXItem logic."""
-        # For SAX_MIN_SOC, get from config entry data
-        if self._sax_item.name == SAX_MIN_SOC and self.coordinator.config_entry:
-            config_value = self.coordinator.config_entry.data.get("min_soc", 15)
-            return float(config_value)
+    def battery_count(self) -> int:
+        """Get current battery count from config entry.
 
-        # For other SAX items, use the item's own read method
-        return None
+        Returns:
+            Current battery count from configuration
+
+        Performance:
+            Direct config access - no caching needed for rarely-changing values
+        """
+        if not self.coordinator.config_entry:
+            _LOGGER.warning("Config entry not available, using default battery count 1")
+            return 1
+
+        return get_battery_count(self.coordinator.config_entry)
 
     @property
     def available(self) -> bool:
-        """Return if entity is available."""
-        return super().available and self.coordinator.data is not None
+        """Return if entity is available.
+
+        Config numbers are available when:
+        1. Coordinator last update was successful
+        2. We have a valid value from coordinator data or config entry
+
+        Returns:
+            True if entity is available, False otherwise
+        """
+        if not self.coordinator.last_update_success:
+            _LOGGER.debug(
+                "Config number %s unavailable: coordinator update failed",
+                self.entity_id,
+            )
+            return False
+
+        # For min_soc, check if SOC manager is enabled
+        if self._sax_item.name == SAX_MIN_SOC:
+            if not self.coordinator.soc_manager:
+                _LOGGER.debug(
+                    "Config number %s unavailable: SOC manager not enabled",
+                    self.entity_id,
+                )
+                return False
+            # Return available if we have the SOC manager value
+            return True
+
+        # Check if we have a value available
+        value = self.native_value
+        if value is None:
+            _LOGGER.debug(
+                "Config number %s unavailable: no value available",
+                self.entity_id,
+            )
+            return False
+
+        return True
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current value."""
+        # For min_soc, always return current SOC manager value
+        if self._sax_item.name == SAX_MIN_SOC and self.coordinator.soc_manager:
+            return float(self.coordinator.soc_manager.min_soc)
+
+        return self._attr_native_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return extra state attributes."""
-        raw_value = (
-            self.coordinator.data.get(self._sax_item.name)
-            if self.coordinator.data
-            else None
-        )
+        """Return extra state attributes for diagnostics.
 
+        Returns:
+            Dictionary of diagnostic attributes
+        """
         return {
             "last_update": getattr(self.coordinator, "last_update_success_time", None),
-            "raw_value": raw_value,
-            "entity_type": "config",
+            "entity_type": "cluster_config",
+            "calculation_source": "multi_battery_aggregation",
+            "sax_item_name": self._sax_item.name,
+            "battery_count": self.battery_count,  # Dynamic value from config
         }
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set new value using SAXItem communication."""
+        """Set new value with proper validation and persistence."""
         try:
-            _LOGGER.debug(
-                "Setting config value for %s to %s", self._sax_item.name, value
+            if self._sax_item.name == SAX_MIN_SOC:
+                # Validate SOC manager exists
+                if not self.coordinator.soc_manager:
+                    raise HomeAssistantError("SOC manager not available")  # noqa: TRY301
+
+                # Validate config entry exists for persistence
+                if not self.coordinator.config_entry:
+                    raise HomeAssistantError("Config entry not available")  # noqa: TRY301
+
+                # Validate range (0-100%)
+                if not isinstance(value, (int, float)) or not (0 <= value <= 100):
+                    raise ValueError(f"Minimum SOC must be between 0-100%, got {value}")  # noqa: TRY301
+
+                _LOGGER.debug(
+                    "Setting minimum SOC from %s%% to %s%%",
+                    self.coordinator.soc_manager.min_soc,
+                    value,
+                )
+
+                # Update SOC manager
+                self.coordinator.soc_manager.min_soc = float(value)
+
+                # Persist to config entry for restart survival
+                self.hass.config_entries.async_update_entry(
+                    self.coordinator.config_entry,
+                    data={
+                        **self.coordinator.config_entry.data,
+                        CONF_MIN_SOC: int(value),
+                    },
+                )
+
+                _LOGGER.info("Minimum SOC updated to %s%%", value)
+
+            else:
+                # Generic config value update
+                self._attr_native_value = float(value)
+                _LOGGER.debug(
+                    "Config value %s updated to %s",
+                    self._sax_item.name,
+                    value,
+                )
+
+            # Trigger state update
+            self.async_write_ha_state()
+
+        except (ValueError, TypeError) as err:
+            _LOGGER.error(
+                "Invalid value for %s: %s (%s)",
+                self._sax_item.name,
+                value,
+                err,
             )
-
-            # Use SAXItem's write method for system configuration
-            success = await self._sax_item.async_write_value(value)
-            if not success:
-                msg = f"Failed to write config value {value} to {self._sax_item.name}"
-                raise HomeAssistantError(msg)  # noqa: TRY301
-
-            _LOGGER.debug(
-                "Successfully set config %s to %s", self._sax_item.name, value
-            )
-
-        except HomeAssistantError:
-            # Re-raise HomeAssistantError as-is
-            raise
+            raise HomeAssistantError(f"Invalid value: {err}") from err
         except Exception as err:
-            _LOGGER.error("Failed to set %s to %s: %s", self._sax_item.name, value, err)
-            msg = f"Unexpected error setting {self._sax_item.name}: {err}"
-            raise HomeAssistantError(msg) from err
+            _LOGGER.exception(
+                "Failed to set %s to %s",
+                self._sax_item.name,
+                value,
+            )
+            raise HomeAssistantError(f"Failed to update: {err}") from err

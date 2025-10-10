@@ -9,6 +9,7 @@ import pytest
 
 from custom_components.sax_battery.const import (
     CONF_AUTO_PILOT_INTERVAL,
+    CONF_BATTERY_COUNT,
     CONF_ENABLE_SOLAR_CHARGING,
     CONF_GRID_POWER_SENSOR,
     CONF_MANUAL_CONTROL,
@@ -108,6 +109,49 @@ def mock_coordinator_config_base(mock_hass_base, mock_config_entry_base):
     coordinator.async_write_sax_value = AsyncMock(return_value=True)
     coordinator.last_update_success = True
     coordinator.last_update_success_time = MagicMock()
+
+    # Add soc_manager mock for min_soc initialization
+    coordinator.soc_manager = MagicMock()
+    coordinator.soc_manager.min_soc = 10.0  # Default minimum SOC
+
+    return coordinator
+
+
+@pytest.fixture
+def mock_hass_number():
+    """Create mock Home Assistant instance for number tests."""
+    hass = MagicMock(spec=HomeAssistant)
+    hass.config_entries = MagicMock()
+    hass.config_entries.async_update_entry = MagicMock(return_value=True)
+    hass.data = {}
+    return hass
+
+
+@pytest.fixture
+def mock_coordinator_config_number_unique(mock_hass_number):
+    """Create mock coordinator with SOC data for config number tests."""
+    coordinator = MagicMock(spec=SAXBatteryCoordinator)
+    coordinator.battery_id = "battery_a"
+    coordinator.hass = mock_hass_number
+    coordinator.sax_data = MagicMock()
+    coordinator.sax_data.get_device_info.return_value = {
+        "identifiers": {("sax_battery", "cluster")},
+        "name": "SAX Cluster",
+    }
+    coordinator.config_entry = MagicMock()
+    coordinator.config_entry.entry_id = "test_entry"
+    coordinator.config_entry.data = {CONF_MIN_SOC: 10, CONF_BATTERY_COUNT: 1}
+    coordinator.battery_config = {"is_master": True, "phase": "L1"}
+    coordinator.last_update_success = True
+    coordinator.last_update_success_time = MagicMock()
+
+    # Add soc_manager mock - THIS IS THE AUTHORITATIVE VALUE
+    coordinator.soc_manager = MagicMock()
+    coordinator.soc_manager.min_soc = 10.0
+
+    # Remove coordinator.data - it's not used for min_soc
+    # The native_value property reads from soc_manager.min_soc
+
     return coordinator
 
 

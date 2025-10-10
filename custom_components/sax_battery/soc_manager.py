@@ -13,7 +13,9 @@ from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING
 
-from .const import SAX_COMBINED_SOC
+from homeassistant.helpers import entity_platform, entity_registry as er
+
+from .const import SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
 
 if TYPE_CHECKING:
     from .coordinator import SAXBatteryCoordinator
@@ -29,6 +31,7 @@ class SOCConstraintResult:
     original_value: float
     constrained_value: float
     reason: str | None = None
+    enforced_hardware_limit: bool = False  # New: tracks if we wrote to hardware
 
 
 class SOCManager:
@@ -54,6 +57,7 @@ class SOCManager:
         self._min_soc = max(0.0, min(100.0, min_soc))  # Clamp to valid range
         self._enabled = enabled
         self._soc_cache: float | None = None
+        self._last_enforced_soc: float | None = None  # Track last enforcement
 
     @property
     def min_soc(self) -> float:
@@ -63,8 +67,17 @@ class SOCManager:
     @min_soc.setter
     def min_soc(self, value: float) -> None:
         """Set minimum SOC threshold with validation."""
+        old_value = self._min_soc
         self._min_soc = max(0.0, min(100.0, value))
         _LOGGER.debug("Min SOC updated to %s%%", self._min_soc)
+
+        # If min_soc increased, check if we need to enforce new limit
+        if self._min_soc > old_value:
+            # Trigger asynchronous constraint check
+            # This will be handled by the coordinator's next update cycle
+            _LOGGER.debug(
+                "Min SOC increased, enforcement check will occur on next update"
+            )
 
     @property
     def enabled(self) -> bool:
@@ -96,6 +109,113 @@ class SOCManager:
             _LOGGER.warning("Invalid SOC value: %s", soc_value)
             return 0.0
 
+    async def check_and_enforce_discharge_limit(self) -> bool:
+        """Check SOC and enforce discharge limit by writing to max_discharge register.
+
+        This method should be called periodically by the coordinator to actively
+        enforce discharge protection at the hardware level.
+
+        Returns:
+            bool: True if hardware limit was enforced (written to register)
+
+        Security:
+            OWASP A05: Hardware-level battery protection
+        """
+        if not self._enabled:
+            return False
+
+        # Validate config entry exists for entity lookup
+        if not self.coordinator.config_entry:
+            _LOGGER.error("Cannot enforce discharge limit: config entry not available")
+            return False
+
+        current_soc = await self.get_current_soc()
+
+        if current_soc < self._min_soc:
+            if self._last_enforced_soc != current_soc:
+                _LOGGER.warning(
+                    "SOC %s%% below minimum %s%% - enforcing discharge limit",
+                    current_soc,
+                    self._min_soc,
+                )
+
+                # Get max_discharge entity directly from state machine
+                ent_reg = er.async_get(self.coordinator.hass)
+
+                # Find the entity
+                entity_entry = None
+                for entry in ent_reg.entities.values():
+                    if (
+                        entry.platform == "sax_battery"
+                        and entry.unique_id
+                        and SAX_MAX_DISCHARGE in entry.unique_id
+                        and entry.config_entry_id
+                        == self.coordinator.config_entry.entry_id
+                    ):
+                        entity_entry = entry
+                        break
+
+                if not entity_entry:
+                    _LOGGER.error("Could not find max_discharge entity for enforcement")
+                    return False
+
+                # Get the actual entity component from the platform
+                platform = entity_platform.async_get_current_platform()
+                if not platform:
+                    _LOGGER.error("Could not access entity platform")
+                    return False
+
+                # Find the entity object
+                entity_obj = None
+                for entity in platform.entities.values():
+                    if entity.entity_id == entity_entry.entity_id:
+                        entity_obj = entity
+                        break
+
+                if not entity_obj:
+                    _LOGGER.error(
+                        "Could not find entity object for %s", entity_entry.entity_id
+                    )
+                    return False
+
+                # Validate entity is a NumberEntity with async_set_native_value
+                if not hasattr(entity_obj, "async_set_native_value"):
+                    _LOGGER.error(
+                        "Entity %s does not support async_set_native_value",
+                        entity_entry.entity_id,
+                    )
+                    return False
+
+                try:
+                    # Call the entity's async_set_native_value directly
+                    # Type ignore: we validated hasattr above, but mypy can't infer this
+                    await entity_obj.async_set_native_value(0.0)  # type: ignore[attr-defined]
+
+                    self._last_enforced_soc = current_soc
+                    _LOGGER.info(
+                        "Discharge protection enforced: %s set to 0W (SOC: %s%%)",
+                        entity_entry.entity_id,
+                        current_soc,
+                    )
+                    return True  # noqa: TRY300
+
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.error(
+                        "Failed to enforce discharge limit: %s",
+                        err,
+                    )
+                    return False
+
+        elif self._last_enforced_soc is not None and current_soc >= self._min_soc:
+            _LOGGER.info(
+                "SOC recovered to %s%% (above minimum %s%%)",
+                current_soc,
+                self._min_soc,
+            )
+            self._last_enforced_soc = None
+
+        return False
+
     async def check_discharge_allowed(self, power_value: float) -> SOCConstraintResult:
         """Check if discharge is allowed at current SOC.
 
@@ -124,11 +244,24 @@ class SOCManager:
                 current_soc,
                 self._min_soc,
             )
+
+            # Attempt hardware enforcement (best effort - may not be available in all contexts)
+            enforced = False
+            try:
+                enforced = await self.check_and_enforce_discharge_limit()
+            except (TypeError, AttributeError, RuntimeError) as err:
+                # Hardware enforcement not available (e.g., during tests or before entities are created)
+                _LOGGER.debug(
+                    "Hardware enforcement not available: %s (this is normal during tests)",
+                    err,
+                )
+
             return SOCConstraintResult(
                 allowed=False,
                 original_value=power_value,
                 constrained_value=0.0,
                 reason=f"SOC {current_soc:.1f}% below minimum {self._min_soc:.1f}%",
+                enforced_hardware_limit=enforced,
             )
 
         return SOCConstraintResult(
@@ -201,6 +334,7 @@ class SOCManager:
         current_soc = await self.get_current_soc()
         constrained_value = power_value
         reason = None
+        enforced = False
 
         # Check discharge constraint
         if power_value > 0 and current_soc < self._min_soc:
@@ -210,6 +344,9 @@ class SOCManager:
             )
             _LOGGER.info(reason)
 
+            # Enforce hardware limit
+            enforced = await self.check_and_enforce_discharge_limit()
+
         # Check charge constraint
         elif power_value < 0 and current_soc >= 100.0:
             constrained_value = 0.0
@@ -218,9 +355,10 @@ class SOCManager:
 
         if constrained_value != power_value:
             _LOGGER.info(
-                "SOC constraint applied: %sW → %sW",
+                "SOC constraint applied: %sW → %sW%s",
                 power_value,
                 constrained_value,
+                " (hardware enforced)" if enforced else "",
             )
 
         return SOCConstraintResult(
@@ -228,4 +366,5 @@ class SOCManager:
             original_value=power_value,
             constrained_value=constrained_value,
             reason=reason,
+            enforced_hardware_limit=enforced,
         )

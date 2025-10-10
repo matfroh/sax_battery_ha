@@ -1,6 +1,6 @@
 """Tests for SOC manager."""
 
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -13,6 +13,7 @@ def mock_coordinator():
     """Create mock coordinator."""
     coordinator = Mock()
     coordinator.data = {SAX_COMBINED_SOC: 50.0}
+    coordinator.async_write_number_value = AsyncMock(return_value=True)
     return coordinator
 
 

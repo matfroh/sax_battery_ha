@@ -94,7 +94,6 @@ CONF_PILOT_FROM_HA = "pilot_from_ha"
 CONF_LIMIT_POWER = "limit_power"
 
 # Power Manager constants
-CONF_POWER_MANAGER_ENABLED = "power_manager_enabled"
 CONF_GRID_POWER_SENSOR = "grid_power_sensor"
 POWER_MANAGER_UPDATE_INTERVAL = 10  # seconds
 
@@ -107,9 +106,6 @@ MANUAL_CONTROL_MODE = "manual_control"
 LIMIT_MAX_CHARGE_PER_BATTERY = 3500  # Watts per battery
 LIMIT_MAX_DISCHARGE_PER_BATTERY = 4600  # Watts per battery
 LIMIT_REFRESH_INTERVAL = 3  # minutes for periodic refresh of write-only registers
-
-# Maximum supported batteries in a system
-MAX_SUPPORTED_BATTERIES = 3
 
 
 @dataclass(frozen=True)
@@ -145,7 +141,6 @@ CONF_MANUAL_CONTROL = "manual_control"
 DEFAULT_PORT = 502  # Default Modbus port
 DEFAULT_MIN_SOC = 15
 DEFAULT_AUTO_PILOT_INTERVAL = 60  # seconds
-DEFAULT_LIMIT_POWER = False  # Disabled by default for safety
 DEFAULT_MIN_SOC = 10  # 10% default minimum SOC
 
 # Write-only register addresses that require configuration checks
