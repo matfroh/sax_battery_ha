@@ -188,19 +188,28 @@ class SOCManager:
 
                 try:
                     # Call the entity's async_set_native_value directly
-                    # Type ignore: we validated hasattr above, but mypy can't infer this
+                    # This writes to Modbus hardware register
                     await entity_obj.async_set_native_value(0.0)  # type: ignore[attr-defined]
 
+                    # CRITICAL: Update coordinator cache immediately
+                    # This ensures UI and cache stay synchronized with hardware
+                    if self.coordinator.data:
+                        self.coordinator.data[SAX_MAX_DISCHARGE] = 0.0
+                        _LOGGER.debug(
+                            "Updated coordinator cache: %s = 0.0",
+                            SAX_MAX_DISCHARGE,
+                        )
+
                     # Force entity state update in Home Assistant
-                    # This ensures UI reflects the hardware state immediately
                     entity_obj.async_write_ha_state()
 
-                    # Request coordinator refresh to sync all entities
+                    # Request coordinator refresh to sync all related entities
+                    # This ensures sensors and other entities reflect the new state
                     await self.coordinator.async_request_refresh()
 
                     self._last_enforced_soc = current_soc
                     _LOGGER.info(
-                        "Discharge protection enforced: %s set to 0W (SOC: %s%%), state updated",
+                        "Discharge protection enforced: %s set to 0W (SOC: %s%%), cache and state updated",
                         entity_entry.entity_id,
                         current_soc,
                     )
