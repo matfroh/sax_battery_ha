@@ -191,9 +191,16 @@ class SOCManager:
                     # Type ignore: we validated hasattr above, but mypy can't infer this
                     await entity_obj.async_set_native_value(0.0)  # type: ignore[attr-defined]
 
+                    # Force entity state update in Home Assistant
+                    # This ensures UI reflects the hardware state immediately
+                    entity_obj.async_write_ha_state()
+
+                    # Request coordinator refresh to sync all entities
+                    await self.coordinator.async_request_refresh()
+
                     self._last_enforced_soc = current_soc
                     _LOGGER.info(
-                        "Discharge protection enforced: %s set to 0W (SOC: %s%%)",
+                        "Discharge protection enforced: %s set to 0W (SOC: %s%%), state updated",
                         entity_entry.entity_id,
                         current_soc,
                     )
