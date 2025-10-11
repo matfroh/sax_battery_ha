@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from homeassistant.helpers import entity_platform, entity_registry as er
 
 from .const import SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
+from .utils import get_unique_id_for_item
 
 if TYPE_CHECKING:
     from .coordinator import SAXBatteryCoordinator
@@ -145,16 +146,26 @@ class SOCManager:
                     self._min_soc,
                 )
 
-                # Get max_discharge entity from registry
+                # Get max_discharge entity from registry using helper function
+                target_unique_id = get_unique_id_for_item(
+                    self.coordinator.hass,
+                    self.coordinator.config_entry.entry_id,
+                    SAX_MAX_DISCHARGE,
+                )
+
+                if not target_unique_id:
+                    _LOGGER.error(
+                        "Could not generate unique_id for %s", SAX_MAX_DISCHARGE
+                    )
+                    return False
+
                 ent_reg = er.async_get(self.coordinator.hass)
 
-                # Find the entity
                 entity_entry = None
                 for entry in ent_reg.entities.values():
                     if (
                         entry.platform == "sax_battery"
-                        and entry.unique_id
-                        and SAX_MAX_DISCHARGE in entry.unique_id
+                        and entry.unique_id == target_unique_id
                         and entry.config_entry_id
                         == self.coordinator.config_entry.entry_id
                     ):
@@ -162,7 +173,11 @@ class SOCManager:
                         break
 
                 if not entity_entry:
-                    _LOGGER.error("Could not find max_discharge entity for enforcement")
+                    _LOGGER.error(
+                        "Could not find max_discharge entity (unique_id: %s, entity_id: number.%s) for enforcement",
+                        target_unique_id,
+                        target_unique_id,
+                    )
                     return False
 
                 # Get the entity platform

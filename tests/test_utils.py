@@ -13,6 +13,7 @@ from custom_components.sax_battery.const import (
     CONF_MASTER_BATTERY,
     CONF_PILOT_FROM_HA,
     DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER,
+    DOMAIN,
     MODBUS_BATTERY_PILOT_CONTROL_ITEMS,
     MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     MODBUS_BATTERY_REALTIME_ITEMS,
@@ -23,35 +24,191 @@ from custom_components.sax_battery.models import create_register_access_config
 from custom_components.sax_battery.utils import (
     RegisterAccessConfig,
     get_battery_realtime_items,
+    get_unique_id_for_item,
     get_writable_registers,
     should_include_entity,
 )
+
+
+@pytest.fixture
+def mock_device_for_unique_id():
+    """Create a mock device for get_unique_id_for_item tests.
+
+    This fixture provides a mock device without creating a full hass instance,
+    avoiding side effects in other tests.
+
+    Security:
+        OWASP A05: Provides isolated test data without system dependencies
+
+    Performance:
+        Efficient mock-based testing without Home Assistant overhead
+    """
+    mock_device = MagicMock()
+    mock_device.name = "SAX Cluster"
+    mock_device.identifiers = {(DOMAIN, "test_cluster")}
+    mock_device.config_entries = {"test_entry_id"}
+    return mock_device
+
+
+class TestGetUniqueIdForItem:
+    """Test get_unique_id_for_item function."""
+
+    async def test_unique_id_generation(
+        self, hass, mock_config_entry_base, mock_device_for_unique_id
+    ):
+        """Test unique ID generation for a valid device and item.
+
+        Security:
+            OWASP A05: Tests proper unique ID generation for entity tracking
+        """
+        # Patch the device registry to return our mock device
+        with patch(
+            "custom_components.sax_battery.utils.dr.async_get"
+        ) as mock_get_registry:
+            mock_registry = MagicMock()
+            mock_registry.devices.values.return_value = [mock_device_for_unique_id]
+            mock_get_registry.return_value = mock_registry
+
+            unique_id = get_unique_id_for_item(
+                hass=hass,
+                config_entry_id=mock_config_entry_base.entry_id,
+                item_name="sax_max_discharge",
+            )
+
+            assert unique_id == "sax_cluster_max_discharge"
+
+    async def test_no_device_found(self, hass):
+        """Test behavior when no device is found for the config entry.
+
+        Security:
+            OWASP A05: Tests proper handling of missing device references
+        """
+        # Patch device registry to return empty devices list
+        with patch(
+            "custom_components.sax_battery.utils.dr.async_get"
+        ) as mock_get_registry:
+            mock_registry = MagicMock()
+            mock_registry.devices.values.return_value = []
+            mock_get_registry.return_value = mock_registry
+
+            unique_id = get_unique_id_for_item(
+                hass=hass,
+                config_entry_id="non_existent_entry_id",
+                item_name="sax_max_discharge",
+            )
+
+            assert unique_id is None
+
+    async def test_empty_item_name(
+        self, hass, mock_config_entry_base, mock_device_for_unique_id
+    ):
+        """Test behavior when item name is empty.
+
+        Security:
+            OWASP A03: Tests input validation for empty item names
+        """
+        with patch(
+            "custom_components.sax_battery.utils.dr.async_get"
+        ) as mock_get_registry:
+            mock_registry = MagicMock()
+            mock_registry.devices.values.return_value = [mock_device_for_unique_id]
+            mock_get_registry.return_value = mock_registry
+
+            unique_id = get_unique_id_for_item(
+                hass=hass,
+                config_entry_id=mock_config_entry_base.entry_id,
+                item_name="",
+            )
+
+            assert unique_id is None
+
+    async def test_device_wrong_domain(self, hass, mock_config_entry_base):
+        """Test behavior when device belongs to different domain.
+
+        Security:
+            OWASP A05: Tests domain isolation for device registry
+        """
+        # Create device with wrong domain
+        wrong_domain_device = MagicMock()
+        wrong_domain_device.name = "Other Device"
+        wrong_domain_device.identifiers = {("other_domain", "other_device")}
+        wrong_domain_device.config_entries = {mock_config_entry_base.entry_id}
+
+        with patch(
+            "custom_components.sax_battery.utils.dr.async_get"
+        ) as mock_get_registry:
+            mock_registry = MagicMock()
+            mock_registry.devices.values.return_value = [wrong_domain_device]
+            mock_get_registry.return_value = mock_registry
+
+            unique_id = get_unique_id_for_item(
+                hass=hass,
+                config_entry_id=mock_config_entry_base.entry_id,
+                item_name="sax_power",
+            )
+
+            # Should return None because device domain doesn't match
+            assert unique_id is None
+
+    async def test_item_name_normalization(
+        self, hass, mock_config_entry_base, mock_device_for_unique_id
+    ):
+        """Test unique ID generation with various item name formats.
+
+        Security:
+            OWASP A03: Tests input normalization for item names
+        """
+        test_cases = [
+            ("sax_power", "sax_cluster_power"),  # Already has sax_ prefix
+            ("power", "sax_cluster_power"),  # No prefix
+            ("SAX_POWER", "sax_cluster_sax_power"),  # Uppercase (kept as-is)
+        ]
+
+        with patch(
+            "custom_components.sax_battery.utils.dr.async_get"
+        ) as mock_get_registry:
+            mock_registry = MagicMock()
+            mock_registry.devices.values.return_value = [mock_device_for_unique_id]
+            mock_get_registry.return_value = mock_registry
+
+            for item_name, expected_unique_id in test_cases:
+                unique_id = get_unique_id_for_item(
+                    hass=hass,
+                    config_entry_id=mock_config_entry_base.entry_id,
+                    item_name=item_name,
+                )
+
+                assert unique_id == expected_unique_id, (
+                    f"Failed for item_name={item_name}"
+                )
 
 
 class TestShouldIncludeEntity:
     """Test should_include_entity function."""
 
     def test_include_entity_basic_case(
-        self, mock_modbus_item, mock_config_entry
+        self, mock_modbus_item, mock_config_entry_base
     ) -> None:
         """Test basic entity inclusion (should return True by default)."""
-        result = should_include_entity(mock_modbus_item, mock_config_entry, "battery_a")
+        result = should_include_entity(
+            mock_modbus_item, mock_config_entry_base, "battery_a"
+        )
         assert result is True
 
-    def test_exclude_by_device_type_mismatch(self, mock_config_entry) -> None:
+    def test_exclude_by_device_type_mismatch(self, mock_config_entry_base) -> None:
         """Test entity exclusion by device type mismatch."""
-        mock_config_entry.data = {"device_type": DeviceConstants.SM}
+        mock_config_entry_base.data = {"device_type": DeviceConstants.SM}
 
         api_item = ModbusItem(
             name="voltage",
-            device=DeviceConstants.BESS,  # Different from config
+            device=DeviceConstants.BESS,
             mtype=TypeConstants.SENSOR,
             address=100,
             battery_device_id=1,
             factor=10.0,
         )
 
-        result = should_include_entity(api_item, mock_config_entry, "battery_a")
+        result = should_include_entity(api_item, mock_config_entry_base, "battery_a")
         assert result is False
 
     def test_include_by_device_type_match(self, mock_config_entry) -> None:

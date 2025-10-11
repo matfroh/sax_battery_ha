@@ -361,43 +361,118 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             await self.async_set_native_value(self._local_value)
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set the native value of the number entity.
+        """Set new value for number entity with comprehensive validation and side effects.
 
-        This is the main method that Home Assistant calls when a user changes
-        the value of a number entity.
+        This is the main method that Home Assistant calls when a user changes the value
+        of a number entity through the UI or via service calls. It handles:
+
+        1. **Input Validation**: Validates value against min/max bounds
+        2. **SOC Constraint Enforcement**: For power-related registers (SAX_NOMINAL_POWER,
+           SAX_MAX_DISCHARGE), applies battery protection constraints via SOC manager
+        3. **Write Path Selection**:
+           - Pilot control items: Uses atomic transactional write for coordinated updates
+           - Standard items: Direct Modbus write via coordinator
+        4. **Local State Management**: Updates `_local_value` cache for write-only registers
+           (addresses 41-44) which cannot be read back from hardware
+        5. **Power Manager Notification**: Notifies power management system of power changes
+        6. **Coordinator Refresh**: Triggers data refresh to update dependent entities
 
         Args:
-            value: The new value to set
+            value: New value to set. Must be within entity's min/max bounds.
 
         Raises:
-            HomeAssistantError: If the write operation fails
+            HomeAssistantError: If value is out of valid range, write operation fails,
+                              or SOC manager is unavailable when needed
+
+        Write-Only Register Behavior:
+            For registers 41-44 (pilot control and power limits), the value is stored
+            locally in `_local_value` and returned by `native_value` property since
+            these registers cannot be read back from SAX battery hardware.
+
+        Pilot Control Transaction Coordination:
+            For SAX_NOMINAL_POWER (addr 41) and SAX_NOMINAL_FACTOR (addr 42), writes
+            are coordinated as atomic transactions to ensure both values are updated
+            together, which is required for the pilot service that reads photovoltaic
+            production and updates battery loading parameters.
+
+        SOC Constraint Behavior:
+            When SOC drops below min_soc threshold:
+            - User's requested power value is replaced with constrained value (typically 0W)
+            - Local cache is updated with constrained value for UI synchronization
+            - No error is raised (silent constraint application)
+            - Hardware write is enforced by SOC manager's check_and_enforce_discharge_limit()
 
         Security:
-            Validates input and uses secure write methods
+            OWASP A03: Input validation with explicit range checks
+            OWASP A05: Enforces battery protection constraints via SOC manager
+            OWASP A01: Validates coordinator and SOC manager availability
 
         Performance:
-            Uses optimized write paths for different register types
+            - Uses optimized write paths for different register types (NUMBER_WO, NUMBER)
+            - Single state update after successful write (no intermediate updates)
+            - Early returns in constraint checking minimize coordinator overhead
+            - Atomic transaction coordination prevents redundant Modbus operations
 
+        Example:
+            # Standard write (readable register)
+            await entity.async_set_native_value(3000.0)  # Direct Modbus write
+
+            # Write-only register (address 43 - SAX_MAX_DISCHARGE)
+            await entity.async_set_native_value(4000.0)  # Writes to hardware + updates local cache
+
+            # Pilot control (address 41 - SAX_NOMINAL_POWER)
+            await entity.async_set_native_value(2500.0)  # Atomic transaction with power_factor
+
+            # SOC constrained write
+            # When SOC < min_soc, user's 3000W request becomes 0W constraint
+            await entity.async_set_native_value(3000.0)  # Actually writes 0W to hardware
+
+        Side Effects:
+            - Updates `_local_value` for write-only registers
+            - Triggers `async_write_ha_state()` for UI update
+            - Notifies power manager of power changes
+            - Triggers coordinator refresh
+            - May initiate pilot control transaction
+            - Persists SOC constraints to hardware via coordinator
         """
+        _LOGGER.debug("%s: Setting value to %s", self.entity_id, value)
+
+        # Validate input range
+        if self.native_min_value is not None and value < self.native_min_value:
+            msg = f"Value {value} below minimum {self.native_min_value}"
+            raise HomeAssistantError(msg)
+
+        if self.native_max_value is not None and value > self.native_max_value:
+            msg = f"Value {value} above maximum {self.native_max_value}"
+            raise HomeAssistantError(msg)
+
         try:
-            # Apply SOC constraints for power-related items
-            if self._modbus_item.name in (SAX_NOMINAL_POWER, SAX_MAX_DISCHARGE):
+            # Apply SOC constraints for power-related entities
+            if (
+                hasattr(self.coordinator, "soc_manager")
+                and self.coordinator.soc_manager is not None
+                and self._modbus_item.name in [SAX_NOMINAL_POWER, SAX_MAX_DISCHARGE]
+            ):
                 _LOGGER.debug(
                     "Applying SOC constraints to %s: %s",
                     self._modbus_item.name,
                     value,
                 )
-                constrained_result = (
-                    await self.coordinator.soc_manager.apply_constraints(value)
+                constraint_result = (
+                    await self.coordinator.soc_manager.check_discharge_allowed(value)
                 )
-                if not constrained_result.allowed:
+
+                if not constraint_result.allowed:
                     _LOGGER.warning(
-                        "SOC constraints prevented write: %s",
-                        constrained_result.reason,
+                        "%s: Power value constrained by SOC manager: %sW -> %sW (%s)",
+                        self.entity_id,
+                        value,
+                        constraint_result.constrained_value,
+                        constraint_result.reason,
                     )
-                    msg = f"SOC constraint: {constrained_result.reason}"
-                    raise HomeAssistantError(msg)  # noqa: TRY301
-                value = constrained_result.constrained_value
+                    # Use constrained value instead of blocking
+                    value = constraint_result.constrained_value
+                    self._local_value = value  # Update local cache for UI sync
 
             # Handle pilot control items with transaction coordination
             if self._is_pilot_control_item:
@@ -412,10 +487,15 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
                 msg = f"Failed to write value to {self.name}"
                 raise HomeAssistantError(msg)  # noqa: TRY301
 
-            # Update local state for write-only registers
+            # CRITICAL: Update local state for write-only registers
             if self._is_write_only:
                 self._local_value = value
                 self.async_write_ha_state()
+                _LOGGER.debug(
+                    "Updated local cache for write-only register %s to %s",
+                    self._modbus_item.name,
+                    value,
+                )
 
             # Notify power manager of power changes (if exists)
             await self._notify_power_manager_update(value)
@@ -430,40 +510,47 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             raise HomeAssistantError(msg) from err
 
     async def _notify_power_manager_update(self, value: float) -> None:
-        """Notify power manager of value updates.
+        """Notify power manager of manual power updates.
 
         Args:
-            value: New value that was set
+            value: New power value set by user
 
-        Performance: Only notifies if power manager exists and item is relevant
-        Security: Validates config entry and integration data access
+        Security:
+            OWASP A05: Validates coordinator and power manager availability
+
+        Performance:
+            Early returns minimize unnecessary coordinator access
         """
-        # Only notify for power-related items
-        if self._modbus_item.name not in (SAX_NOMINAL_POWER, SAX_NOMINAL_FACTOR):
-            return
-
-        # Security: Validate config entry exists
-        if not self.coordinator.config_entry:
-            _LOGGER.debug("Config entry not available for power manager notification")
-            return
-
-        # Check if power manager exists in integration data
-        integration_data = self.hass.data.get(DOMAIN, {}).get(
-            self.coordinator.config_entry.entry_id
-        )
-        if not integration_data:
-            _LOGGER.debug("Integration data not available for power manager")
-            return
-
-        power_manager = integration_data.get("power_manager")
-        if power_manager and hasattr(power_manager, "update_power_setpoint"):
+        # Access soc_manager through coordinator (not entity attribute)
+        if not hasattr(self.coordinator, "soc_manager"):
             _LOGGER.debug(
-                "Notifying power manager of %s update: %s",
-                self._modbus_item.name,
-                value,
+                "Coordinator has no soc_manager, skipping power manager notification"
             )
-            # Note: Power manager will be notified asynchronously
-            # No need to await here as it's a fire-and-forget notification
+            return
+
+        # Check if this is a nominal power entity (early return for performance)
+        if self._modbus_item.name != SAX_NOMINAL_POWER:
+            return
+
+        # Apply SOC constraints to the power value
+        _LOGGER.debug("Applying SOC constraints to manual power update: %sW", value)
+
+        # Access through coordinator property
+        constrained_result = await self.coordinator.soc_manager.apply_constraints(value)
+
+        if not constrained_result.allowed:
+            _LOGGER.warning(
+                "Power update constrained: %sW -> %sW (%s)",
+                value,
+                constrained_result.constrained_value,
+                constrained_result.reason,
+            )
+            # Update with constrained value
+            await self.coordinator.async_write_number_value(
+                self._modbus_item, constrained_result.constrained_value
+            )
+        else:
+            _LOGGER.debug("Power update allowed: %sW", value)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

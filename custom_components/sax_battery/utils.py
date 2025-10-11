@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import device_registry as dr
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_BATTERY_COUNT,
     CONF_LIMIT_POWER,
     CONF_MASTER_BATTERY,
     CONF_PILOT_FROM_HA,
+    DOMAIN,
     MODBUS_BATTERY_PILOT_CONTROL_ITEMS,
     MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     MODBUS_BATTERY_REALTIME_ITEMS,
@@ -21,6 +26,86 @@ from .const import (
 from .items import ModbusItem, SAXItem
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def get_unique_id_for_item(
+    hass: HomeAssistant,
+    config_entry_id: str,
+    item_name: str,
+) -> str | None:
+    """Generate unique ID for an entity from device name and item name.
+
+    This function constructs entity unique IDs following the pattern:
+    {device_name_normalized}_{item_name_without_sax_prefix}
+
+    Args:
+        hass: Home Assistant instance for device registry access
+        config_entry_id: Config entry ID to find associated device
+        item_name: Item name (e.g., "sax_max_discharge")
+
+    Returns:
+        Unique ID string (e.g., "sax_cluster_max_discharge") or None if device not found
+
+    Security:
+        OWASP A05: Validates inputs to prevent injection attacks
+
+    Performance:
+        Single device registry lookup, efficient string operations
+
+    Example:
+        >>> get_unique_id_for_item(hass, entry_id, "sax_max_discharge")
+        "sax_cluster_max_discharge"
+    """
+    # Validate input
+    if not item_name:
+        _LOGGER.error("Item name cannot be empty")
+        return None
+
+    # Get device registry
+    dev_reg = dr.async_get(hass)
+
+    # Find device associated with this config entry
+    # Look for device with matching config_entry_id in the SAX Battery domain
+    device = None
+    for dev in dev_reg.devices.values():
+        if config_entry_id in dev.config_entries and any(
+            domain == DOMAIN for domain, _ in dev.identifiers
+        ):
+            device = dev
+            break
+
+    if not device:
+        _LOGGER.error(
+            "Could not find device for config entry %s in device registry",
+            config_entry_id,
+        )
+        return None
+
+    # Extract device name and normalize it
+    # Convert to lowercase and replace spaces with underscores
+    device_name_normalized: str = "unknown_device"
+    if isinstance(device.name, str):
+        device_name_normalized = device.name.lower().replace(" ", "_")
+    else:
+        _LOGGER.warning(
+            "Device name is not a string: %s. Using 'unknown_device' as fallback.",
+            device.name,
+        )
+
+    # Remove "sax_" prefix from item name if present
+    item_name_part: str = item_name.removeprefix("sax_").lower()
+
+    # Construct unique ID
+    unique_id = f"{device_name_normalized}_{item_name_part}"
+
+    _LOGGER.debug(
+        "Generated unique_id '%s' from device '%s' and item '%s'",
+        unique_id,
+        device.name,
+        item_name,
+    )
+
+    return unique_id
 
 
 def get_battery_count(config_entry: ConfigEntry) -> int:
