@@ -25,6 +25,47 @@ The SAX-power energy storage solution uses structured communication protocols ac
 | B       | L2         | Slave  |
 | C       | L3         | Slave  |
 
+### Entity Item Classes
+
+#### SAXItem (Base Class)
+**Purpose:** Base class for all entities (virtual and hardware-backed)
+
+**Attributes:**
+- `name: str` - Entity key (e.g., "sax_cumulative_energy_produced")
+- `mtype: TypeConstants` - Entity type (SENSOR, SWITCH, NUMBER, SENSOR_CALC)
+- `device: DeviceConstants` - Device category (BESS, SM, SYS)
+- `entitydescription: EntityDescription` - Home Assistant entity description
+- `translation_key: str | None` - Optional translation key
+
+**Use Cases:**
+- Calculated/aggregated values (no Modbus registers)
+- Virtual switches/controls (coordinator logic only)
+- System-level entities spanning multiple devices
+
+#### ModbusItem (Derived Class)
+**Purpose:** Represents entities backed by Modbus hardware registers
+
+**Additional Attributes:**
+- `address: int` - Modbus register address (e.g., 40113)
+- `battery_device_id: int` - Device ID for addressing
+- `data_type: ModbusClientMixin.DATATYPE` - INT16/UINT16
+- `factor: float` - Conversion factor for raw values
+- `enabled_by_default: bool` - Entity visibility
+
+**Use Cases:**
+- Physical sensor readings from SAX battery
+- Hardware-backed controls (max charge/discharge limits)
+- Smart meter data polled via Modbus
+
+### Entity Type Categories
+
+| Type | Base Class | Has Register? | Examples |
+|------|-----------|---------------|----------|
+| `SENSOR` | `ModbusItem` | ✅ Yes | `sax_soc`, `sax_temperature` |
+| `SENSOR_CALC` | `SAXItem` | ❌ No | `sax_combined_soc`, `sax_cumulative_energy` |
+| `SWITCH` | `SAXItem` | ❌ No | `solar_charging`, `manual_control` |
+| `NUMBER` | `ModbusItem` or `SAXItem` | ⚠️ Depends | Modbus: `sax_max_discharge`, Virtual: `sax_min_soc` |
+
 ## Python Development Standards
 
 ### Language Requirements

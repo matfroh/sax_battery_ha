@@ -52,6 +52,7 @@
     "Mult",
     "mypy",
     "pymodbus",
+    "setpoint",
     "STATUSANZEIGE"
   ],
   "workbench.editor.restoreViewState": false,

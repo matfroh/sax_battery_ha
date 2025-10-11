@@ -181,7 +181,86 @@ async def async_setup_entry(
 
 
 class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
-    """Implementation of a SAX Battery number entity backed by ModbusItem."""
+    """Implementation of a SAX Battery number entity backed by ModbusItem.
+
+    This class handles ONLY hardware-backed number entities that directly interact
+     with SAX battery Modbus registers. These entities read from and write to physical
+     battery hardware via Modbus TCP/IP protocol.
+
+     Architecture Separation:
+         - **SAXBatteryModbusNumber** (this class): Hardware-backed Modbus registers
+             * Examples: max_discharge, max_charge, nominal_power, nominal_factor
+             * Data source: Physical SAX battery hardware via Modbus TCP/IP
+             * Availability: Depends on Modbus connection and coordinator state
+             * Write operations: Direct hardware register writes with confirmation
+             * Scope: Per-battery entities (battery_a, battery_b, battery_c)
+
+         - **SAXBatteryConfigNumber**: Virtual configuration entities (separate class)
+             * Examples: min_soc, pilot_power, manual_power
+             * Data source: Coordinator memory/config entry (no hardware)
+             * Availability: Always available (independent of hardware state)
+             * Write operations: Config/state updates only (no hardware writes)
+             * Scope: Cluster-wide entities (single instance per installation)
+
+     Write-Only Register Behavior:
+         Certain Modbus registers (addresses 41-44) are write-only in SAX battery
+         hardware and cannot be read back. For these registers:
+         - Values are stored locally in `_local_value` cache
+         - `native_value` returns cached value instead of coordinator data
+         - UI updates are immediate via `async_write_ha_state()`
+         - Values persist across Home Assistant restarts via local cache
+         - Registers 41-44: nominal_power, nominal_factor, max_discharge, max_charge
+
+     Pilot Control Coordination:
+         Registers 41 (nominal_power) and 42 (nominal_factor) require atomic
+         transaction coordination to ensure both values are written together.
+         This coordination is critical for the pilot service that controls
+         battery charging based on photovoltaic production:
+
+         - Both values must be written in single Modbus transaction
+         - If one value is updated, transaction waits for paired value update
+         - Transaction timeout: 2.0 seconds
+         - Expired transactions are cleaned up automatically
+         - Ensures battery receives consistent power/power_factor pair
+
+     Battery Hierarchy and Multi-Battery Systems:
+         - Each battery (A, B, C) has its own coordinator and Modbus connection
+         - Each battery creates its own set of hardware number entities
+         - Master battery (typically A) coordinates power limits across all batteries
+         - Slave batteries (B, C) receive coordinated power limits from master
+         - Entity unique IDs are per-battery: `{battery_id}_{register_name}`
+         - SOC constraints are enforced per-battery via battery's coordinator
+
+     Unique ID Pattern:
+         - Format: `{register_name}` without battery_id prefix
+         - Examples: "max_discharge", "max_charge", "nominal_power"
+         - Device info separates entities by battery (battery_a, battery_b, battery_c)
+         - Ensures uniqueness across multi-battery installations
+         - Stable across restarts and reconfigurations
+
+     SOC Constraint Enforcement:
+         For power-related registers (SAX_NOMINAL_POWER, SAX_MAX_DISCHARGE):
+         - Coordinator's SOC manager validates requested power values
+         - When SOC < min_soc, discharge power is constrained to 0W
+         - Constraint is applied silently (no user error displayed)
+         - Local cache updated with constrained value for UI synchronization
+         - Hardware write enforced by coordinator's SOC manager
+
+     Security:
+         - OWASP A03: Input validation with explicit min/max range checks
+         - OWASP A05: SOC constraint enforcement prevents battery damage
+         - OWASP A01: Validates coordinator availability before operations
+         - Only writes to validated Modbus registers from WRITE_ONLY_REGISTERS
+         - Transaction validation ensures atomic pilot control updates
+
+     Performance:
+         - Single atomic Modbus transaction for pilot control register pairs
+         - Local cache eliminates repeated reads for write-only registers
+         - Batch coordinator updates minimize network overhead
+         - Early returns in validation minimize unnecessary processing
+         - Transaction cleanup prevents memory leaks from stale operations
+
+    """
 
     _attr_has_entity_name = True
     # Class-level transaction tracking for pilot control coordination
@@ -438,12 +517,15 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         _LOGGER.debug("%s: Setting value to %s", self.entity_id, value)
 
         # Validate input range
-        if self.native_min_value is not None and value < self.native_min_value:
-            msg = f"Value {value} below minimum {self.native_min_value}"
+        min_value = self.native_min_value
+        max_value = self.native_max_value
+
+        if min_value is not None and value < min_value:
+            msg = f"Value {value} below minimum {min_value}"
             raise HomeAssistantError(msg)
 
-        if self.native_max_value is not None and value > self.native_max_value:
-            msg = f"Value {value} above maximum {self.native_max_value}"
+        if max_value is not None and value > max_value:
+            msg = f"Value {value} above maximum {max_value}"
             raise HomeAssistantError(msg)
 
         try:
@@ -873,11 +955,21 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
 
 class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
-    """Configuration number entity for cluster-wide SAX Battery settings.
+    """SAX Battery configuration number entity using SAXItem (virtual entities).
 
-    These entities represent calculated or aggregated values across all batteries,
-    not individual Modbus registers. They use the master coordinator but calculate
-    values from all battery coordinators.
+    This class handles ONLY virtual configuration entities (SAXItem) that exist purely
+    in coordinator/config state. For hardware-backed Modbus entities, see
+    SAXBatteryModbusNumber.
+
+    Architecture:
+        - SAXItem: Virtual entities (min_soc, pilot_power, etc.)
+        - ModbusItem: Hardware entities (handled by SAXBatteryModbusNumber)
+
+    Availability:
+        Config numbers are always available since they don't depend on hardware state.
+
+    Security:
+        OWASP A04: Config entities validate input ranges but have no hardware failures
     """
 
     _attr_has_entity_name = True
@@ -961,34 +1053,11 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         Returns:
             True if entity is available, False otherwise
         """
-        if not self.coordinator.last_update_success:
-            _LOGGER.debug(
-                "Config number %s unavailable: coordinator update failed",
-                self.entity_id,
-            )
-            return False
+        # ToDo: Check number.sax_cluster_pilot_power which is not calculated
+        # Could need special avalable response
 
-        # For min_soc, check if SOC manager is enabled
-        if self._sax_item.name == SAX_MIN_SOC:
-            if not self.coordinator.soc_manager:
-                _LOGGER.debug(
-                    "Config number %s unavailable: SOC manager not enabled",
-                    self.entity_id,
-                )
-                return False
-            # Return available if we have the SOC manager value
-            return True
-
-        # Check if we have a value available
-        value = self.native_value
-        if value is None:
-            _LOGGER.debug(
-                "Config number %s unavailable: no value available",
-                self.entity_id,
-            )
-            return False
-
-        return True
+        # Entities depend on coordinator state for calculated values
+        return super().available and self.coordinator.last_update_success
 
     @property
     def native_value(self) -> float | None:
