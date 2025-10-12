@@ -2,6 +2,24 @@
 
 You are an AI programming assistant specialized in Home Assistant custom integration development for SAX Battery systems.
 
+**Instruction Sources:**
+- SAX Battery specific rules (this file)
+- [Performance Optimization](.github/instructions/performance-optimization.instructions.md) - Comprehensive performance best practices
+- [Security & OWASP](.github/instructions/security-and-owasp.instructions.md) - OWASP Top 10 secure coding guidelines
+
+---
+
+## Table of Contents
+1. [SAX Battery System Architecture](#sax-battery-system-architecture)
+2. [Python Development Standards](#python-development-standards)
+3. [Home Assistant Integration Patterns](#home-assistant-integration-patterns)
+4. [Testing Guidelines](#testing-guidelines)
+5. [Performance Optimization](#performance-optimization)
+6. [Security & OWASP Guidelines](#security--owasp-guidelines)
+7. [Code Generation & Review Rules](#code-generation--review-rules)
+
+---
+
 ## SAX Battery System Architecture
 
 The SAX-power energy storage solution uses structured communication protocols across multi-phase installations with coordinated control hierarchy. Customer systems can have multiple battery units connected to different grid phases (L1, L2, L3) for optimal load balancing.
@@ -66,6 +84,24 @@ The SAX-power energy storage solution uses structured communication protocols ac
 | `SWITCH` | `SAXItem` | ❌ No | `solar_charging`, `manual_control` |
 | `NUMBER` | `ModbusItem` or `SAXItem` | ⚠️ Depends | Modbus: `sax_max_discharge`, Virtual: `sax_min_soc` |
 
+### Entity Architecture Separation
+
+#### SAXBatteryModbusNumber
+**Purpose:** Hardware-backed entities using ModbusItem
+- **Data Source:** Physical SAX battery hardware via Modbus TCP/IP
+- **Examples:** max_discharge, max_charge, nominal_power, nominal_factor
+- **Availability:** Depends on Modbus connection and coordinator state
+- **Scope:** Per-battery entities (battery_a, battery_b, battery_c)
+
+#### SAXBatteryConfigNumber
+**Purpose:** Virtual configuration entities using SAXItem
+- **Data Source:** Coordinator memory/config entry (no hardware)
+- **Examples:** min_soc, pilot_power, manual_power
+- **Availability:** Always available (independent of hardware state)
+- **Scope:** Cluster-wide entities (single instance per installation)
+
+---
+
 ## Python Development Standards
 
 ### Language Requirements
@@ -102,17 +138,17 @@ from .const import DOMAIN
 from .items import ModbusItem
 ```
 
-### pymodbus constrains
+### pymodbus Constraints
 
 - Use `pymodbus` for Modbus TCP/RTU communication
 - Handle `ModbusException` for Modbus-specific errors
 - Ensure proper connection management (open/close)
-- SAX battery only uses ModbusClientMixin.DATATYPE.UINT16 and ModbusClientMixin.DATATYPE.INT16
+- SAX battery only uses `ModbusClientMixin.DATATYPE.UINT16` and `ModbusClientMixin.DATATYPE.INT16`
 - Use `read_holding_registers` (code 0x03) and `write_registers` (code 0x10) methods for data access
 - Handle connection errors with `OSError` and timeouts with `TimeoutError`
 - Consider SAX battery bug with `write_registers` not returning correct response (wrong transaction ID)
 - Prefer `ModbusTcpClient.convert_from_registers` and `ModbusTcpClient.convert_to_registers` for data conversion
-- Use available documentation for code generation https://pymodbus.readthedocs.io/en/v3.11.2/source/client.html
+- Use available documentation: https://pymodbus.readthedocs.io/en/v3.11.2/source/client.html
 
 ### Security Requirements
 
@@ -120,6 +156,8 @@ from .items import ModbusItem
 - Validate and sanitize all user inputs
 - Use specific exceptions: `ModbusException`, `OSError`, `TimeoutError`, `ValueError`, `ConfigEntryNotReady`
 - Never log sensitive information
+
+---
 
 ## Home Assistant Integration Patterns
 
@@ -135,7 +173,7 @@ from .items import ModbusItem
 
 - All external I/O operations must be async
 - No blocking calls, no sleeping in loops
-- Use gather() instead of awaiting in loops
+- Use `gather()` instead of awaiting in loops
 - Follow update coordinator pattern
 
 ### Polling Requirements
@@ -195,7 +233,6 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 ```
 
 **❌ Wrong Patterns**:
-
 - Manual `_attr_*` assignments for entity description attributes
 - Complex initialization logic in `__init__`
 - Assuming entity description types without checking
@@ -205,6 +242,8 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 - Unknown state = `None` (never use "unknown" string)
 - Implement `available()` property instead of "unavailable" string
 - Always provide descriptive state attributes with consistent keys
+
+---
 
 ## Testing Guidelines
 
@@ -252,7 +291,203 @@ def mock_modbus_api_obj(mock_modbus_api):  # Different name
 - Test both success and failure scenarios
 - Mock HA registries and coordinators properly
 
-## Code Generation Rules
+---
+
+## Performance Optimization
+
+**📖 Full Guide:** See [`.github/instructions/performance-optimization.instructions.md`](.github/instructions/performance-optimization.instructions.md) for comprehensive details.
+
+### Core Performance Principles
+
+- **Measure First, Optimize Second:** Always profile before optimizing
+- **Optimize for the Common Case:** Focus on frequently executed code paths
+- **Avoid Premature Optimization:** Write clear code first, optimize when necessary
+- **Minimize Resource Usage:** Use memory, CPU, network, and disk efficiently
+- **Set Performance Budgets:** Define acceptable limits and enforce with automated checks
+
+### List Operations and Loops (SAX-Specific)
+
+**Prefer `list.extend()` over append loops** for better performance:
+
+```python
+# ❌ BAD: Inefficient loop with repeated append calls
+entities = []
+for modbus_item in switch_items:
+    if isinstance(modbus_item, ModbusItem):
+        entities.append(
+            SAXBatterySwitch(
+                coordinator=coordinator,
+                battery_id=battery_id,
+                modbus_item=modbus_item,
+            )
+        )
+
+# ✅ GOOD: Use list comprehension with extend
+entities.extend([
+    SAXBatterySwitch(
+        coordinator=coordinator,
+        battery_id=battery_id,
+        modbus_item=modbus_item,
+    )
+    for modbus_item in switch_items
+    if isinstance(modbus_item, ModbusItem)
+])
+
+# ✅ ALTERNATIVE: Generator expression for large lists
+entities.extend(
+    SAXBatterySwitch(
+        coordinator=coordinator,
+        battery_id=battery_id,
+        modbus_item=modbus_item,
+    )
+    for modbus_item in switch_items
+    if isinstance(modbus_item, ModbusItem)
+)
+```
+
+**Performance Benefits:**
+- Reduced function call overhead: Single `extend()` vs multiple `append()` calls
+- Better memory allocation: List grows once vs incrementally
+- Improved readability: Functional style over imperative loops
+- Type safety: Maintains list type consistency
+
+### Algorithm Optimization
+
+- **Avoid O(n²) or worse:** Profile nested loops and recursive calls
+- **Choose Right Data Structure:** Arrays for sequential access, hash maps for lookups, trees for hierarchical data
+- **Batch Processing:** Process data in batches to reduce overhead
+- **Streaming:** Use streaming APIs for large data sets
+
+### Async/Concurrency
+
+- **Asynchronous I/O:** Use async/await to avoid blocking threads
+- **Thread/Worker Pools:** Use pools to manage concurrency
+- **Bulk Operations:** Batch network/database calls to reduce round trips
+- **Backpressure:** Implement backpressure in queues to avoid overload
+
+### Caching
+
+- **Cache Expensive Computations:** Use in-memory caches (Redis, Memcached) for hot data
+- **Cache Invalidation:** Use time-based (TTL), event-based, or manual invalidation
+- **Cache Stampede Protection:** Use locks or request coalescing to prevent thundering herd
+- **Don't Cache Everything:** Some data is too volatile or sensitive to cache
+
+### Performance Review Checklist
+
+- [ ] Avoid O(n²) or worse algorithmic complexity
+- [ ] Use appropriate data structures
+- [ ] Implement caching where beneficial
+- [ ] Minimize network requests and batch operations
+- [ ] Handle memory efficiently (no leaks, bounded usage)
+- [ ] Use asynchronous operations for I/O
+- [ ] Monitor and alert on performance regressions
+
+---
+
+## Security & OWASP Guidelines
+
+**📖 Full Guide:** See [`.github/instructions/security-and-owasp.instructions.md`](.github/instructions/security-and-owasp.instructions.md) for comprehensive OWASP Top 10 coverage.
+
+### OWASP Top 10 Quick Reference (SAX-Specific)
+
+#### A01: Broken Access Control
+- **Deny by Default:** All access control decisions must follow deny-by-default
+- **Least Privilege:** Default to most restrictive permissions
+- **Validate Availability:** Check coordinator and entity availability before operations
+
+**SAX Example:**
+```python
+@property
+def available(self) -> bool:
+    """Return if entity is available."""
+    # Config numbers (SAXItem) are always available
+    if isinstance(self, SAXBatteryConfigNumber):
+        return True
+
+    # Hardware numbers depend on coordinator state
+    return (
+        super().available
+        and self.coordinator.last_update_success
+        and self.coordinator.data is not None
+    )
+```
+
+#### A02: Cryptographic Failures
+- **Strong Algorithms:** Use Argon2 or bcrypt for password hashing
+- **HTTPS Only:** Always default to HTTPS for network requests
+- **Secure Secret Management:** Never hardcode secrets (API keys, passwords)
+
+**SAX Example:**
+```python
+# ✅ GOOD: Load from environment
+modbus_host = config_entry.data.get(CONF_HOST)
+modbus_port = config_entry.data.get(CONF_PORT, 502)
+
+# ❌ BAD: Hardcoded
+# modbus_host = "192.168.1.100"  # Never do this
+```
+
+#### A03: Injection
+- **Parameterized Queries:** Never use string concatenation for queries
+- **Sanitize Input:** Validate and sanitize all user inputs
+- **Context-Aware Encoding:** Use proper encoding for output context
+
+**SAX Example:**
+```python
+# ✅ GOOD: Input validation
+async def async_set_native_value(self, value: float) -> None:
+    """Set new value with validation."""
+    if self.native_min_value is not None and value < self.native_min_value:
+        msg = f"Value {value} below minimum {self.native_min_value}"
+        raise HomeAssistantError(msg)
+
+    if self.native_max_value is not None and value > self.native_max_value:
+        msg = f"Value {value} above maximum {self.native_max_value}"
+        raise HomeAssistantError(msg)
+
+    # Proceed with validated value
+    await self.coordinator.async_write_number_value(self._modbus_item, value)
+```
+
+#### A05: Security Misconfiguration
+- **Secure Defaults:** Disable verbose errors and debug in production
+- **Resource Protection:** SOC constraint enforcement prevents battery damage
+- **Validate Dependencies:** Check coordinator and manager availability
+
+**SAX Example:**
+```python
+# SOC constraint enforcement
+if (
+    hasattr(self.coordinator, "soc_manager")
+    and self.coordinator.soc_manager is not None
+    and self._modbus_item.name in [SAX_NOMINAL_POWER, SAX_MAX_DISCHARGE]
+):
+    constraint_result = await self.coordinator.soc_manager.check_discharge_allowed(value)
+
+    if not constraint_result.allowed:
+        _LOGGER.warning(
+            "%s: Power constrained by SOC: %sW -> %sW (%s)",
+            self.entity_id,
+            value,
+            constraint_result.constrained_value,
+            constraint_result.reason,
+        )
+        value = constraint_result.constrained_value
+```
+
+### Security Review Checklist
+
+- [ ] No hardcoded secrets or credentials
+- [ ] All user inputs validated and sanitized
+- [ ] Specific exception types used (no blind `Exception`)
+- [ ] No sensitive data in logs
+- [ ] Proper error handling without information leakage
+- [ ] Resource limits enforced (SOC constraints, rate limiting)
+- [ ] Coordinator availability validated before operations
+
+---
+
+## Code Generation & Review Rules
 
 ### When Generating Code
 
@@ -271,33 +506,17 @@ def mock_modbus_api_obj(mock_modbus_api):  # Different name
 4. Import organization and unused imports
 5. Home Assistant entity pattern compliance
 
-## Multi-Battery System Considerations
-
-### Master/Slave Coordination
+### Multi-Battery System Considerations
 
 - Master battery handles smart meter polling
 - Each battery maintains individual coordinator
 - Phase-specific entity creation (L1/L2/L3)
 - Data synchronization via RS485 and Ethernet
-
-### Entity Creation
-
 - Consider battery role (master vs slave) when creating entities
 - Handle redundant sensor values (only master polls)
 - Implement proper unique ID patterns for multi-battery setups
 
-## Performance Guidelines
-
-During code reviews and generation:
-
-- [ ] Avoid O(n^2) or worse algorithmic complexity
-- [ ] Use appropriate data structures
-- [ ] Implement caching where beneficial
-- [ ] Optimize database queries with proper indexes
-- [ ] Minimize network requests and batch operations
-- [ ] Handle memory efficiently (no leaks, bounded usage)
-- [ ] Use asynchronous operations for I/O
-- [ ] Monitor and alert on performance regressions
+---
 
 ## Documentation Standards
 
@@ -315,6 +534,8 @@ During code reviews and generation:
 - Structured logging for easier analysis
 - Use appropriate log levels (debug vs info vs error)
 
+---
+
 ## Response Guidelines
 
 - Always provide actionable, specific guidance
@@ -325,88 +546,25 @@ During code reviews and generation:
 - Explain security mitigations explicitly
 - Verify implementation details before generating tests
 
-# GitHub Copilot Instructions for SAX Battery Integration
+---
 
-You are an AI programming assistant specialized in Home Assistant custom integration development for SAX Battery systems.
+## References
 
-## Performance Optimization Rules
+### Performance Optimization
+- Full details: [`.github/instructions/performance-optimization.instructions.md`](.github/instructions/performance-optimization.instructions.md)
+- Covers: Frontend, backend, database, profiling, memory management, scalability
 
-### List Operations and Loops
+### Security & OWASP
+- Full details: [`.github/instructions/security-and-owasp.instructions.md`](.github/instructions/security-and-owasp.instructions.md)
+- Covers: OWASP Top 10, secure coding patterns, cryptography, access control
 
-**Prefer `list.extend()` over append loops** for better performance and readability:
+### External Resources
+- [Home Assistant Developer Docs](https://developers.home-assistant.io/)
+- [PyModbus Documentation](https://pymodbus.readthedocs.io/)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [Python Performance Tips](https://docs.python.org/3/library/profile.html)
 
-```python
-# ❌ BAD: Inefficient loop with repeated append calls
-entities = []
-for modbus_item in switch_items:
-    if isinstance(modbus_item, ModbusItem):
-        entities.append(
-            SAXBatterySwitch(
-                coordinator=coordinator,
-                battery_id=battery_id,
-                modbus_item=modbus_item,
-            )
-        )
+---
 
-# ✅ GOOD: Use list comprehension with extend for better performance
-entities.extend([
-    SAXBatterySwitch(
-        coordinator=coordinator,
-        battery_id=battery_id,
-        modbus_item=modbus_item,
-    )
-    for modbus_item in switch_items
-    if isinstance(modbus_item, ModbusItem)
-])
-
-# ✅ ALTERNATIVE: Generator expression for memory efficiency with large lists
-entities.extend(
-    SAXBatterySwitch(
-        coordinator=coordinator,
-        battery_id=battery_id,
-        modbus_item=modbus_item,
-    )
-    for modbus_item in switch_items
-    if isinstance(modbus_item, ModbusItem)
-)
-```
-
-**Performance Benefits:**
-- **Reduced function call overhead**: Single `extend()` vs multiple `append()` calls
-- **Better memory allocation**: List grows once vs incrementally
-- **Improved readability**: Functional style over imperative loops
-- **Type safety**: Maintains list type consistency
-
-**When to Use Each Pattern:**
-- **List comprehension**: Small to medium lists, simple transformations
-- **Generator expression**: Large lists, memory-constrained environments
-- **Traditional loop**: Complex logic, error handling, or side effects needed
-
-**Security Considerations (OWASP A05: Security Misconfiguration):**
-- Validate input lists before processing to prevent resource exhaustion
-- Use generator expressions for untrusted/large data sources
-- Implement bounds checking for user-provided list sizes
-
-**Additional List Optimization Patterns:**
-
-```python
-# ✅ Efficient filtering and mapping
-valid_items = [item for item in items if item.is_valid()]
-
-# ✅ Flatten nested lists efficiently
-all_items = [item for sublist in nested_lists for item in sublist]
-
-# ✅ Batch operations instead of individual calls
-coordinator.add_entities(entities)  # vs multiple add_entity() calls
-
-# ✅ Use sets for membership testing in loops
-valid_types = {TypeConstants.SWITCH, TypeConstants.SENSOR}
-filtered = [item for item in items if item.mtype in valid_types]
-```
-
-**Code Review Checklist for List Operations:**
-- [ ] Can this append loop be replaced with `extend()` and list comprehension?
-- [ ] Is the list size bounded and validated for security?
-- [ ] Are we using the most efficient data structure for the access pattern?
-- [ ] For large lists, should we use a generator expression for memory efficiency?
-- [ ] Are we avoiding unnecessary intermediate lists?
+**Last Updated:** 2025-01-12
+**Maintainers:** Keep this file synchronized with changes to referenced instruction files
