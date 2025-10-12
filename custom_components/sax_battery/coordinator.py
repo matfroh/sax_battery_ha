@@ -24,6 +24,7 @@ from .const import (
     DOMAIN,
     SAX_MAX_DISCHARGE,
     SAX_NOMINAL_POWER,
+    WRITE_ONLY_REGISTERS,
 )
 from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
@@ -552,23 +553,22 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             bool: True if write successful
 
         Security: Input validation and safe numeric conversion
+        Performance: Caches write-only values for state restoration
         """
         # Security: Input validation
         if not isinstance(item, ModbusItem):
-            _LOGGER.error(  # type: ignore[unreachable]
-                "Expected ModbusItem, got %s", type(item)
-            )
+            _LOGGER.error("Expected ModbusItem, got %s", type(item))  # type: ignore[unreachable]
             return False
+
         if not isinstance(value, (int, float)):
-            _LOGGER.error(  # type: ignore[unreachable]
-                "Expected numeric value, got %s", type(value)
-            )
+            _LOGGER.error("Expected numeric value, got %s", type(value))  # type: ignore[unreachable]
+            return False
 
         # Ensure API is set
         if item.modbus_api is None:
             item.modbus_api = self.modbus_api
 
-        # Apply SOC constraints for discharge-related items
+        # Apply SOC constraints for discharge-related items using SAX_COMBINED_SOC
         if item.name in (SAX_MAX_DISCHARGE, SAX_NOMINAL_POWER):
             result = await self.soc_manager.apply_constraints(value)
 
@@ -593,7 +593,20 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         try:
             # Delegate to ModbusItem for actual write operation
-            return await item.async_write_value(float(value))
+            success = await item.async_write_value(float(value))
+
+            # Cache write-only register values in master coordinator for state restoration
+            if success and item.address in WRITE_ONLY_REGISTERS:
+                if self.data is None:
+                    self.data = {}  # type: ignore[unreachable]
+                self.data[item.name] = value
+                _LOGGER.debug(
+                    "Cached write-only register value: %s = %sW",
+                    item.name,
+                    value,
+                )
+
+            return success  # noqa: TRY300
 
         except (ModbusException, OSError, TimeoutError) as err:
             _LOGGER.error("Failed to write number value to %s: %s", item.name, err)

@@ -204,11 +204,62 @@ from .items import ModbusItem
 **Not acceptable**: IP addresses, device names, hostnames, URLs, usernames
 **Fallback**: Use `f"{entry.entry_id}-battery"` only if no other option
 
+#### Unique ID Generation (Critical Rule)
+
+**Always use `get_unique_id_for_item()` utility function** for entity unique ID generation. Never hardcode unique IDs.
+
+```python
+from .utils import get_unique_id_for_item
+
+# ✅ GOOD: Use utility function
+unique_id = get_unique_id_for_item(
+                coordinator.hass,
+                coordinator.config_entry.entry_id,
+                SAX_MAX_DISCHARGE,
+            )
+)
+
+# ❌ BAD: Hardcoded unique_id
+unique_id = "max_discharge"  # Never do this, typically string shall be defined in const.py
+
+```
+
+**Unique ID Patterns:**
+- **Cluster entities** (system-wide): `get_unique_id_for_item(item_name, battery_id=None, ...)`
+  - Examples: `sax_combined_soc`, `sax_cluster_max_discharge`
+- **Per-battery entities**: `get_unique_id_for_item(item_name, battery_id, ...)`
+  - Examples: `battery_a_soc`, `battery_a_temperature`
+
+  **Entity Registry Lookups:**
+```python
+# ✅ GOOD: Use generated unique_id for lookups
+from homeassistant.helpers import entity_registry as er
+from .utils import get_unique_id_for_item
+
+ent_reg = er.async_get(hass)
+unique_id = get_unique_id_for_item("max_discharge", None, config_entry)
+entity_id = ent_reg.async_get_entity_id("number", DOMAIN, unique_id)
+
+# ❌ BAD: Hardcoded lookup
+entity_id = ent_reg.async_get_entity_id("number", DOMAIN, "max_discharge")
+```
+
+**Why This Matters:**
+- Ensures consistent unique ID generation across integration
+- Handles multi-battery vs cluster-wide entity differences
+- Prevents entity registry lookup failures
+- Maintains stability across Home Assistant restarts
+- Supports future unique ID pattern changes in single location
+
 #### Entity Initialization Pattern (Critical Rule)
+
+Home assistant entities require `_attr_has_entity_name = True` which also indicates unique_id generation. The result will be identical with `get_unique_id_for_item` result.
 
 ```python
 class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
     """SAX Battery configuration number entity."""
+
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -233,6 +284,9 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 ```
 
 **❌ Wrong Patterns**:
+- Hardcoded unique_id strings: `self._attr_unique_id = "max_discharge"`
+- Manual string formatting: `self._attr_unique_id = f"sax_{name}"`
+- Bypassing utility function for "simple" cases
 - Manual `_attr_*` assignments for entity description attributes
 - Complex initialization logic in `__init__`
 - Assuming entity description types without checking

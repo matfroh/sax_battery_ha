@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.helpers import entity_platform, entity_registry as er
 
-from .const import SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
+from .const import DOMAIN, SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
 from .utils import get_unique_id_for_item
 
 if TYPE_CHECKING:
@@ -113,10 +113,8 @@ class SOCManager:
     async def check_and_enforce_discharge_limit(self) -> bool:
         """Check SOC and enforce discharge limit by writing to max_discharge register.
 
-        This method writes directly to the Modbus hardware register when SOC
-        is below minimum. State synchronization is handled separately by:
-        - Initial startup check (_check_soc_constraints_on_startup)
-        - Normal coordinator refresh cycle
+        This method writes directly to the master battery's SAX_MAX_DISCHARGE entity
+        when combined SOC is below minimum. Uses SAX_COMBINED_SOC for multi-battery systems.
 
         Returns:
             bool: True if hardware limit was enforced (written to register)
@@ -125,8 +123,9 @@ class SOCManager:
             OWASP A05: Hardware-level battery protection
 
         Performance:
-            Minimal overhead - only writes to hardware without state updates
+            Minimal overhead - only writes to hardware when constraint violated
         """
+
         if not self._enabled:
             return False
 
@@ -135,47 +134,53 @@ class SOCManager:
             _LOGGER.error("Cannot enforce discharge limit: config entry not available")
             return False
 
+        # Use SAX_COMBINED_SOC for multi-battery systems
         current_soc = await self.get_current_soc()
 
         if current_soc < self._min_soc:
             # Only enforce if SOC level changed (prevents redundant writes)
             if self._last_enforced_soc != current_soc:
                 _LOGGER.warning(
-                    "SOC %s%% below minimum %s%% - enforcing discharge limit",
+                    "Combined SOC %s%% below minimum %s%% - enforcing discharge limit",
                     current_soc,
                     self._min_soc,
                 )
 
-                # Get max_discharge entity from registry using helper function
+                # Generate proper unique_id for max_discharge entity
                 target_unique_id = get_unique_id_for_item(
                     self.coordinator.hass,
                     self.coordinator.config_entry.entry_id,
                     SAX_MAX_DISCHARGE,
                 )
 
-                if not target_unique_id:
+                ent_reg = er.async_get(self.coordinator.hass)
+
+                # Security: Validate config entry exists before entity lookup
+                if not self.coordinator.config_entry:
                     _LOGGER.error(
-                        "Could not generate unique_id for %s", SAX_MAX_DISCHARGE
+                        "Cannot enforce discharge limit: config entry not available"
                     )
                     return False
 
-                ent_reg = er.async_get(self.coordinator.hass)
-
-                entity_entry = None
-                for entry in ent_reg.entities.values():
-                    if (
-                        entry.platform == "sax_battery"
-                        and entry.unique_id == target_unique_id
-                        and entry.config_entry_id
-                        == self.coordinator.config_entry.entry_id
-                    ):
-                        entity_entry = entry
-                        break
+                if target_unique_id:
+                    # Find entity by unique_id and config_entry_id
+                    entity_entry = ent_reg.async_get_entity_id(
+                        domain="number",
+                        platform=DOMAIN,
+                        unique_id=target_unique_id,
+                    )
+                else:
+                    target_unique_id = SAX_MAX_DISCHARGE.removeprefix("sax_")
+                    entity_entry = ent_reg.async_get_entity_id(
+                        domain="number",
+                        platform=DOMAIN,
+                        unique_id=target_unique_id
+                        # Fallback: Try without config_entry_id (less secure)
+                    )
 
                 if not entity_entry:
                     _LOGGER.error(
-                        "Could not find max_discharge entity (unique_id: %s, entity_id: number.%s) for enforcement",
-                        target_unique_id,
+                        "Could not find max_discharge entity (unique_id: %s) for enforcement",
                         target_unique_id,
                     )
                     return False
@@ -189,35 +194,30 @@ class SOCManager:
                 # Find the entity object
                 entity_obj = None
                 for entity in platform.entities.values():
-                    if entity.entity_id == entity_entry.entity_id:
+                    if entity.entity_id == entity_entry:
                         entity_obj = entity
                         break
 
                 if not entity_obj:
-                    _LOGGER.error(
-                        "Could not find entity object for %s", entity_entry.entity_id
-                    )
+                    _LOGGER.error("Could not find entity object for %s", entity_entry)
                     return False
 
                 # Validate entity supports async_set_native_value
                 if not hasattr(entity_obj, "async_set_native_value"):
                     _LOGGER.error(
                         "Entity %s does not support async_set_native_value",
-                        entity_entry.entity_id,
+                        entity_entry,
                     )
                     return False
 
                 try:
-                    # Write 0W to Modbus hardware register
-                    # Entity state synchronization handled by:
-                    # - Startup check (after HA restart)
-                    # - Coordinator refresh cycle (during runtime)
+                    # Write 0W to master battery's max_discharge register
                     await entity_obj.async_set_native_value(0.0)  # type: ignore[attr-defined]
 
                     self._last_enforced_soc = current_soc
                     _LOGGER.info(
-                        "Discharge protection enforced: %s set to 0W (SOC: %s%%)",
-                        entity_entry.entity_id,
+                        "Discharge protection enforced: %s set to 0W (combined SOC: %s%%)",
+                        entity_entry,
                         current_soc,
                     )
                     return True  # noqa: TRY300
@@ -231,7 +231,7 @@ class SOCManager:
 
         elif self._last_enforced_soc is not None and current_soc >= self._min_soc:
             _LOGGER.info(
-                "SOC recovered to %s%% (above minimum %s%%)",
+                "Combined SOC recovered to %s%% (above minimum %s%%)",
                 current_soc,
                 self._min_soc,
             )

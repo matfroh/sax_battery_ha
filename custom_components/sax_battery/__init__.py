@@ -27,11 +27,14 @@ from .const import (
     CONF_PILOT_FROM_HA,
     DEFAULT_PORT,
     DOMAIN,
+    SAX_MAX_CHARGE,
+    SAX_MAX_DISCHARGE,
 )
 from .coordinator import SAXBatteryCoordinator
 from .modbusobject import ModbusAPI
 from .models import SAXBatteryData
 from .power_manager import PowerManager
+from .utils import get_unique_id_for_item
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -147,6 +150,9 @@ async def _check_soc_constraints_on_startup(
     updating both hardware registers and entity UI states to reflect
     current SOC constraint status.
 
+    For write-only registers (41-44), this also restores the last known values
+    from entity states since these cannot be read from hardware.
+
     Args:
         hass: Home Assistant instance
         entry_id: Config entry ID to access stored coordinators
@@ -154,6 +160,9 @@ async def _check_soc_constraints_on_startup(
 
     Security:
         OWASP A05: Hardware-level battery protection on startup
+
+    Performance:
+        Efficient entity state restoration with single registry query
     """
     _LOGGER.debug("Home Assistant startup complete, checking SOC constraints")
 
@@ -181,38 +190,179 @@ async def _check_soc_constraints_on_startup(
         _LOGGER.warning("No coordinators found during startup SOC check")
         return
 
-    # Check SOC constraints for each battery
-    for battery_id, coordinator in coordinators.items():
-        if coordinator.soc_manager and coordinator.soc_manager.enabled:
-            _LOGGER.debug(
-                "Checking SOC constraints for battery %s on startup", battery_id
+    # Get entity registry for state restoration
+    ent_reg = er.async_get(hass)
+
+    # Restore write-only register values from entity states
+    await _restore_write_only_register_values(hass, entry_id, coordinators, ent_reg)
+
+    # Find master coordinator for SOC constraint checking
+    master_coordinator = None
+    for coordinator in coordinators.values():
+        if coordinator.battery_config.get(CONF_BATTERY_IS_MASTER, False):
+            master_coordinator = coordinator
+            break
+
+    if not master_coordinator:
+        _LOGGER.warning("No master coordinator found for SOC constraint check")
+        return
+
+    # Check SOC constraints using master coordinator's SOC manager
+    if master_coordinator.soc_manager and master_coordinator.soc_manager.enabled:
+        _LOGGER.debug("Checking SOC constraints on startup using master coordinator")
+
+        try:
+            # Get combined SOC from master coordinator data
+            current_soc = await master_coordinator.soc_manager.get_current_soc()
+            min_soc = master_coordinator.soc_manager.min_soc
+
+            _LOGGER.info(
+                "Startup SOC check: combined_soc=%s%%, min=%s%%",
+                current_soc,
+                min_soc,
             )
 
-            try:
-                # Check and enforce discharge limit if SOC is below minimum
-                enforced = (
-                    await coordinator.soc_manager.check_and_enforce_discharge_limit()
+            if current_soc < min_soc:
+                _LOGGER.warning(
+                    "Combined SOC %s%% below minimum %s%% on startup - enforcing discharge limit",
+                    current_soc,
+                    min_soc,
                 )
+
+                # Enforce hardware limit using master coordinator's SOC manager
+                enforced = await master_coordinator.soc_manager.check_and_enforce_discharge_limit()
 
                 if enforced:
                     _LOGGER.info(
-                        "Battery %s: Discharge limit enforced on startup (SOC below minimum)",
-                        battery_id,
-                    )
-                else:
-                    current_soc = await coordinator.soc_manager.get_current_soc()
-                    _LOGGER.debug(
-                        "Battery %s: SOC %.1f%% is within limits, no enforcement needed",
-                        battery_id,
+                        "Discharge limit enforced on startup (combined SOC: %s%%)",
                         current_soc,
                     )
+                else:
+                    _LOGGER.error("Failed to enforce discharge limit on startup")
+            else:
+                _LOGGER.debug(
+                    "Combined SOC %s%% above minimum %s%% - no enforcement needed",
+                    current_soc,
+                    min_soc,
+                )
 
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.error(
-                    "Failed to check SOC constraints for battery %s on startup: %s",
-                    battery_id,
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error(
+                "Error checking SOC constraints on startup: %s",
+                err,
+            )
+
+
+async def _restore_write_only_register_values(
+    hass: HomeAssistant,
+    entry_id: str,
+    coordinators: dict[str, SAXBatteryCoordinator],
+    ent_reg: er.EntityRegistry,
+) -> None:
+    """Restore write-only register values from entity states after HA restart."""
+
+    # Write-only register entity items
+    # SAX_MAX_DISCHARGE entity ID = "number.sax_cluster_max_discharge"
+    # SAX_MAX_CHARGE entity ID    = "number.sax_cluster_max_charge"
+    write_only_items = {
+        SAX_MAX_DISCHARGE: "max_discharge",
+        SAX_MAX_CHARGE: "max_charge",
+    }
+
+    restored_count = 0
+
+    # Find master coordinator
+    master_coordinator = None
+    for coordinator in coordinators.values():
+        if coordinator.battery_config.get(CONF_BATTERY_IS_MASTER, False):
+            master_coordinator = coordinator
+            break
+
+    if not master_coordinator:
+        _LOGGER.warning("No master coordinator found for write-only value restoration")
+        return
+
+    # Security: Validate config entry exists before proceeding
+    if not master_coordinator.config_entry:
+        _LOGGER.error("Master coordinator has no config entry, cannot restore values")
+        return
+
+    for entity_name, item_name in write_only_items.items():
+        try:
+            # Use proper unique_id generation function
+            unique_id = get_unique_id_for_item(
+                master_coordinator.hass,
+                master_coordinator.config_entry.entry_id,
+                item_name,
+            )
+
+            # Type guard: Validate unique_id is not None before entity lookup
+            if not unique_id:
+                _LOGGER.warning(
+                    "Could not generate unique_id for %s, skipping restoration",
+                    entity_name,
+                )
+                continue
+
+            # Find entity in registry using generated unique_id
+            entity_id = ent_reg.async_get_entity_id("number", DOMAIN, unique_id)
+
+            if not entity_id:
+                _LOGGER.debug(
+                    "Entity not found in registry: %s (unique_id: %s)",
+                    entity_name,
+                    unique_id,
+                )
+                continue
+
+            # Get entity state
+            state = hass.states.get(entity_id)
+            if not state or state.state in ("unknown", "unavailable"):
+                _LOGGER.debug(
+                    "No valid state to restore for %s (state: %s)",
+                    entity_id,
+                    state.state if state else "None",
+                )
+                continue
+
+            # Parse and validate state value
+            try:
+                last_value = float(state.state)
+
+                # Store in master coordinator data cache
+                if master_coordinator.data is None:
+                    master_coordinator.data = {}  # type: ignore[unreachable]
+
+                master_coordinator.data[entity_name] = last_value
+                restored_count += 1
+
+                _LOGGER.debug(
+                    "Restored write-only value: %s = %sW (unique_id: %s)",
+                    entity_id,
+                    last_value,
+                    unique_id,
+                )
+
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Failed to parse state value for %s: %s (error: %s)",
+                    entity_id,
+                    state.state,
                     err,
                 )
+
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning(
+                "Error restoring value for %s: %s",
+                entity_name,
+                err,
+            )
+
+    if restored_count > 0:
+        _LOGGER.info(
+            "Restored %d write-only register values from entity states",
+            restored_count,
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

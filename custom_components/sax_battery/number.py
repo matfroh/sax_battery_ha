@@ -372,7 +372,17 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         return None
 
     def _initialize_write_only_defaults(self) -> None:
-        """Initialize default values for write-only registers based on config."""
+        """Initialize default values for write-only registers based on config.
+
+        Uses master coordinator data cache if available (restored from entity states),
+        otherwise falls back to config entry defaults.
+
+        Security:
+            OWASP A05: Validates data sources and applies safe defaults
+
+        Performance:
+            Single data access per register type
+        """
         if not self.coordinator.config_entry:
             return
 
@@ -380,27 +390,64 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             return
 
         config_data = self.coordinator.config_entry.data
-
         battery_count = get_battery_count(self.coordinator.config_entry)
+
+        # Try to get cached value from master coordinator data first
+        cached_value = None
+        if self.coordinator.data:
+            cached_value = self.coordinator.data.get(self._modbus_item.name)
+            if cached_value is not None:
+                _LOGGER.debug(
+                    "Found cached value for write-only register %s: %sW (from entity state restoration)",
+                    self._modbus_item.name,
+                    cached_value,
+                )
 
         # Set default values based on register type
         if self._modbus_item.name == SAX_MAX_CHARGE:
-            # Get from config or use entity description default
             default_value = LIMIT_MAX_CHARGE_PER_BATTERY * battery_count
             self._attr_native_max_value = float(default_value)
-            self._local_value = float(config_data.get("max_charge", default_value))
+
+            # Priority: cached > config > default
+            if cached_value is not None:
+                self._local_value = float(cached_value)
+                _LOGGER.debug(
+                    "Restored cached value for %s: %sW",
+                    self._modbus_item.name,
+                    cached_value,
+                )
+            else:
+                self._local_value = float(config_data.get("max_charge", default_value))
 
         elif self._modbus_item.name == SAX_MAX_DISCHARGE:
-            # Get from config or use entity description default
             default_value = LIMIT_MAX_DISCHARGE_PER_BATTERY * battery_count
             self._attr_native_max_value = float(default_value)
-            self._local_value = float(config_data.get("max_discharge", default_value))
 
-        # Initialize pilot control items ONLY from config - no dangerous defaults
+            # Priority: cached > config > default
+            if cached_value is not None:
+                self._local_value = float(cached_value)
+                _LOGGER.debug(
+                    "Restored cached value for %s: %sW",
+                    self._modbus_item.name,
+                    cached_value,
+                )
+            else:
+                self._local_value = float(
+                    config_data.get("max_discharge", default_value)
+                )
+
+        # Initialize pilot control items ONLY from cached/config - no dangerous defaults
         elif self._modbus_item.name in (SAX_NOMINAL_POWER, SAX_NOMINAL_FACTOR):
-            # Only initialize if explicitly set in config
-            self._local_value = 0.0
-            # else: leave as None - no dangerous default
+            # Use cached value if available, otherwise 0.0
+            if cached_value is not None:
+                self._local_value = float(cached_value)
+                _LOGGER.debug(
+                    "Restored cached value for pilot control %s: %s",
+                    self._modbus_item.name,
+                    cached_value,
+                )
+            else:
+                self._local_value = 0.0
 
     @property
     def native_value(self) -> float | None:

@@ -1251,21 +1251,6 @@ class TestSAXBatteryCoordinator:
         # Should complete without error for master battery
         assert isinstance(data, dict)
 
-    async def test_async_write_number_value_invalid_value_type(
-        self,
-        sax_battery_coordinator_instance,
-        real_number_item_coord_unique,
-    ) -> None:
-        """Test async_write_number_value with invalid value type - expecting early return."""
-        # The implementation has a bug where it doesn't return False after logging error
-        # We need to test the actual behavior, which continues to try float() conversion
-
-        # Test with non-numeric value - will raise ValueError
-        with pytest.raises(ValueError, match="could not convert string to float"):
-            await sax_battery_coordinator_instance.async_write_number_value(
-                real_number_item_coord_unique, "not_a_number"
-            )
-
     async def test_async_write_number_value_sets_api_reference(
         self,
         sax_battery_coordinator_instance,
