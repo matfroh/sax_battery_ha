@@ -575,6 +575,25 @@ def available(self) -> bool:
 
 ---
 
+## Testing Requirements
+
+- **Location**: `tests/`
+- **Coverage Requirement**: Above 95% test coverage for all modules
+- **Best Practices**:
+  - Use pytest fixtures from `conftest.py`
+  - Mock all external dependencies
+  - Use snapshots for complex data structures
+  - Follow existing test patterns
+
+### Config Flow Testing
+- **100% Coverage Required**: All config flow paths must be tested
+- **Test Scenarios**:
+  - All flow initiation methods (user, discovery, import)
+  - Successful configuration paths
+  - Error recovery scenarios
+  - Prevention of duplicate entries
+  - Flow completion after errors
+
 ## Testing Guidelines
 
 ### Test Structure

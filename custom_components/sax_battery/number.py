@@ -42,6 +42,9 @@ from .utils import get_battery_count, should_enable_entity_by_default
 
 _LOGGER = logging.getLogger(__name__)
 
+# custom_components/sax_battery/number.py
+PARALLEL_UPDATES = 0  # Coordinator-based, no limit needed
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

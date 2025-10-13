@@ -34,3 +34,6 @@ home-assistant.log.1
 documentation/*
 ARCHITECTURE_UPDATE.md
 POLLING_OPTIMIZATION.md
+
+# Quality scale rule status
+quality_scale.yaml

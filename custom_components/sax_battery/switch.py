@@ -32,6 +32,9 @@ from .items import ModbusItem, SAXItem
 
 _LOGGER = logging.getLogger(__name__)
 
+# Serialize switch updates to prevent state conflicts
+PARALLEL_UPDATES = 1
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

@@ -20,6 +20,9 @@ from .items import ModbusItem, SAXItem
 
 _LOGGER = logging.getLogger(__name__)
 
+# Coordinator-based sensors don't need update serialization
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
