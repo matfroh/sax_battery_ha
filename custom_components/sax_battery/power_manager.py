@@ -23,6 +23,7 @@ from typing import Any
 from homeassistant.components.input_number import SERVICE_SET_VALUE
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
@@ -39,6 +40,7 @@ from .const import (
     SOLAR_CHARGING_MODE,
 )
 from .coordinator import SAXBatteryCoordinator
+from .utils import get_unique_id_for_item
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,12 +103,79 @@ class PowerManager:
         self._remove_config_update: Callable[[], None] | None = None
         self._running = False
 
-        # Entity IDs for number entities
-        self._power_entity_id = f"number.{DOMAIN}_{SAX_NOMINAL_POWER}"
-        self._power_factor_entity_id = f"number.{DOMAIN}_{SAX_NOMINAL_FACTOR}"
+        # Resolve entity IDs from entity registry using unique_id
+        self._power_entity_id: str | None = None
+        self._power_factor_entity_id: str | None = None
+        self._resolve_entity_ids()
 
         # Configuration values - now safe to call after state initialization
         self._update_config_values()
+
+    def _resolve_entity_ids(self) -> None:
+        """Resolve entity IDs for power control entities from registry.
+
+        Uses get_unique_id_for_item() utility function to match entity registry
+        unique IDs with the actual entity_id values.
+
+        Security:
+            OWASP A05: Validates entities exist before attempting control
+        """
+        # Security: Validate config entry exists
+        if not self.coordinator.config_entry:
+            _LOGGER.error("Coordinator has no config entry, cannot resolve entity IDs")
+            return
+
+        ent_reg = er.async_get(self.hass)
+
+        # Resolve SAX_NOMINAL_POWER entity
+        power_unique_id = get_unique_id_for_item(
+            self.hass,
+            self.coordinator.config_entry.entry_id,
+            SAX_NOMINAL_POWER,
+        )
+
+        if power_unique_id:
+            self._power_entity_id = ent_reg.async_get_entity_id(
+                "number",
+                DOMAIN,
+                power_unique_id,
+            )
+
+            if not self._power_entity_id:
+                _LOGGER.error(
+                    "Could not find power entity (unique_id: %s)",
+                    power_unique_id,
+                )
+        else:
+            _LOGGER.error("Could not generate unique_id for %s", SAX_NOMINAL_POWER)
+
+        # Resolve SAX_NOMINAL_FACTOR entity
+        factor_unique_id = get_unique_id_for_item(
+            self.hass,
+            self.coordinator.config_entry.entry_id,
+            SAX_NOMINAL_FACTOR,
+        )
+
+        if factor_unique_id:
+            self._power_factor_entity_id = ent_reg.async_get_entity_id(
+                "number",
+                DOMAIN,
+                factor_unique_id,
+            )
+
+            if not self._power_factor_entity_id:
+                _LOGGER.error(
+                    "Could not find power factor entity (unique_id: %s)",
+                    factor_unique_id,
+                )
+        else:
+            _LOGGER.error("Could not generate unique_id for %s", SAX_NOMINAL_FACTOR)
+
+        _LOGGER.debug(
+            "Resolved entity IDs: power=%s, factor=%s",
+            self._power_entity_id,
+            self._power_factor_entity_id,
+        )
 
     def _update_config_values(self) -> None:
         """Update configuration values from entry data."""
@@ -278,13 +347,18 @@ class PowerManager:
             power: Power value in watts (positive = discharge, negative = charge)
 
         Security:
-            OWASP A05: Validates power limits
+            OWASP A05: Validates power limits and entity availability
         Performance:
             Non-blocking service call for efficiency
         """
+        # Security: Validate entity ID was resolved
+        if not self._power_entity_id:
+            _LOGGER.error("Power entity not found, cannot update setpoint")
+            return
+
         # Security: Validate power limits
         if not isinstance(power, (int, float)):
-            _LOGGER.error("Invalid power value type: %s", type(power))  # type:ignore[unreachable]
+            _LOGGER.error("Invalid power value type: %s", type(power))  # type: ignore[unreachable]
             return
 
         # Clamp to absolute limits
@@ -311,7 +385,11 @@ class PowerManager:
             blocking=False,
         )
 
-        _LOGGER.debug("Power setpoint updated to %sW", clamped_power)
+        _LOGGER.debug(
+            "Power setpoint updated to %sW via entity %s",
+            clamped_power,
+            self._power_entity_id,
+        )
 
     async def set_solar_charging_mode(self, enabled: bool) -> None:
         """Enable or disable solar charging mode.

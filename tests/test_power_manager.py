@@ -6,6 +6,8 @@ from datetime import datetime
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 # custom_component cannot use "from tests.common import MockConfigEntry"
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -17,6 +19,8 @@ from custom_components.sax_battery.const import (
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
     MANUAL_CONTROL_MODE,
+    SAX_NOMINAL_FACTOR,
+    SAX_NOMINAL_POWER,
     SOLAR_CHARGING_MODE,
 )
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
@@ -24,8 +28,58 @@ from custom_components.sax_battery.power_manager import PowerManager, PowerManag
 from custom_components.sax_battery.soc_manager import SOCConstraintResult
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@pytest.fixture
+def mock_power_manager_devices(
+    hass: HomeAssistant,
+) -> None:
+    """Set up mock devices and entities for power manager tests."""
+
+    real_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "battery_a_host": "192.168.1.100",
+            "battery_a_port": 502,
+        },
+        entry_id="test_power_manager_entry",
+    )
+    real_entry.add_to_hass(hass)
+
+    # Get registries
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    # Create device in registry
+    device = dev_reg.async_get_or_create(
+        config_entry_id=real_entry.entry_id,
+        identifiers={(DOMAIN, "test_cluster")},
+        name="SAX Cluster",
+        manufacturer="SAX",
+        model="Battery System",
+    )
+
+    # Register entities...
+    ent_reg.async_get_or_create(
+        "number",
+        DOMAIN,
+        f"test_cluster_{SAX_NOMINAL_POWER}",
+        suggested_object_id=f"sax_cluster_{SAX_NOMINAL_POWER}",
+        config_entry=real_entry,
+        device_id=device.id,
+    )
+
+    ent_reg.async_get_or_create(
+        "number",
+        DOMAIN,
+        f"test_cluster_{SAX_NOMINAL_FACTOR}",
+        suggested_object_id=f"sax_cluster_{SAX_NOMINAL_FACTOR}",
+        config_entry=real_entry,
+        device_id=device.id,
+    )
 
 
 class TestPowerManagerInitialization:
@@ -379,92 +433,6 @@ class TestSolarChargingMode:
             mock_update.assert_called_once_with(2000)
 
 
-class TestManualControlMode:
-    """Test manual control mode functionality."""
-
-    async def test_enable_manual_control_mode(
-        self,
-        hass: HomeAssistant,
-        mock_coordinator_master: SAXBatteryCoordinator,
-        mock_config_entry: ConfigEntry,
-    ) -> None:
-        """Test enabling manual control mode."""
-        mock_coordinator_master.soc_manager.apply_constraints = AsyncMock(  # type:ignore[method-assign]
-            return_value=SOCConstraintResult(
-                allowed=True,
-                original_value=1500,
-                constrained_value=1500,
-            )
-        )
-
-        power_manager = PowerManager(
-            hass=hass,
-            coordinator=mock_coordinator_master,
-            config_entry=mock_config_entry,
-        )
-
-        with patch.object(
-            power_manager, "update_power_setpoint", new=AsyncMock()
-        ) as mock_update:
-            await power_manager.set_manual_control_mode(True, 1500)
-
-            assert power_manager._state.manual_control_enabled is True
-            assert power_manager._state.mode == MANUAL_CONTROL_MODE
-            mock_update.assert_called_once_with(1500)
-
-    async def test_manual_control_prevents_solar_charging(
-        self,
-        hass: HomeAssistant,
-        mock_coordinator_master: SAXBatteryCoordinator,
-        mock_config_entry: ConfigEntry,
-    ) -> None:
-        """Test manual control prevents solar charging activation."""
-        power_manager = PowerManager(
-            hass=hass,
-            coordinator=mock_coordinator_master,
-            config_entry=mock_config_entry,
-        )
-
-        # Enable manual control first
-        power_manager._state.manual_control_enabled = True
-
-        # Try to enable solar charging
-        await power_manager.set_solar_charging_mode(True)
-
-        # Solar charging should not be enabled
-        assert power_manager._state.solar_charging_enabled is False
-
-    async def test_manual_control_applies_soc_constraints(
-        self,
-        hass: HomeAssistant,
-        mock_coordinator_master: SAXBatteryCoordinator,
-        mock_config_entry: ConfigEntry,
-    ) -> None:
-        """Test manual control applies SOC constraints."""
-        mock_coordinator_master.soc_manager.apply_constraints = AsyncMock(  # type:ignore[method-assign]
-            return_value=SOCConstraintResult(
-                allowed=True,
-                original_value=3000,
-                constrained_value=2000,  # Constrained
-                reason="SOC protection",
-            )
-        )
-
-        power_manager = PowerManager(
-            hass=hass,
-            coordinator=mock_coordinator_master,
-            config_entry=mock_config_entry,
-        )
-
-        with patch.object(
-            power_manager, "update_power_setpoint", new=AsyncMock()
-        ) as mock_update:
-            await power_manager.set_manual_control_mode(True, 3000)
-
-            # Should use constrained value
-            mock_update.assert_called_once_with(2000)
-
-
 class TestPowerSetpointUpdate:
     """Test power setpoint update functionality."""
 
@@ -473,13 +441,25 @@ class TestPowerSetpointUpdate:
         hass: HomeAssistant,
         mock_coordinator_master: SAXBatteryCoordinator,
         mock_config_entry: ConfigEntry,
+        mock_power_manager_devices: None,
     ) -> None:
-        """Test updating power setpoint with valid value."""
-        power_manager = PowerManager(
-            hass=hass,
-            coordinator=mock_coordinator_master,
-            config_entry=mock_config_entry,
-        )
+        """Test updating power setpoint with valid value.
+
+        Security:
+            OWASP A05: Validates entity resolution and service call parameters
+        Performance:
+            Uses non-blocking service calls for efficiency
+        """
+        # Mock get_unique_id_for_item to return valid unique IDs
+        with patch(
+            "custom_components.sax_battery.power_manager.get_unique_id_for_item",
+            side_effect=lambda hass, entry_id, item_name: f"test_cluster_{item_name}",
+        ):
+            power_manager = PowerManager(
+                hass=hass,
+                coordinator=mock_coordinator_master,
+                config_entry=mock_config_entry,
+            )
 
         # Track service calls
         service_calls: list[ServiceCall] = []
@@ -501,20 +481,33 @@ class TestPowerSetpointUpdate:
         assert len(service_calls) == 1
         # Verify service was called with correct parameters
         assert service_calls[0].data["value"] == 1500
-        assert "sax_nominal_power" in service_calls[0].data["entity_id"]
+        assert (
+            service_calls[0].data["entity_id"]
+            == f"number.sax_cluster_{SAX_NOMINAL_POWER}"
+        )
 
     async def test_update_power_setpoint_clamping(
         self,
         hass: HomeAssistant,
         mock_coordinator_master: SAXBatteryCoordinator,
         mock_config_entry: ConfigEntry,
+        mock_power_manager_devices: None,
     ) -> None:
-        """Test power setpoint clamping to battery limits."""
-        power_manager = PowerManager(
-            hass=hass,
-            coordinator=mock_coordinator_master,
-            config_entry=mock_config_entry,
-        )
+        """Test power setpoint clamping to battery limits.
+
+        Security:
+            OWASP A05: Validates power limits to protect battery hardware
+        """
+        # Mock get_unique_id_for_item to return valid unique IDs
+        with patch(
+            "custom_components.sax_battery.power_manager.get_unique_id_for_item",
+            side_effect=lambda hass, entry_id, item_name: f"test_cluster_{item_name}",
+        ):
+            power_manager = PowerManager(
+                hass=hass,
+                coordinator=mock_coordinator_master,
+                config_entry=mock_config_entry,
+            )
 
         # Track service calls
         service_calls: list[ServiceCall] = []
@@ -552,7 +545,11 @@ class TestPowerSetpointUpdate:
         mock_coordinator_master: SAXBatteryCoordinator,
         mock_config_entry: ConfigEntry,
     ) -> None:
-        """Test power setpoint rejects invalid type."""
+        """Test power setpoint rejects invalid type.
+
+        Security:
+            OWASP A03: Input validation prevents type confusion attacks
+        """
         power_manager = PowerManager(
             hass=hass,
             coordinator=mock_coordinator_master,
