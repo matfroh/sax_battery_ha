@@ -100,6 +100,48 @@ The SAX-power energy storage solution uses structured communication protocols ac
 - **Availability:** Always available (independent of hardware state)
 - **Scope:** Cluster-wide entities (single instance per installation)
 
+### Write-Only Register Handling
+
+SAX Battery hardware has write-only registers (41-44) that cannot be read back:
+- **Register 41**: max_discharge (W)
+- **Register 42**: max_charge (W)
+- **Register 43**: nominal_power (W) - Pilot control
+- **Register 44**: nominal_factor (0-100%) - Pilot control
+
+**Implementation Requirements:**
+- Values stored in `_local_value` cache for UI display
+- Cached values persisted across restarts via entity states
+- Restored during startup via `_restore_write_only_register_values()`
+- SOC constraints enforced after value restoration
+- Hardware writes coordinated with UI state updates
+
+**State Restoration Flow:**
+```
+HA Restart
+    ↓
+1. Create coordinators, first refresh (gets SOC)
+    ↓
+2. Entity initialization with cached values
+    ↓
+3. EVENT_HOMEASSISTANT_STARTED
+    ↓
+4. Restore write-only values from entity states
+    ↓
+5. Check SOC constraints using SAX_COMBINED_SOC
+    ↓
+6. Enforce hardware limits if needed (write 0W)
+    ↓
+7. Update entity UI state to match hardware
+```
+
+### SOC Constraint Enforcement
+
+- Uses `SAX_COMBINED_SOC` for multi-battery protection
+- Master coordinator enforces discharge limits
+- Constraints applied silently (no user errors)
+- Hardware writes coordinated with UI state updates
+- `check_and_enforce_discharge_limit()` writes directly to master's `SAX_MAX_DISCHARGE` entity
+
 ---
 
 ## Python Development Standards
@@ -169,6 +211,17 @@ from .items import ModbusItem
 - Config flow: `custom_components/{domain}/config_flow.py`
 - Platform code: `custom_components/{domain}/{platform}.py`
 
+### Runtime Data Storage
+
+- **Use ConfigEntry.runtime_data**: Store non-persistent runtime data
+  ```python
+  type SAXBatteryConfigEntry = ConfigEntry[dict[str, SAXBatteryCoordinator]]
+
+  async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -> bool:
+      coordinators = {}  # Dictionary of battery_id -> coordinator
+      entry.runtime_data = coordinators
+  ```
+
 ### Async Patterns
 
 - All external I/O operations must be async
@@ -176,17 +229,144 @@ from .items import ModbusItem
 - Use `gather()` instead of awaiting in loops
 - Follow update coordinator pattern
 
+**Data Update Coordinator Pattern:**
+```python
+class SAXBatteryCoordinator(DataUpdateCoordinator):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: SAXBatteryClient,
+        config_entry: ConfigEntry
+    ) -> None:
+        # Interval determined by battery role and connection type
+        if client.is_master:
+            update_interval = timedelta(seconds=5)  # Master polls smart meter
+        else:
+            update_interval = timedelta(seconds=30)  # Slave batteries
+
+        super().__init__(
+            hass,
+            logger=LOGGER,
+            name=DOMAIN,
+            update_interval=update_interval,
+            config_entry=config_entry,  # ✅ Pass config_entry - recommended pattern
+        )
+        self.client = client
+
+    async def _async_update_data(self):
+        try:
+            return await self.client.fetch_data()
+        except ModbusException as err:
+            raise UpdateFailed(f"Modbus communication error: {err}") from err
+        except OSError as err:
+            raise UpdateFailed(f"Network error: {err}") from err
+        except TimeoutError as err:
+            raise UpdateFailed(f"Request timeout: {err}") from err
+```
+
+**Key Points:**
+- Always pass `config_entry` parameter to coordinator (Home Assistant Core recommended pattern)
+- Use `UpdateFailed` for API errors
+- Use `ConfigEntryAuthFailed` for authentication issues
+- Master coordinator has faster update interval for smart meter polling
+
 ### Polling Requirements
 
-- Local network minimum: 5 seconds
-- Cloud polling minimum: 60 seconds
-- Polling interval not user-configurable
+- **Polling intervals are NOT user-configurable**: Never add scan_interval, update_interval, or polling frequency options to config flows or config entries
+- **Integration determines intervals**: Set `update_interval` programmatically based on integration logic, not user input
+- **SAX Battery Polling Strategy**:
+  - Master Battery: 5-10s for basic smart meter data, 30-60s for phase-specific data
+  - Slave Batteries: Standard coordinator interval (30s)
+  - Individual battery data: Standard interval
+
+```python
+# ✅ GOOD: Integration-determined polling
+update_interval = timedelta(seconds=5 if client.is_master else 30)
+
+# ❌ BAD: User-configurable intervals
+# In config flow
+vol.Optional("scan_interval", default=60): cv.positive_int  # ❌ Not allowed
+
+# In coordinator
+update_interval = timedelta(minutes=entry.data.get("scan_interval", 1))  # ❌ Not allowed
+```
+
+**Minimum Intervals** (Home Assistant Core requirement):
+- Local network: 5 seconds minimum
+- Cloud services: 60 seconds minimum
+
+**Parallel Updates**: Specify number of concurrent updates:
+```python
+PARALLEL_UPDATES = 1  # Serialize updates to prevent overwhelming device
+# OR
+PARALLEL_UPDATES = 0  # Unlimited (for coordinator-based or read-only)
+```
 
 ### Error Handling
 
 - **Specific exceptions only**: `ModbusException` (Modbus), `OSError` (network), `TimeoutError` (timeouts)
 - **Setup failures**: `ConfigEntryNotReady` (temporary), `ConfigEntryError` (permanent)
-- Never catch blind `Exception`
+- **Service errors**: `ServiceValidationError` (user input), `HomeAssistantError` (device communication)
+- **Keep try blocks minimal**: Only wrap code that can throw exceptions, process data outside try block
+
+**SAX Battery Exception Handling Pattern** (stricter than HA Core):
+```python
+# ✅ SAX Battery: Specific Modbus exceptions
+try:
+    data = await device.get_data()
+except ModbusException as err:
+    raise UpdateFailed(f"Modbus communication error: {err}") from err
+except OSError as err:
+    raise UpdateFailed(f"Network error: {err}") from err
+except TimeoutError as err:
+    raise UpdateFailed(f"Request timeout: {err}") from err
+
+# ℹ️ Home Assistant Core: Bare exceptions allowed in config flows
+async def async_step_user(self, user_input=None):
+    try:
+        await self._test_connection(user_input)
+    except Exception:  # Allowed in HA Core config flows
+        errors["base"] = "unknown"
+
+# ✅ SAX Battery: Specific exceptions even in config flows (OWASP compliant)
+async def async_step_user(self, user_input=None):
+    try:
+        await self._test_connection(user_input)
+    except ModbusException:
+        errors["base"] = "cannot_connect"
+    except TimeoutError:
+        errors["base"] = "timeout"
+    except OSError:
+        errors["base"] = "network_error"
+```
+
+**Why SAX Battery Uses Specific Exceptions:**
+- **Security (OWASP A03)**: Prevents information leakage through error messages
+- **Debugging**: Specific exceptions provide better troubleshooting context
+- **Hardware Integration**: Modbus hardware has specific failure modes requiring distinct handling
+- **Battery Protection**: Different error types trigger different safety responses
+
+**Data Processing Pattern:**
+```python
+# ❌ BAD: Too much code in try block
+try:
+    data = await device.get_data()  # Can throw
+    processed = data.get("value", 0) * 100  # ❌ Processing in try block
+    self._attr_native_value = processed
+except DeviceError:
+    _LOGGER.error("Failed to get data")
+
+# ✅ GOOD: Minimal try block, process outside
+try:
+    data = await device.get_data()  # Only what can throw
+except DeviceError:
+    _LOGGER.error("Failed to get data")
+    return
+
+# ✅ Process data outside try block
+processed = data.get("value", 0) * 100
+self._attr_native_value = processed
+```
 
 ### Logging Standards
 
@@ -195,6 +375,12 @@ from .items import ModbusItem
 - No sensitive data in logs
 - Use lazy logging: `_LOGGER.debug("Message with %s", variable)`
 - Restrict info messages - use debug for non-user content
+
+**Log Levels:**
+- **debug**: Non-user-facing messages, detailed troubleshooting
+- **info**: User-relevant events (device connected, constraint enforced)
+- **warning**: Recoverable issues (SOC constraint triggered, connection retry)
+- **error**: Failures requiring attention (setup failed, Modbus error)
 
 ### Entity Requirements
 
@@ -211,49 +397,84 @@ from .items import ModbusItem
 ```python
 from .utils import get_unique_id_for_item
 
-# ✅ GOOD: Use utility function
+# ✅ GOOD: Use utility function for SAX Battery
 unique_id = get_unique_id_for_item(
-                coordinator.hass,
-                coordinator.config_entry.entry_id,
-                SAX_MAX_DISCHARGE,
-            )
+    coordinator.hass,
+    coordinator.config_entry.entry_id,
+    SAX_MAX_DISCHARGE,
 )
 
 # ❌ BAD: Hardcoded unique_id
-unique_id = "max_discharge"  # Never do this, typically string shall be defined in const.py
+unique_id = "max_discharge"  # Never do this
 
+# ❌ BAD: Manual string formatting
+unique_id = f"sax_{item_name}"  # Don't bypass utility function
 ```
 
+**ℹ️ Note on Home Assistant Core Patterns:**
+Home Assistant Core integrations may use simpler patterns like `self._attr_unique_id = f"{device_id}_temperature"`. However, SAX Battery uses centralized utility function for:
+- Consistent unique ID generation across integration
+- Multi-battery vs cluster-wide entity differentiation
+- Entity registry lookup reliability
+- Stability across Home Assistant restarts
+- Single location for unique ID pattern changes
+
 **Unique ID Patterns:**
-- **Cluster entities** (system-wide): `get_unique_id_for_item(item_name, battery_id=None, ...)`
+- **Cluster entities** (system-wide): Generated with `battery_id=None`
   - Examples: `sax_combined_soc`, `sax_cluster_max_discharge`
-- **Per-battery entities**: `get_unique_id_for_item(item_name, battery_id, ...)`
+- **Per-battery entities**: Generated with specific `battery_id`
   - Examples: `battery_a_soc`, `battery_a_temperature`
 
-  **Entity Registry Lookups:**
+**Entity Registry Lookups:**
 ```python
-# ✅ GOOD: Use generated unique_id for lookups
+# ✅ GOOD: Use generated unique_id for lookups (SAX Battery)
 from homeassistant.helpers import entity_registry as er
 from .utils import get_unique_id_for_item
 
 ent_reg = er.async_get(hass)
-unique_id = get_unique_id_for_item("max_discharge", None, config_entry)
+unique_id = get_unique_id_for_item(
+    hass,
+    entry.entry_id,
+    SAX_MAX_DISCHARGE,
+)
+
+# Type guard: Validate unique_id is not None before entity lookup
+if not unique_id:
+    _LOGGER.warning("Could not generate unique_id for %s", SAX_MAX_DISCHARGE)
+    return
+
 entity_id = ent_reg.async_get_entity_id("number", DOMAIN, unique_id)
 
 # ❌ BAD: Hardcoded lookup
 entity_id = ent_reg.async_get_entity_id("number", DOMAIN, "max_discharge")
 ```
 
-**Why This Matters:**
-- Ensures consistent unique ID generation across integration
-- Handles multi-battery vs cluster-wide entity differences
-- Prevents entity registry lookup failures
-- Maintains stability across Home Assistant restarts
-- Supports future unique ID pattern changes in single location
+**Type Safety for Entity Lookups:**
+```python
+# ✅ GOOD: Type guard before using unique_id
+unique_id = get_unique_id_for_item(hass, entry_id, item_name)
+if not unique_id:
+    _LOGGER.warning("Could not generate unique_id for %s", item_name)
+    return
+
+# Now safe to use with async_get_entity_id (expects str, not str | None)
+entity_id = ent_reg.async_get_entity_id("number", DOMAIN, unique_id)
+
+# ✅ GOOD: Validate config_entry exists before accessing .entry_id
+if not coordinator.config_entry:
+    _LOGGER.error("Coordinator has no config entry")
+    return
+
+unique_id = get_unique_id_for_item(
+    hass,
+    coordinator.config_entry.entry_id,  # Now safe - validated above
+    item_name,
+)
+```
 
 #### Entity Initialization Pattern (Critical Rule)
 
-Home assistant entities require `_attr_has_entity_name = True` which also indicates unique_id generation. The result will be identical with `get_unique_id_for_item` result.
+Home Assistant entities require `_attr_has_entity_name = True` for proper entity naming.
 
 ```python
 class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
@@ -285,17 +506,72 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
 **❌ Wrong Patterns**:
 - Hardcoded unique_id strings: `self._attr_unique_id = "max_discharge"`
-- Manual string formatting: `self._attr_unique_id = f"sax_{name}"`
+- Manual string formatting without prefix check: `self._attr_unique_id = f"sax_{name}"`
 - Bypassing utility function for "simple" cases
 - Manual `_attr_*` assignments for entity description attributes
 - Complex initialization logic in `__init__`
 - Assuming entity description types without checking
+
+#### Entity Descriptions
+
+Lambda functions are often used in EntityDescription for value transformation. When lambdas exceed line length, wrap in parentheses for readability:
+
+```python
+# ❌ BAD: Lambda exceeds line length
+SensorEntityDescription(
+    key="temperature",
+    name="Temperature",
+    value_fn=lambda data: round(data["temp_value"] * 1.8 + 32, 1) if data.get("temp_value") is not None else None,
+)
+
+# ✅ GOOD: Parenthesis on same line as lambda, multiline expression
+SensorEntityDescription(
+    key="temperature",
+    name="Temperature",
+    value_fn=lambda data: (
+        round(data["temp_value"] * 1.8 + 32, 1)
+        if data.get("temp_value") is not None
+        else None
+    ),
+)
+```
 
 #### State Values
 
 - Unknown state = `None` (never use "unknown" string)
 - Implement `available()` property instead of "unavailable" string
 - Always provide descriptive state attributes with consistent keys
+
+**Entity Availability Pattern:**
+```python
+@property
+def available(self) -> bool:
+    """Return if entity is available."""
+    # Config numbers (SAXItem) are always available
+    if isinstance(self, SAXBatteryConfigNumber):
+        return True
+
+    # Hardware numbers depend on coordinator state
+    return (
+        super().available
+        and self.coordinator.last_update_success
+        and self.coordinator.data is not None
+    )
+```
+
+### Configuration Flow
+
+- **UI Setup Required**: All integrations must support configuration via UI
+- **Manifest**: Set `"config_flow": true` in `manifest.json`
+- **Data Storage**:
+  - Connection-critical config: Store in `ConfigEntry.data`
+  - Non-critical settings: Store in `ConfigEntry.options`
+- **Validation**: Always validate user input before creating entries
+- **Config Entry Naming**:
+  - ❌ Do NOT allow users to set config entry names in config flows
+  - Names are automatically generated or can be customized later in UI
+- **Connection Testing**: Test device/service connection during config flow
+- **Duplicate Prevention**: Prevent duplicate configurations using unique ID or unique data matching
 
 ---
 
@@ -304,8 +580,8 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 ### Test Structure
 
 - Location: `tests/components/{domain}/`
-- Use pytest fixtures from `tests.common`
-- Mock external dependencies
+- Use pytest fixtures from `tests.common` and integration-specific fixtures
+- Mock external dependencies - never make real network calls or access hardware
 - Follow existing test patterns
 
 ### Fixture Naming (Critical Rule)
@@ -319,12 +595,39 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 # conftest.py
 @pytest.fixture
 def mock_modbus_api():
+    """Fixture for ModbusAPI mock."""
     ...
 
 # test_modbusobject.py
 @pytest.fixture
-def mock_modbus_api_obj(mock_modbus_api):  # Different name
+def mock_modbus_api_obj(mock_modbus_api):  # ✅ Different name, uses parent
+    """Fixture for ModbusItem object with mocked API."""
     ...
+```
+
+### Testing Home Assistant Data Access
+
+**Critical Rule**: Never access `hass.data` directly in tests - always use proper integration setup and fixtures.
+
+```python
+# ❌ BAD: Accessing hass.data directly
+def test_coordinator(hass):
+    coordinator = hass.data[DOMAIN][entry.entry_id]  # Never do this
+    assert coordinator.data
+
+# ✅ GOOD: Use proper integration setup
+@pytest.fixture
+async def init_integration(hass, mock_config_entry, mock_api):
+    """Set up the integration for testing."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    return mock_config_entry
+
+async def test_coordinator(hass, init_integration):
+    """Test coordinator through proper setup."""
+    state = hass.states.get("sensor.my_sensor")  # ✅ Access through state machine
+    assert state.state == "42"
 ```
 
 ### Test Generation Verification (Critical Rule)
@@ -344,6 +647,52 @@ def mock_modbus_api_obj(mock_modbus_api):  # Different name
 - Group tests in descriptive classes
 - Test both success and failure scenarios
 - Mock HA registries and coordinators properly
+- Use snapshot testing for complex entity states
+
+**Modern Integration Fixture Setup:**
+```python
+@pytest.fixture
+def mock_config_entry() -> MockConfigEntry:
+    """Return the default mocked config entry."""
+    return MockConfigEntry(
+        title="SAX Battery A",
+        domain=DOMAIN,
+        data={CONF_HOST: "192.168.1.100", CONF_PORT: 502},
+        unique_id="battery_a_serial_12345",
+    )
+
+@pytest.fixture
+def mock_modbus_api() -> Generator[MagicMock]:
+    """Return a mocked Modbus API."""
+    with patch(
+        "homeassistant.components.sax_battery.ModbusAPI",
+        autospec=True
+    ) as api_mock:
+        api = api_mock.return_value
+        api.async_read_value.return_value = 50.0  # Mock SOC value
+        yield api
+
+@pytest.fixture
+def platforms() -> list[Platform]:
+    """Fixture to specify platforms to test."""
+    return [Platform.SENSOR, Platform.NUMBER]
+
+@pytest.fixture
+async def init_integration(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_modbus_api: MagicMock,
+    platforms: list[Platform],
+) -> MockConfigEntry:
+    """Set up the integration for testing."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch("homeassistant.components.sax_battery.PLATFORMS", platforms):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    return mock_config_entry
+```
 
 ---
 
@@ -421,7 +770,7 @@ entities.extend(
 
 ### Caching
 
-- **Cache Expensive Computations:** Use in-memory caches (Redis, Memcached) for hot data
+- **Cache Expensive Computations:** Use in-memory caches for hot data
 - **Cache Invalidation:** Use time-based (TTL), event-based, or manual invalidation
 - **Cache Stampede Protection:** Use locks or request coalescing to prevent thundering herd
 - **Don't Cache Everything:** Some data is too volatile or sensitive to cache
@@ -559,6 +908,7 @@ if (
 3. Exception handling specificity (no blind Exception)
 4. Import organization and unused imports
 5. Home Assistant entity pattern compliance
+6. Type safety (mypy compliance)
 
 ### Multi-Battery System Considerations
 
@@ -570,6 +920,19 @@ if (
 - Handle redundant sensor values (only master polls)
 - Implement proper unique ID patterns for multi-battery setups
 
+### Code Review Checklist for Performance
+
+- [ ] Are there any obvious algorithmic inefficiencies (O(n²) or worse)?
+- [ ] Are data structures appropriate for their use?
+- [ ] Are there unnecessary computations or repeated work?
+- [ ] Is caching used where appropriate, and is invalidation handled correctly?
+- [ ] Are large payloads paginated, streamed, or chunked?
+- [ ] Are there any memory leaks or unbounded resource usage?
+- [ ] Are network requests minimized, batched, and retried on failure?
+- [ ] Are there any blocking operations in hot paths?
+- [ ] Is logging in hot paths minimized and structured?
+- [ ] Are performance-critical code paths documented and tested?
+
 ---
 
 ## Documentation Standards
@@ -580,6 +943,17 @@ if (
 - Every method needs docstring with clear purpose
 - Document performance assumptions and critical code paths
 - All text in American English
+- Use sentence case for titles and messages
+
+### Writing Style Guidelines
+- **Tone**: Friendly and informative
+- **Perspective**: Use second-person ("you" and "your") for user-facing messages
+- **Inclusivity**: Use objective, non-discriminatory language
+- **Clarity**: Write for non-native English speakers
+- **Formatting in Messages**:
+  - Use backticks for: file paths, filenames, variable names, field entries
+  - Use sentence case for titles and messages
+  - Avoid abbreviations when possible
 
 ### Error Messages and Logging
 
@@ -599,6 +973,7 @@ if (
 - Prioritize security and performance considerations
 - Explain security mitigations explicitly
 - Verify implementation details before generating tests
+- Use type guards to satisfy mypy type checking
 
 ---
 
@@ -620,5 +995,5 @@ if (
 
 ---
 
-**Last Updated:** 2025-01-12
+**Last Updated:** 2025-01-13
 **Maintainers:** Keep this file synchronized with changes to referenced instruction files

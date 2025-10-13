@@ -174,7 +174,7 @@ class SOCManager:
                     entity_entry = ent_reg.async_get_entity_id(
                         domain="number",
                         platform=DOMAIN,
-                        unique_id=target_unique_id
+                        unique_id=target_unique_id,
                         # Fallback: Try without config_entry_id (less secure)
                     )
 
