@@ -887,14 +887,37 @@ class TestSAXBatteryNumberUniqueIdAndName:
 
     @pytest.fixture
     def mock_coordinator_unique_id_test(self, mock_hass_number):
-        """Create mock coordinator for unique ID tests."""
+        """Create mock coordinator for unique ID and name testing."""
         coordinator = MagicMock(spec=SAXBatteryCoordinator)
-        coordinator.data = {}
-        coordinator.battery_id = "battery_a"
         coordinator.hass = mock_hass_number
-        coordinator.sax_data = MagicMock()
-        coordinator.sax_data.get_device_info.return_value = {"name": "Test Battery"}
+        coordinator.battery_id = "battery_a"
+
+        # Add missing config_entry attribute
+        coordinator.config_entry = MagicMock()
+        coordinator.config_entry.entry_id = "test_entry_id"
+        coordinator.config_entry.data = {
+            "min_soc": 10,
+            "battery_count": 1,
+        }
+        coordinator.config_entry.options = {}
+
+        # Mock coordinator data
+        coordinator.data = {
+            "sax_max_charge": 3500,
+            "sax_nominal_power": 2000,
+        }
+        coordinator.last_update_success = True
         coordinator.last_update_success_time = MagicMock()
+
+        # Mock sax_data with get_device_info method
+        coordinator.sax_data = MagicMock()
+        coordinator.sax_data.get_device_info.return_value = {
+            "identifiers": {("sax_battery", "battery_a")},
+            "name": "SAX Battery A",
+            "manufacturer": "SAX",
+            "model": "Battery System",
+        }
+
         return coordinator
 
     @pytest.fixture

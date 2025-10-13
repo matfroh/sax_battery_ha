@@ -26,7 +26,7 @@ from .const import (
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
     LIMIT_REFRESH_INTERVAL,
-    MODBUS_BATTERY_PILOT_CONTROL_ITEMS,
+    MODBUS_BATTERY_POWER_CONTROL_ITEMS,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
     SAX_MIN_SOC,
@@ -38,7 +38,7 @@ from .coordinator import SAXBatteryCoordinator
 from .entity_utils import filter_items_by_type, filter_sax_items_by_type
 from .enums import TypeConstants
 from .items import ModbusItem, SAXItem
-from .utils import get_battery_count
+from .utils import get_battery_count, should_enable_entity_by_default
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -285,14 +285,21 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             and modbus_item.address in WRITE_ONLY_REGISTERS
         )
 
-        # Set entity registry enabled state
-        self._attr_entity_registry_enabled_default = getattr(
-            self._modbus_item, "enabled_by_default", True
-        )
+        # Set entity registry enabled state based on configuration
+        # This controls whether the entity is enabled by default in the UI
+        if coordinator.config_entry:
+            self._attr_entity_registry_enabled_default = (
+                should_enable_entity_by_default(modbus_item, coordinator.config_entry)
+            )
+        else:
+            # Fallback to item's enabled_by_default attribute
+            self._attr_entity_registry_enabled_default = getattr(
+                self._modbus_item, "enabled_by_default", True
+            )
 
         # Add pilot control detection (security: validate against known items)
         self._is_pilot_control_item = any(
-            item.name == modbus_item.name for item in MODBUS_BATTERY_PILOT_CONTROL_ITEMS
+            item.name == modbus_item.name for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
         )
 
         # Store reference to paired pilot control item for coordinated writes
@@ -346,7 +353,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             The paired ModbusItem or None if not found
 
         Security:
-            Only returns items from the validated MODBUS_BATTERY_PILOT_CONTROL_ITEMS list
+            Only returns items from the validated MODBUS_BATTERY_POWER_CONTROL_ITEMS list
 
         """
         if self._modbus_item.name == SAX_NOMINAL_POWER:
@@ -354,7 +361,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             return next(
                 (
                     item
-                    for item in MODBUS_BATTERY_PILOT_CONTROL_ITEMS
+                    for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
                     if item.name == SAX_NOMINAL_FACTOR
                 ),
                 None,
@@ -364,7 +371,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             return next(
                 (
                     item
-                    for item in MODBUS_BATTERY_PILOT_CONTROL_ITEMS
+                    for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
                     if item.name == SAX_NOMINAL_POWER
                 ),
                 None,

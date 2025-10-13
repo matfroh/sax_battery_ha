@@ -18,7 +18,7 @@ from .const import (
     CONF_MASTER_BATTERY,
     CONF_PILOT_FROM_HA,
     DOMAIN,
-    MODBUS_BATTERY_PILOT_CONTROL_ITEMS,
+    MODBUS_BATTERY_POWER_CONTROL_ITEMS,
     MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     MODBUS_BATTERY_REALTIME_ITEMS,
     WRITE_ONLY_REGISTERS,
@@ -118,8 +118,20 @@ def should_include_entity(
     config_entry: ConfigEntry,
     battery_id: str,
 ) -> bool:
-    """Determine if entity should be included based on configuration."""
-    # Handle write-only registers first (specific case) - only applies to ModbusItem
+    """Determine if entity should be included based on configuration.
+
+    Note: For write-only registers (41-44), this function determines if the entity
+    should be created at all. The entity's enabled state is controlled separately
+    via _attr_entity_registry_enabled_default in the entity class.
+
+    Security:
+        OWASP A01: Only master battery can have write-only register entities
+
+    Returns:
+        True if entity should be created, False otherwise
+    """
+    # Always include write-only registers for master battery
+    # Entity enabled state is controlled via entity_registry_enabled_default
     if (
         isinstance(item, ModbusItem)
         and hasattr(item, "address")
@@ -127,17 +139,11 @@ def should_include_entity(
     ):
         # Get master battery ID from configuration
         master_battery_id = config_entry.data.get(CONF_MASTER_BATTERY, "battery_a")
-        is_master = battery_id == master_battery_id
+        is_master: bool = battery_id == master_battery_id
 
-        # Pilot registers (41, 42) require pilot_from_ha AND master battery
-        if item.address in {41, 42}:
-            return bool(config_entry.data.get(CONF_PILOT_FROM_HA, False) and is_master)
-        # Power limit registers (43, 44) require limit_power AND master battery
-        elif item.address in {43, 44}:  # noqa: RET505
-            return bool(config_entry.data.get(CONF_LIMIT_POWER, False) and is_master)
-        else:
-            # Unknown write-only register
-            return False
+        # Only master battery gets write-only register entities
+        # Entity will be disabled by default if feature is not enabled
+        return is_master
 
     # For ModbusItem, check additional constraints (general case)
     if isinstance(item, ModbusItem):
@@ -162,6 +168,56 @@ def should_include_entity(
 
     # Default: include the entity
     return True
+
+
+def should_enable_entity_by_default(
+    item: ModbusItem | SAXItem,
+    config_entry: ConfigEntry,
+) -> bool:
+    """Determine if entity should be enabled by default in entity registry.
+
+    This controls the entity's visibility in the UI. Entities that are disabled
+    by default can still be enabled manually by users through the UI.
+
+    Args:
+        item: ModbusItem or SAXItem to check
+        config_entry: Configuration entry with feature flags
+
+    Returns:
+        True if entity should be enabled by default, False otherwise
+
+    Security:
+        OWASP A05: Feature-gated entities are disabled until explicitly enabled
+
+    Performance:
+        Simple boolean checks with efficient set lookups
+    """
+    # For write-only registers, check if feature is enabled
+    if (
+        isinstance(item, ModbusItem)
+        and hasattr(item, "address")
+        and item.address in WRITE_ONLY_REGISTERS
+    ):
+        # Build set of pilot control register addresses for efficient lookup
+        pilot_control_addresses = {
+            item.address for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
+        }
+
+        # Build set of power limit register addresses for efficient lookup
+        power_limit_addresses = {
+            item.address for item in MODBUS_BATTERY_POWER_LIMIT_ITEMS
+        }
+
+        # Pilot control registers require pilot_from_ha feature flag
+        if item.address in pilot_control_addresses:
+            return bool(config_entry.data.get(CONF_PILOT_FROM_HA, False))
+
+        # Power limit registers require limit_power feature flag
+        if item.address in power_limit_addresses:
+            return bool(config_entry.data.get(CONF_LIMIT_POWER, False))
+
+    # For all other entities, respect the item's enabled_by_default attribute
+    return getattr(item, "enabled_by_default", True)
 
 
 def create_register_access_config(
@@ -254,26 +310,37 @@ class RegisterAccessConfig:
 def get_battery_realtime_items(access_config: RegisterAccessConfig) -> list[ModbusItem]:
     """Get battery realtime items based on access configuration.
 
-    Only master batteries get write-only control items (registers 41-44).
+    Always includes ALL items (including write-only registers).
+    Entity visibility is controlled via entity_registry_enabled_default instead.
 
     Args:
         access_config: Register access configuration
 
     Returns:
-        List of ModbusItem objects for realtime data
+        List of ModbusItem objects for realtime data including ALL control items
 
     Security:
-        Only includes control items for authorized master batteries
+        OWASP A01: Only master batteries receive write-only control items
+        Entity enabled state controls visibility, not creation
 
+    Performance:
+        Creates all entities once, avoids conditional logic during setup
     """
     items = list(MODBUS_BATTERY_REALTIME_ITEMS)  # Make a copy
 
-    # Add pilot control items (registers 41, 42) ONLY for master battery when pilot is enabled
-    if access_config.pilot_from_ha and access_config.is_master_battery:
-        items.extend(MODBUS_BATTERY_PILOT_CONTROL_ITEMS)
+    # Always add control items for master battery
+    # Entity enabled state is controlled via entity_registry_enabled_default
+    if access_config.is_master_battery:
+        # Add pilot control items (registers 41, 42)
+        items.extend(MODBUS_BATTERY_POWER_CONTROL_ITEMS)
 
-    # Add power limit items (registers 43, 44) ONLY for master battery when power limits are enabled
-    if access_config.limit_power and access_config.is_master_battery:
+        # Add power limit items (registers 43, 44)
         items.extend(MODBUS_BATTERY_POWER_LIMIT_ITEMS)
+
+        _LOGGER.debug(
+            "Master battery: Added %d pilot control items and %d power limit items",
+            len(MODBUS_BATTERY_POWER_CONTROL_ITEMS),
+            len(MODBUS_BATTERY_POWER_LIMIT_ITEMS),
+        )
 
     return items

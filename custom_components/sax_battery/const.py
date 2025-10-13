@@ -528,14 +528,14 @@ DESCRIPTION_SAX_CUMULATIVE_ENERGY_CONSUMED = SensorEntityDescription(
 ##############################################################################################################################
 
 # Battery items write-only versions: Power limits
-MODBUS_BATTERY_PILOT_CONTROL_ITEMS: list[ModbusItem] = [
-    ModbusItem(battery_device_id=64, address=41, name=SAX_NOMINAL_POWER, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_POWER,),
-    ModbusItem(battery_device_id=64, address=42, name=SAX_NOMINAL_FACTOR, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_FACTOR,),
+MODBUS_BATTERY_POWER_CONTROL_ITEMS: list[ModbusItem] = [
+    ModbusItem(battery_device_id=64, address=41, name=SAX_NOMINAL_POWER, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_POWER,),
+    ModbusItem(battery_device_id=64, address=42, name=SAX_NOMINAL_FACTOR, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_FACTOR,),
 ]
 # Battery items write-only versions: Power control
 MODBUS_BATTERY_POWER_LIMIT_ITEMS: list[ModbusItem] = [
-    ModbusItem(battery_device_id=64, address=43, name=SAX_MAX_DISCHARGE, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE,),
-    ModbusItem(battery_device_id=64, address=44, name=SAX_MAX_CHARGE, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_CHARGE,),
+    ModbusItem(battery_device_id=64, address=43, name=SAX_MAX_DISCHARGE, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE,),
+    ModbusItem(battery_device_id=64, address=44, name=SAX_MAX_CHARGE, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_CHARGE,),
 ]
 # Battery items - switch
 MODBUS_BATTERY_SWITCH_ITEMS: list[ModbusItem] = [

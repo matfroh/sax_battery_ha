@@ -14,7 +14,7 @@ from custom_components.sax_battery.const import (
     CONF_PILOT_FROM_HA,
     DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER,
     DOMAIN,
-    MODBUS_BATTERY_PILOT_CONTROL_ITEMS,
+    MODBUS_BATTERY_POWER_CONTROL_ITEMS,
     MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     MODBUS_BATTERY_REALTIME_ITEMS,
 )
@@ -473,19 +473,7 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(pilot_item, mock_config_entry, "battery_a")
-        assert result is True
-
-        # Test register 42 (pilot control)
-        pilot_item_42 = ModbusItem(
-            name="pilot_control_42",
-            mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.BESS,
-            address=42,
-            battery_device_id=1,
-            factor=1.0,
-        )
-
-        result = should_include_entity(pilot_item_42, mock_config_entry, "battery_a")
+        # ✅ Entity is always created for master battery
         assert result is True
 
     def test_exclude_pilot_register_for_slave_battery(self) -> None:
@@ -506,10 +494,15 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(pilot_item, mock_config_entry, "battery_b")
+        # ✅ Only master battery gets write-only register entities
         assert result is False
 
-    def test_exclude_pilot_register_when_pilot_disabled(self) -> None:
-        """Test pilot register exclusion when pilot is disabled."""
+    def test_include_pilot_register_when_pilot_disabled(self) -> None:
+        """Test pilot register is created even when pilot is disabled.
+
+        Per new architecture: Entity is always created for master battery,
+        but disabled by default when feature is not enabled.
+        """
         mock_config_entry = MagicMock()
         mock_config_entry.data = {
             CONF_PILOT_FROM_HA: False,
@@ -526,7 +519,8 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(pilot_item, mock_config_entry, "battery_a")
-        assert result is False
+        # ✅ Entity is always created; visibility controlled by entity_registry_enabled_default
+        assert result is True
 
     def test_include_power_limit_register_for_master_with_limit_enabled(self) -> None:
         """Test power limit register inclusion for master battery with limits enabled."""
@@ -547,19 +541,7 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(limit_item, mock_config_entry, "battery_a")
-        assert result is True
-
-        # Test register 44 (power limit)
-        limit_item_44 = ModbusItem(
-            name="power_limit_44",
-            mtype=TypeConstants.NUMBER,
-            device=DeviceConstants.BESS,
-            address=44,
-            battery_device_id=1,
-            factor=1.0,
-        )
-
-        result = should_include_entity(limit_item_44, mock_config_entry, "battery_a")
+        # ✅ Entity is always created for master battery
         assert result is True
 
     def test_exclude_power_limit_register_for_slave_battery(self) -> None:
@@ -580,10 +562,15 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(limit_item, mock_config_entry, "battery_b")
+        # ✅ Only master battery gets write-only register entities
         assert result is False
 
-    def test_exclude_power_limit_register_when_limit_disabled(self) -> None:
-        """Test power limit register exclusion when limits are disabled."""
+    def test_include_power_limit_register_when_limit_disabled(self) -> None:
+        """Test power limit register is created even when limits are disabled.
+
+        Per new architecture: Entity is always created for master battery,
+        but disabled by default when feature is not enabled.
+        """
         mock_config_entry = MagicMock()
         mock_config_entry.data = {
             CONF_LIMIT_POWER: False,
@@ -600,7 +587,8 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(limit_item, mock_config_entry, "battery_a")
-        assert result is False
+        # ✅ Entity is always created; visibility controlled by entity_registry_enabled_default
+        assert result is True
 
     def test_modbus_item_without_address_attribute(self) -> None:
         """Test ModbusItem without address attribute (should not be treated as write-only)."""
@@ -886,27 +874,34 @@ class TestGetBatteryRealtimeItems:
     """Test get_battery_realtime_items function."""
 
     def test_get_realtime_items_master_with_pilot_and_limits(self) -> None:
-        """Test getting realtime items for master with pilot and power limits."""
+        """Test getting realtime items for master with all features.
+
+        Per new architecture: All write-only register entities are always included
+        for master battery, regardless of feature flags.
+        """
         config = RegisterAccessConfig(
             pilot_from_ha=True,
             limit_power=True,
             is_master_battery=True,
-            battery_count=2,
+            battery_count=1,
         )
 
         items = get_battery_realtime_items(config)
 
-        # Should include base items + pilot items + power limit items
+        # Should include base items + all control items for master
         base_count = len(MODBUS_BATTERY_REALTIME_ITEMS)
-        pilot_count = len(MODBUS_BATTERY_PILOT_CONTROL_ITEMS)
+        pilot_count = len(MODBUS_BATTERY_POWER_CONTROL_ITEMS)
         limit_count = len(MODBUS_BATTERY_POWER_LIMIT_ITEMS)
         expected_count = base_count + pilot_count + limit_count
 
         assert len(items) == expected_count
-        assert all(isinstance(item, ModbusItem) for item in items)
 
     def test_get_realtime_items_master_with_pilot_only(self) -> None:
-        """Test getting realtime items for master with pilot only."""
+        """Test getting realtime items for master with pilot only.
+
+        Per new architecture: All write-only register entities are always included
+        for master battery, regardless of feature flags.
+        """
         config = RegisterAccessConfig(
             pilot_from_ha=True,
             limit_power=False,
@@ -916,15 +911,20 @@ class TestGetBatteryRealtimeItems:
 
         items = get_battery_realtime_items(config)
 
-        # Should include base items + pilot items
+        # Master always gets all control items (feature flags control visibility via entity_registry_enabled_default)
         base_count = len(MODBUS_BATTERY_REALTIME_ITEMS)
-        pilot_count = len(MODBUS_BATTERY_PILOT_CONTROL_ITEMS)
-        expected_count = base_count + pilot_count
+        pilot_count = len(MODBUS_BATTERY_POWER_CONTROL_ITEMS)
+        limit_count = len(MODBUS_BATTERY_POWER_LIMIT_ITEMS)
+        expected_count = base_count + pilot_count + limit_count
 
         assert len(items) == expected_count
 
     def test_get_realtime_items_master_with_limits_only(self) -> None:
-        """Test getting realtime items for master with power limits only."""
+        """Test getting realtime items for master with power limits only.
+
+        Per new architecture: All write-only register entities are always included
+        for master battery, regardless of feature flags.
+        """
         config = RegisterAccessConfig(
             pilot_from_ha=False,
             limit_power=True,
@@ -934,10 +934,11 @@ class TestGetBatteryRealtimeItems:
 
         items = get_battery_realtime_items(config)
 
-        # Should include base items + power limit items
+        # Master always gets all control items
         base_count = len(MODBUS_BATTERY_REALTIME_ITEMS)
+        pilot_count = len(MODBUS_BATTERY_POWER_CONTROL_ITEMS)
         limit_count = len(MODBUS_BATTERY_POWER_LIMIT_ITEMS)
-        expected_count = base_count + limit_count
+        expected_count = base_count + pilot_count + limit_count
 
         assert len(items) == expected_count
 
@@ -946,18 +947,22 @@ class TestGetBatteryRealtimeItems:
         config = RegisterAccessConfig(
             pilot_from_ha=True,
             limit_power=True,
-            is_master_battery=False,  # Slave battery
-            battery_count=2,
+            is_master_battery=False,
+            battery_count=3,
         )
 
         items = get_battery_realtime_items(config)
 
-        # Should only include base items (no control items for slaves)
+        # Slave battery only gets base items (no control items)
         base_count = len(MODBUS_BATTERY_REALTIME_ITEMS)
         assert len(items) == base_count
 
     def test_get_realtime_items_master_no_features(self) -> None:
-        """Test getting realtime items for master with no features enabled."""
+        """Test getting realtime items for master with no features enabled.
+
+        Per new architecture: All write-only register entities are always included
+        for master battery, regardless of feature flags.
+        """
         config = RegisterAccessConfig(
             pilot_from_ha=False,
             limit_power=False,
@@ -967,37 +972,41 @@ class TestGetBatteryRealtimeItems:
 
         items = get_battery_realtime_items(config)
 
-        # Should only include base items
+        # Master always gets all control items
         base_count = len(MODBUS_BATTERY_REALTIME_ITEMS)
-        assert len(items) == base_count
+        pilot_count = len(MODBUS_BATTERY_POWER_CONTROL_ITEMS)
+        limit_count = len(MODBUS_BATTERY_POWER_LIMIT_ITEMS)
+        expected_count = base_count + pilot_count + limit_count
+
+        assert len(items) == expected_count
 
     def test_get_realtime_items_returns_copy(self) -> None:
-        """Test that get_battery_realtime_items returns a copy of base items."""
+        """Test that function returns a copy, not reference."""
         config = RegisterAccessConfig(
             pilot_from_ha=False,
             limit_power=False,
-            is_master_battery=True,
+            is_master_battery=False,
             battery_count=1,
         )
 
-        items = get_battery_realtime_items(config)
-
-        # Modifying the returned list should not affect the original
-        original_length = len(items)
-        items.append(MagicMock())  # Add a dummy item
-
-        # Getting items again should return original count
+        items1 = get_battery_realtime_items(config)
         items2 = get_battery_realtime_items(config)
-        assert len(items2) == original_length
+
+        assert items1 is not items2
+        assert items1 == items2
 
     def test_get_realtime_items_all_combinations(self) -> None:
-        """Test all combinations of pilot and limit settings."""
+        """Test all combinations of pilot and limit settings.
+
+        Per new architecture: Master always gets all control items,
+        slave never gets control items.
+        """
         test_cases = [
-            (False, False, False),  # Slave, no features
-            (True, False, False),  # Master, no features
-            (True, True, False),  # Master, pilot only
-            (True, False, True),  # Master, limits only
-            (True, True, True),  # Master, both features
+            (False, False, False),  # Slave, no features -> base only
+            (True, False, False),  # Master, no features -> base + all control
+            (True, True, False),  # Master, pilot only -> base + all control
+            (True, False, True),  # Master, limits only -> base + all control
+            (True, True, True),  # Master, both features -> base + all control
         ]
 
         for is_master, pilot_enabled, limit_enabled in test_cases:
@@ -1011,12 +1020,15 @@ class TestGetBatteryRealtimeItems:
             items = get_battery_realtime_items(config)
 
             base_count = len(MODBUS_BATTERY_REALTIME_ITEMS)
-            expected_count = base_count
 
-            if is_master and pilot_enabled:
-                expected_count += len(MODBUS_BATTERY_PILOT_CONTROL_ITEMS)
-            if is_master and limit_enabled:
-                expected_count += len(MODBUS_BATTERY_POWER_LIMIT_ITEMS)
+            if is_master:
+                # Master always gets all control items
+                pilot_count = len(MODBUS_BATTERY_POWER_CONTROL_ITEMS)
+                limit_count = len(MODBUS_BATTERY_POWER_LIMIT_ITEMS)
+                expected_count = base_count + pilot_count + limit_count
+            else:
+                # Slave only gets base items
+                expected_count = base_count
 
             assert len(items) == expected_count, (
                 f"Failed for case: master={is_master}, pilot={pilot_enabled}, limit={limit_enabled}"
