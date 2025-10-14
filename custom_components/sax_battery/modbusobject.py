@@ -20,15 +20,6 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Network error codes that indicate broken connections
-BROKEN_CONNECTION_ERRORS = {
-    32,  # EPIPE - Broken pipe
-    104,  # ECONNRESET - Connection reset by peer
-    110,  # ETIMEDOUT - Connection timed out
-    111,  # ECONNREFUSED - Connection refused
-    113,  # EHOSTUNREACH - No route to host
-}
-
 
 class ModbusAPI:
     """Simplified Modbus communication handler using pymodbus built-in conversion.

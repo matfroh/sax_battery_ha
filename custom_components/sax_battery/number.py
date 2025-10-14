@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import timedelta
 import logging
-import time
 from typing import Any
 
 from homeassistant.components.number import NumberEntity
@@ -191,85 +190,51 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
      with SAX battery Modbus registers. These entities read from and write to physical
      battery hardware via Modbus TCP/IP protocol.
 
-     Architecture Separation:
-         - **SAXBatteryModbusNumber** (this class): Hardware-backed Modbus registers
-             * Examples: max_discharge, max_charge, nominal_power, nominal_factor
-             * Data source: Physical SAX battery hardware via Modbus TCP/IP
-             * Availability: Depends on Modbus connection and coordinator state
-             * Write operations: Direct hardware register writes with confirmation
-             * Scope: Per-battery entities (battery_a, battery_b, battery_c)
+    Architecture Separation:
+        - **SAXBatteryModbusNumber** (this class): Hardware-backed Modbus registers
+            * Examples: max_discharge, max_charge, nominal_power, nominal_factor
+            * Data source: Physical SAX battery hardware via Modbus TCP/IP
+            * Availability: Depends on Modbus connection and coordinator state
+            * Write operations: Direct hardware register writes with confirmation
+            * Scope: Per-battery entities (battery_a, battery_b, battery_c)
 
-         - **SAXBatteryConfigNumber**: Virtual configuration entities (separate class)
-             * Examples: min_soc, pilot_power, manual_power
-             * Data source: Coordinator memory/config entry (no hardware)
-             * Availability: Always available (independent of hardware state)
-             * Write operations: Config/state updates only (no hardware writes)
-             * Scope: Cluster-wide entities (single instance per installation)
+    Write-Only Register Behavior:
+        Certain Modbus registers (addresses 41-44) are write-only in SAX battery
+        hardware and cannot be read back. For these registers:
+        - Values are stored locally in `_local_value` cache
+        - `native_value` returns cached value instead of coordinator data
+        - UI updates are immediate via `async_write_ha_state()`
+        - Values persist across Home Assistant restarts via local cache
+        - Registers 41-44: nominal_power, nominal_factor, max_discharge, max_charge
 
-     Write-Only Register Behavior:
-         Certain Modbus registers (addresses 41-44) are write-only in SAX battery
-         hardware and cannot be read back. For these registers:
-         - Values are stored locally in `_local_value` cache
-         - `native_value` returns cached value instead of coordinator data
-         - UI updates are immediate via `async_write_ha_state()`
-         - Values persist across Home Assistant restarts via local cache
-         - Registers 41-44: nominal_power, nominal_factor, max_discharge, max_charge
+    Pilot Control Registers (41, 42):
+        These registers are written atomically by power_manager or coordinator:
+        - SAX_NOMINAL_POWER and SAX_NOMINAL_FACTOR are DIAGNOSTIC entities
+        - Users cannot write directly via UI (entity_category=DIAGNOSTIC)
+        - Coordinator handles atomic writes via async_write_pilot_control_value()
+        - No transaction coordination needed at entity level
 
-     Pilot Control Coordination:
-         Registers 41 (nominal_power) and 42 (nominal_factor) require atomic
-         transaction coordination to ensure both values are written together.
-         This coordination is critical for the pilot service that controls
-         battery charging based on photovoltaic production:
+    SOC Constraint Enforcement:
+        For power-related registers (SAX_NOMINAL_POWER, SAX_MAX_DISCHARGE):
+        - Coordinator's SOC manager validates requested power values
+        - When SOC < min_soc, discharge power is constrained to 0W
+        - Constraint is applied silently (no user error displayed)
+        - Local cache updated with constrained value for UI synchronization
+        - Hardware write enforced by coordinator's SOC manager
 
-         - Both values must be written in single Modbus transaction
-         - If one value is updated, transaction waits for paired value update
-         - Transaction timeout: 2.0 seconds
-         - Expired transactions are cleaned up automatically
-         - Ensures battery receives consistent power/power_factor pair
+    Security:
+        - OWASP A03: Input validation with explicit min/max range checks
+        - OWASP A05: SOC constraint enforcement prevents battery damage
+        - OWASP A01: Validates coordinator availability before operations
+        - Only writes to validated Modbus registers from WRITE_ONLY_REGISTERS
 
-     Battery Hierarchy and Multi-Battery Systems:
-         - Each battery (A, B, C) has its own coordinator and Modbus connection
-         - Each battery creates its own set of hardware number entities
-         - Master battery (typically A) coordinates power limits across all batteries
-         - Slave batteries (B, C) receive coordinated power limits from master
-         - Entity unique IDs are per-battery: `{battery_id}_{register_name}`
-         - SOC constraints are enforced per-battery via battery's coordinator
-
-     Unique ID Pattern:
-         - Format: `{register_name}` without battery_id prefix
-         - Examples: "max_discharge", "max_charge", "nominal_power"
-         - Device info separates entities by battery (battery_a, battery_b, battery_c)
-         - Ensures uniqueness across multi-battery installations
-         - Stable across restarts and reconfigurations
-
-     SOC Constraint Enforcement:
-         For power-related registers (SAX_NOMINAL_POWER, SAX_MAX_DISCHARGE):
-         - Coordinator's SOC manager validates requested power values
-         - When SOC < min_soc, discharge power is constrained to 0W
-         - Constraint is applied silently (no user error displayed)
-         - Local cache updated with constrained value for UI synchronization
-         - Hardware write enforced by coordinator's SOC manager
-
-     Security:
-         - OWASP A03: Input validation with explicit min/max range checks
-         - OWASP A05: SOC constraint enforcement prevents battery damage
-         - OWASP A01: Validates coordinator availability before operations
-         - Only writes to validated Modbus registers from WRITE_ONLY_REGISTERS
-         - Transaction validation ensures atomic pilot control updates
-
-     Performance:
-         - Single atomic Modbus transaction for pilot control register pairs
-         - Local cache eliminates repeated reads for write-only registers
-         - Batch coordinator updates minimize network overhead
-         - Early returns in validation minimize unnecessary processing
-         - Transaction cleanup prevents memory leaks from stale operations
-
+    Performance:
+        - Local cache eliminates repeated reads for write-only registers
+        - Batch coordinator updates minimize network overhead
+        - Early returns in validation minimize unnecessary processing
     """
 
     _attr_has_entity_name = True
-    # Class-level transaction tracking for pilot control coordination
-    _pilot_control_transaction: dict[str, dict[str, Any]] = {}
-    _transaction_timeout = 2.0  # seconds
 
     def __init__(
         self,
@@ -277,12 +242,12 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         battery_id: str,
         modbus_item: ModbusItem,
     ) -> None:
-        """Initialize the modbus number entity with pilot control detection."""
+        """Initialize the modbus number entity."""
         super().__init__(coordinator)
         self._modbus_item = modbus_item
         self._battery_id = battery_id
 
-        # Preserve existing _local_value functionality for write-only registers
+        # Local value cache for write-only registers
         self._local_value: float | None = None
         self._is_write_only = (
             hasattr(modbus_item, "address")
@@ -290,39 +255,24 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         )
 
         # Set entity registry enabled state based on configuration
-        # This controls whether the entity is enabled by default in the UI
         if coordinator.config_entry:
             self._attr_entity_registry_enabled_default = (
                 should_enable_entity_by_default(modbus_item, coordinator.config_entry)
             )
         else:
-            # Fallback to item's enabled_by_default attribute
             self._attr_entity_registry_enabled_default = getattr(
                 self._modbus_item, "enabled_by_default", True
             )
 
-        # Add pilot control detection (security: validate against known items)
-        self._is_pilot_control_item = any(
-            item.name == modbus_item.name for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
-        )
-
-        # Store reference to paired pilot control item for coordinated writes
-        self._pilot_control_pair: ModbusItem | None = None
-        if self._is_pilot_control_item:
-            self._pilot_control_pair = self._find_pilot_control_pair()
-
-        # Transaction key for coordinating pilot control updates
-        self._transaction_key = f"{battery_id}_pilot_control"
-
-        # Generate unique ID using simple pattern (unchanged)
+        # Generate unique ID using simple pattern
         clean_name: str = self._modbus_item.name.removeprefix("sax_")
         self._attr_unique_id = clean_name
 
-        # Set entity description from modbus item if available (unchanged)
+        # Set entity description from modbus item if available
         if self._modbus_item.entitydescription is not None:
             self.entity_description = self._modbus_item.entitydescription  # type: ignore[assignment]
 
-        # Set entity name (unchanged)
+        # Set entity name
         if (
             hasattr(self, "entity_description")
             and self.entity_description
@@ -341,46 +291,14 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         # Set up periodic writes
         self._track_time_remove: Callable[[], None] | None = None
 
-        # Set device info for the specific battery (unchanged)
+        # Set device info for the specific battery
         self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
             battery_id, self._modbus_item.device
         )
 
-        # Initialize with default values for write-only registers (unchanged)
+        # Initialize with default values for write-only registers
         if self._is_write_only:
             self._initialize_write_only_defaults()
-
-    def _find_pilot_control_pair(self) -> ModbusItem | None:
-        """Find the paired pilot control item for coordinated writes.
-
-        Returns:
-            The paired ModbusItem or None if not found
-
-        Security:
-            Only returns items from the validated MODBUS_BATTERY_POWER_CONTROL_ITEMS list
-
-        """
-        if self._modbus_item.name == SAX_NOMINAL_POWER:
-            # Find the power factor item (address 42)
-            return next(
-                (
-                    item
-                    for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
-                    if item.name == SAX_NOMINAL_FACTOR
-                ),
-                None,
-            )
-        elif self._modbus_item.name == SAX_NOMINAL_FACTOR:  # noqa: RET505
-            # Find the power item (address 41)
-            return next(
-                (
-                    item
-                    for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
-                    if item.name == SAX_NOMINAL_POWER
-                ),
-                None,
-            )
-        return None
 
     def _initialize_write_only_defaults(self) -> None:
         """Initialize default values for write-only registers based on config.
@@ -462,7 +380,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
     @property
     def native_value(self) -> float | None:
-        """Return the current value (unchanged)."""
+        """Return the current value."""
         # For write-only registers, use local state
         if self._is_write_only:
             return self._local_value
@@ -475,7 +393,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
     @property
     def available(self) -> bool:
-        """Return if entity is available (unchanged)."""
+        """Return if entity is available."""
         # Write-only registers are always available if coordinator is available
         if self._is_write_only:
             return super().available
@@ -505,12 +423,12 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
         1. **Input Validation**: Validates value against min/max bounds
         2. **SOC Constraint Enforcement**: For power-related registers (SAX_NOMINAL_POWER,
-           SAX_MAX_DISCHARGE), applies battery protection constraints via SOC manager
-        3. **Write Path Selection**:
-           - Pilot control items: Uses atomic transactional write for coordinated updates
-           - Standard items: Direct Modbus write via coordinator
+        SAX_MAX_DISCHARGE), applies battery protection constraints via SOC manager
+        3. **Direct Modbus Write**: All registers use direct Modbus write via coordinator
+        (Pilot control registers 41, 42 are typically written via coordinator's atomic
+        method, but direct write still works)
         4. **Local State Management**: Updates `_local_value` cache for write-only registers
-           (addresses 41-44) which cannot be read back from hardware
+        (addresses 41-44) which cannot be read back from hardware
         5. **Power Manager Notification**: Notifies power management system of power changes
         6. **Coordinator Refresh**: Triggers data refresh to update dependent entities
 
@@ -519,25 +437,30 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
         Raises:
             HomeAssistantError: If value is out of valid range, write operation fails,
-                              or SOC manager is unavailable when needed
+                            or SOC manager is unavailable when needed
 
         Write-Only Register Behavior:
             For registers 41-44 (pilot control and power limits), the value is stored
             locally in `_local_value` and returned by `native_value` property since
             these registers cannot be read back from SAX battery hardware.
 
-        Pilot Control Transaction Coordination:
-            For SAX_NOMINAL_POWER (addr 41) and SAX_NOMINAL_FACTOR (addr 42), writes
-            are coordinated as atomic transactions to ensure both values are updated
-            together, which is required for the pilot service that reads photovoltaic
-            production and updates battery loading parameters.
+        Pilot Control Coordination:
+            SAX_NOMINAL_POWER (register 41) and SAX_NOMINAL_FACTOR (register 42) are
+            typically written atomically via coordinator's `async_write_pilot_control_value()`
+            method by power_manager or SAXBatteryConfigNumber. Direct writes to individual
+            registers still work but may not maintain coordination.
+
+            These entities have `entity_category=DIAGNOSTIC` which makes them read-only
+            in the UI, preventing user-initiated writes. Updates come from:
+            - Power manager's automatic control loop
+            - SAX_PILOT_POWER config number entity (derives and writes both atomically)
 
         SOC Constraint Behavior:
             When SOC drops below min_soc threshold:
             - User's requested power value is replaced with constrained value (typically 0W)
             - Local cache is updated with constrained value for UI synchronization
             - No error is raised (silent constraint application)
-            - Hardware write is enforced by SOC manager's check_and_enforce_discharge_limit()
+            - Hardware write is enforced by SOC manager's check_discharge_allowed()
 
         Security:
             OWASP A03: Input validation with explicit range checks
@@ -545,12 +468,12 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             OWASP A01: Validates coordinator and SOC manager availability
 
         Performance:
-            - Uses optimized write paths for different register types (NUMBER_WO, NUMBER)
+            - Direct Modbus write for all register types
             - Single state update after successful write (no intermediate updates)
             - Early returns in constraint checking minimize coordinator overhead
-            - Atomic transaction coordination prevents redundant Modbus operations
+            - Local cache eliminates read attempts for write-only registers
 
-        Example:
+        Example Usage:
             # Standard write (readable register)
             await entity.async_set_native_value(3000.0)  # Direct Modbus write
 
@@ -558,7 +481,8 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             await entity.async_set_native_value(4000.0)  # Writes to hardware + updates local cache
 
             # Pilot control (address 41 - SAX_NOMINAL_POWER)
-            await entity.async_set_native_value(2500.0)  # Atomic transaction with power_factor
+            # Note: Typically written via coordinator's atomic method, not user-initiated
+            await entity.async_set_native_value(2500.0)  # Direct write (works but not coordinated)
 
             # SOC constrained write
             # When SOC < min_soc, user's 3000W request becomes 0W constraint
@@ -567,9 +491,8 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         Side Effects:
             - Updates `_local_value` for write-only registers
             - Triggers `async_write_ha_state()` for UI update
-            - Notifies power manager of power changes
+            - Notifies power manager of power changes (if SAX_NOMINAL_POWER)
             - Triggers coordinator refresh
-            - May initiate pilot control transaction
             - Persists SOC constraints to hardware via coordinator
         """
         _LOGGER.debug("%s: Setting value to %s", self.entity_id, value)
@@ -614,14 +537,12 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
                     value = constraint_result.constrained_value
                     self._local_value = value  # Update local cache for UI sync
 
-            # Handle pilot control items with transaction coordination
-            if self._is_pilot_control_item:
-                success = await self._write_pilot_control_value_transactional(value)
-            else:
-                # Direct modbus write
-                success = await self.coordinator.async_write_number_value(
-                    self._modbus_item, value
-                )
+            # Direct modbus write for all registers
+            # Note: Pilot control registers (41, 42) should be written via
+            # coordinator's atomic method, but direct write still works
+            success = await self.coordinator.async_write_number_value(
+                self._modbus_item, value
+            )
 
             if not success:
                 msg = f"Failed to write value to {self.name}"
@@ -694,14 +615,13 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return extra state attributes with transaction info."""
+        """Return extra state attributes."""
         attributes = {
             "battery_id": self._battery_id,
             "modbus_address": getattr(self._modbus_item, "address", None),
             "last_update": getattr(self.coordinator, "last_update_success_time", None),
             "entity_type": "modbus",
             "is_write_only": self._is_write_only,
-            "is_pilot_control": self._is_pilot_control_item,
         }
 
         if self._is_write_only:
@@ -711,20 +631,6 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
                     "note": "Write-only register - value maintained locally",
                 }
             )
-
-            # Add pilot control specific info
-            if self._is_pilot_control_item:
-                transaction_pending = (
-                    self._transaction_key in self._pilot_control_transaction
-                )
-                attributes.update(
-                    {
-                        "pilot_control_note": (
-                            "Pilot control register - atomic transaction with paired register"
-                        ),
-                        "transaction_pending": transaction_pending,
-                    }
-                )
         else:
             raw_value = (
                 self.coordinator.data.get(self._modbus_item.name)
@@ -735,275 +641,23 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
         return attributes
 
-    async def _write_pilot_control_value_transactional(self, value: float) -> bool:
-        """Write pilot control value using atomic transaction coordination.
-
-        This method ensures that power and power factor are always updated together
-        as a single atomic operation, which is crucial for the pilot service that
-        reads photovoltaic production and updates battery loading parameters.
-
-        Args:
-            value: Value to write to this register
-
-        Returns:
-            bool: True if successful
-
-        Security:
-            Validates input values and uses transaction-safe operations
-
-        Performance:
-            Single atomic Modbus transaction for both registers
-
-        """
-        if not self._pilot_control_pair:
-            _LOGGER.error("No pilot control pair found for %s", self._modbus_item.name)
-            return False
-
-        current_time = time.time()
-
-        # Clean up expired transactions (performance optimization)
-        self._cleanup_expired_transactions(current_time)
-
-        try:
-            # Get or create transaction for this battery's pilot control
-            transaction = self._pilot_control_transaction.setdefault(
-                self._transaction_key,
-                {
-                    "power": None,
-                    "power_factor": None,
-                    "timestamp": current_time,
-                    "pending_writes": set(),
-                },
-            )
-
-            # Update transaction timestamp
-            transaction["timestamp"] = current_time
-
-            # Store the value in the transaction based on register type
-            if self._modbus_item.name == SAX_NOMINAL_POWER:
-                transaction["power"] = value
-                transaction["pending_writes"].add("power")
-                _LOGGER.debug(
-                    "Transaction: Power value %s W staged for atomic write", value
-                )
-
-            elif self._modbus_item.name == SAX_NOMINAL_FACTOR:
-                # Validate power factor range before staging
-                if not self._validate_power_factor_range(value):
-                    _LOGGER.error(
-                        "Transaction aborted: Invalid power factor value %s", value
-                    )
-                    self._pilot_control_transaction.pop(self._transaction_key, None)
-                    return False
-
-                transaction["power_factor"] = value
-                transaction["pending_writes"].add("power_factor")
-                _LOGGER.debug(
-                    "Transaction: Power factor value %s staged for atomic write", value
-                )
-
-            # Check if we have both values or can get the missing one
-            power_value = transaction["power"]
-            power_factor_value = transaction["power_factor"]
-
-            # Get missing values from current state
-            if power_value is None:
-                power_value = await self._get_current_pilot_control_value(
-                    SAX_NOMINAL_POWER
-                )
-                if power_value is None:
-                    _LOGGER.debug(
-                        "Transaction deferred: Missing power value for atomic write"
-                    )
-                    return True  # Transaction staged, waiting for paired value
-                transaction["power"] = power_value
-
-            if power_factor_value is None:
-                power_factor_value = await self._get_current_pilot_control_value(
-                    SAX_NOMINAL_FACTOR
-                )
-                if power_factor_value is None:
-                    _LOGGER.debug(
-                        "Transaction deferred: Missing power factor value for atomic write"
-                    )
-                    return True  # Transaction staged, waiting for paired value
-                transaction["power_factor"] = power_factor_value
-
-            # Security: Validate all values before atomic write
-            if not isinstance(power_value, (int, float)) or power_value < 0:
-                _LOGGER.error(
-                    "Transaction aborted: Invalid power value %s", power_value
-                )
-                self._pilot_control_transaction.pop(self._transaction_key, None)
-                return False
-
-            if not self._validate_power_factor_range(power_factor_value):
-                _LOGGER.error(
-                    "Transaction aborted: Invalid power factor value %s",
-                    power_factor_value,
-                )
-                self._pilot_control_transaction.pop(self._transaction_key, None)
-                return False
-
-            # Determine scaling for power factor conversion
-            pf_display_factor = 10000.0 if power_factor_value > 1000 else 1000.0
-            pf_normalized = power_factor_value / pf_display_factor
-
-            _LOGGER.debug(
-                "Transaction: Executing atomic pilot control write - power=%s W, power_factor=%s (scaled=%s)",
-                power_value,
-                power_factor_value,
-                pf_normalized,
-            )
-
-            # Execute atomic write using coordinator's specialized method
-            success = await self.coordinator.async_write_pilot_control_value(
-                power_item=(
-                    self._modbus_item
-                    if self._modbus_item.name == SAX_NOMINAL_POWER
-                    else self._pilot_control_pair
-                ),
-                power_factor_item=(
-                    self._modbus_item
-                    if self._modbus_item.name == SAX_NOMINAL_FACTOR
-                    else self._pilot_control_pair
-                ),
-                power=power_value,
-                power_factor=pf_normalized,
-            )
-
-            if success:
-                # Update local state for both values (performance: immediate UI feedback)
-                if self._is_write_only:
-                    self._local_value = value
-
-                _LOGGER.debug(
-                    "Transaction completed successfully: power=%s W, power_factor=%s",
-                    power_value,
-                    power_factor_value,
-                )
-            else:
-                _LOGGER.error(
-                    "Transaction failed: Could not write pilot control values atomically"
-                )
-
-            # Clean up completed transaction
-            self._pilot_control_transaction.pop(self._transaction_key, None)
-            return success  # noqa: TRY300
-
-        except (ValueError, TypeError) as err:
-            _LOGGER.error("Transaction error - value conversion failed: %s", err)
-            self._pilot_control_transaction.pop(self._transaction_key, None)
-            return False
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.error("Transaction error - unexpected failure: %s", err)
-            self._pilot_control_transaction.pop(self._transaction_key, None)
-            return False
-
-    def _validate_power_factor_range(self, value: float) -> bool:
-        """Validate power factor value is within acceptable range.
-
-        Args:
-            value: Power factor value to validate
-
-        Returns:
-            bool: True if value is valid
-
-        Security:
-            Prevents invalid power factor values from being written
-
-        """
-        try:
-            # Determine scaling based on the input value
-            if value > 1000:
-                max_pf = 10000  # 10000 scaling (9500 = 0.95)
-                display_pf = value / 10000.0
-            else:
-                max_pf = 1000  # 1000 scaling (950 = 0.95)
-                display_pf = value / 1000.0
-
-            if not (0 <= value <= max_pf):
-                _LOGGER.error(
-                    "Power factor %s outside valid range [0, %s]", value, max_pf
-                )
-                return False
-
-            if not (0.0 <= display_pf <= 1.0):
-                _LOGGER.error(
-                    "Power factor %s converts to %s, outside physical range [0.0, 1.0]",
-                    value,
-                    display_pf,
-                )
-                return False
-
-            return True  # noqa: TRY300
-
-        except (ValueError, TypeError) as err:
-            _LOGGER.error("Power factor validation error: %s", err)
-            return False
-
-    async def _get_current_pilot_control_value(
-        self, register_name: str
-    ) -> float | None:
-        """Get current value for pilot control register from available sources.
-
-        Args:
-            register_name: Name of the register (SAX_NOMINAL_POWER or SAX_NOMINAL_FACTOR)
-
-        Returns:
-            Current value or None if not available
-
-        Security:
-            Only uses trusted data sources (coordinator data, local state)
-
-        """
-        # Try coordinator data first (performance: cached values)
-        if self.coordinator.data:
-            value = self.coordinator.data.get(register_name)
-            if value is not None:
-                return float(value)
-
-        # Try local state if this is the register we're handling
-        if self._modbus_item.name == register_name and self._local_value is not None:
-            return self._local_value
-
-        # For write-only registers, we cannot read current values
-        _LOGGER.debug(
-            "Current value for %s not available - WO register cannot be read",
-            register_name,
-        )
-        return None
-
-    @classmethod
-    def _cleanup_expired_transactions(cls, current_time: float) -> None:
-        """Clean up expired transactions to prevent memory leaks.
-
-        Args:
-            current_time: Current timestamp for comparison
-
-        Performance:
-            Prevents unbounded memory growth from stale transactions
-
-        """
-        expired_keys = [
-            key
-            for key, transaction in cls._pilot_control_transaction.items()
-            if current_time - transaction["timestamp"] > cls._transaction_timeout
-        ]
-
-        for key in expired_keys:
-            _LOGGER.debug("Cleaning up expired pilot control transaction: %s", key)
-            cls._pilot_control_transaction.pop(key, None)
-
     async def async_added_to_hass(self) -> None:
-        """Call entity after it is added to hass (unchanged)."""
+        """Call entity after it is added to hass."""
         await super().async_added_to_hass()
 
         # For write-only registers, restore value from config if available
         if self._is_write_only and self._local_value is None:
-            self._initialize_write_only_defaults()
+            if self.coordinator.config_entry:
+                config_data = self.coordinator.config_entry.data
+                if self._modbus_item.name in config_data:
+                    self._local_value = float(config_data[self._modbus_item.name])
+                    _LOGGER.debug(
+                        "Restored %s from config: %s",
+                        self._modbus_item.name,
+                        self._local_value,
+                    )
 
-        # Set up periodic writes
+        # Set up periodic writes for max_charge and max_discharge
         if self._modbus_item.name in [SAX_MAX_CHARGE, SAX_MAX_DISCHARGE]:
             self._track_time_remove = async_track_time_interval(
                 self.hass,
@@ -1020,8 +674,14 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
     SAXBatteryModbusNumber.
 
     Architecture:
-        - SAXItem: Virtual entities (min_soc, pilot_power, etc.)
-        - ModbusItem: Hardware entities (handled by SAXBatteryModbusNumber)
+        - SAXBatteryConfigNumber: Virtual configuration entities (separate class)
+        * Examples: min_soc, pilot_power, manual_power
+        * Data source: Coordinator memory/config entry (no hardware)
+        * Availability: Always available (independent of hardware state)
+        * Write operations: Config/state updates only (no hardware writes)
+        * Scope: Cluster-wide entities (single instance per installation)
+
+
 
     Availability:
         Config numbers are always available since they don't depend on hardware state.

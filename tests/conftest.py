@@ -232,7 +232,6 @@ def mock_soc_manager():
     manager.apply_constraints = AsyncMock(
         return_value=SOCConstraintResult(
             allowed=True,
-            original_value=1000.0,
             constrained_value=1000.0,
             reason=None,
         )
@@ -241,7 +240,6 @@ def mock_soc_manager():
     manager.check_discharge_allowed = AsyncMock(
         return_value=SOCConstraintResult(
             allowed=True,
-            original_value=1000.0,
             constrained_value=1000.0,
             reason=None,
         )

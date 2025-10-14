@@ -12,10 +12,7 @@ import pytest
 
 from custom_components.sax_battery.const import DEFAULT_PORT
 from custom_components.sax_battery.items import ModbusItem
-from custom_components.sax_battery.modbusobject import (
-    BROKEN_CONNECTION_ERRORS,
-    ModbusAPI,
-)
+from custom_components.sax_battery.modbusobject import ModbusAPI
 
 
 @pytest.fixture
@@ -594,28 +591,6 @@ class TestModbusAPIProperties:
 
         modbus_api_instance._modbus_client.connected = False
         assert modbus_api_instance.connected is False
-
-
-class TestModbusAPIBrokenConnectionErrors:
-    """Test handling of broken connection errors."""
-
-    @pytest.mark.parametrize("errno", BROKEN_CONNECTION_ERRORS)
-    async def test_broken_connection_error_codes(
-        self, modbus_api_instance, errno, caplog
-    ):
-        """Test all broken connection error codes are handled correctly."""
-        modbus_api_instance._modbus_client.connected = False
-        os_error = OSError(errno, f"Error code {errno}")
-        modbus_api_instance._modbus_client.connect.side_effect = os_error
-
-        with caplog.at_level(logging.ERROR):
-            result = await modbus_api_instance.connect()
-
-            assert result is False
-            assert modbus_api_instance.consecutive_failures == 1
-            assert any(
-                "Connection error" in record.message for record in caplog.records
-            )
 
 
 class TestModbusAPIEdgeCases:

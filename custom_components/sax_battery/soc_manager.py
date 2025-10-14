@@ -29,10 +29,8 @@ class SOCConstraintResult:
     """Result of SOC constraint check."""
 
     allowed: bool
-    original_value: float
     constrained_value: float
     reason: str | None = None
-    enforced_hardware_limit: bool = False  # New: tracks if we wrote to hardware
 
 
 class SOCManager:
@@ -57,7 +55,6 @@ class SOCManager:
         self.coordinator = coordinator
         self._min_soc = max(0.0, min(100.0, min_soc))  # Clamp to valid range
         self._enabled = enabled
-        self._soc_cache: float | None = None
         self._last_enforced_soc: float | None = None  # Track last enforcement
 
     @property
@@ -254,7 +251,6 @@ class SOCManager:
         if not self._enabled:
             return SOCConstraintResult(
                 allowed=True,
-                original_value=power_value,
                 constrained_value=power_value,
             )
 
@@ -271,7 +267,7 @@ class SOCManager:
             # Attempt hardware enforcement (best effort - may not be available in all contexts)
             enforced = False
             try:
-                enforced = await self.check_and_enforce_discharge_limit()
+                enforced = await self.check_and_enforce_discharge_limit()  # noqa: F841
             except (TypeError, AttributeError, RuntimeError) as err:
                 # Hardware enforcement not available (e.g., during tests or before entities are created)
                 _LOGGER.debug(
@@ -281,52 +277,12 @@ class SOCManager:
 
             return SOCConstraintResult(
                 allowed=False,
-                original_value=power_value,
                 constrained_value=0.0,
                 reason=f"SOC {current_soc:.1f}% below minimum {self._min_soc:.1f}%",
-                enforced_hardware_limit=enforced,
             )
 
         return SOCConstraintResult(
             allowed=True,
-            original_value=power_value,
-            constrained_value=power_value,
-        )
-
-    async def check_charge_allowed(self, power_value: float) -> SOCConstraintResult:
-        """Check if charge is allowed at current SOC.
-
-        Args:
-            power_value: Proposed power value (negative = charge)
-
-        Returns:
-            SOCConstraintResult with allowed status and reason
-
-        Security:
-            OWASP A05: Prevents battery overcharge damage
-        """
-        if not self._enabled:
-            return SOCConstraintResult(
-                allowed=True,
-                original_value=power_value,
-                constrained_value=power_value,
-            )
-
-        current_soc = await self.get_current_soc()
-
-        # Check charge constraint (negative power = charge)
-        if power_value < 0 and current_soc >= 100.0:
-            _LOGGER.info("Charge blocked: SOC at maximum 100%%")
-            return SOCConstraintResult(
-                allowed=False,
-                original_value=power_value,
-                constrained_value=0.0,
-                reason="SOC at maximum 100%",
-            )
-
-        return SOCConstraintResult(
-            allowed=True,
-            original_value=power_value,
             constrained_value=power_value,
         )
 
@@ -350,7 +306,6 @@ class SOCManager:
         if not self._enabled:
             return SOCConstraintResult(
                 allowed=True,
-                original_value=power_value,
                 constrained_value=power_value,
             )
 
@@ -386,8 +341,6 @@ class SOCManager:
 
         return SOCConstraintResult(
             allowed=(constrained_value == power_value),
-            original_value=power_value,
             constrained_value=constrained_value,
             reason=reason,
-            enforced_hardware_limit=enforced,
         )

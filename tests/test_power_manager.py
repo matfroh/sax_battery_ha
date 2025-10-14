@@ -278,7 +278,6 @@ class TestSolarChargingMode:
         mock_coordinator_master.soc_manager.apply_constraints = AsyncMock(  # type:ignore[method-assign]
             return_value=SOCConstraintResult(
                 allowed=True,
-                original_value=1000,
                 constrained_value=1000,
                 reason=None,
             )
@@ -411,7 +410,6 @@ class TestSolarChargingMode:
         mock_coordinator_master.soc_manager.apply_constraints = AsyncMock(  # type:ignore[method-assign]
             return_value=SOCConstraintResult(
                 allowed=True,
-                original_value=5000,
                 constrained_value=2000,  # Constrained
                 reason="SOC too high",
             )
@@ -593,7 +591,6 @@ class TestModeTransitions:
         mock_coordinator_master.soc_manager.apply_constraints = AsyncMock(  # type:ignore[method-assign]
             return_value=SOCConstraintResult(
                 allowed=True,
-                original_value=1000,
                 constrained_value=1000,
             )
         )

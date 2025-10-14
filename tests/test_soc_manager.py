@@ -82,26 +82,6 @@ class TestSOCConstraintChecks:
         assert result.constrained_value == 0.0
         assert "below minimum" in result.reason
 
-    async def test_charge_allowed_below_max_soc(self, soc_manager):
-        """Test charge allowed when SOC below maximum."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 80.0}
-
-        result = await soc_manager.check_charge_allowed(-1000.0)
-
-        assert result.allowed is True
-        assert result.constrained_value == -1000.0
-
-    async def test_charge_blocked_at_max_soc(self, soc_manager):
-        """Test charge blocked when SOC at maximum."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 100.0}
-
-        result = await soc_manager.check_charge_allowed(-1000.0)
-
-        assert result.allowed is False
-        assert result.constrained_value == 0.0
-        assert "maximum" in result.reason
-
-
 class TestSOCManagerDisabled:
     """Test SOC manager when disabled."""
 
