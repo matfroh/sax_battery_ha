@@ -181,6 +181,7 @@ DESCRIPTION_SAX_NOMINAL_POWER = NumberEntityDescription(
     native_max_value=LIMIT_MAX_CHARGE_PER_BATTERY,
     native_step=100,
     device_class=NumberDeviceClass.POWER,
+    entity_category=EntityCategory.DIAGNOSTIC,
 )
 
 DESCRIPTION_SAX_NOMINAL_FACTOR = NumberEntityDescription(
@@ -190,7 +191,7 @@ DESCRIPTION_SAX_NOMINAL_FACTOR = NumberEntityDescription(
     native_unit_of_measurement="",
     native_min_value=0,
     native_max_value=10000,
-
+    entity_category=EntityCategory.DIAGNOSTIC,
 )
 
 # Number Entity descriptions - Battery switches
@@ -236,11 +237,12 @@ DESCRIPTION_SAX_PILOT_POWER= NumberEntityDescription(
     key=SAX_PILOT_POWER,
     name="Sax Pilot Power",
     mode=NumberMode.BOX,
+    device_class=NumberDeviceClass.POWER,
     native_unit_of_measurement=UnitOfPower.WATT,
+    native_step=1,
     native_min_value=LIMIT_MAX_DISCHARGE_PER_BATTERY * -1,
     native_max_value=LIMIT_MAX_CHARGE_PER_BATTERY,
-    native_step=1,
-    device_class=NumberDeviceClass.POWER,
+    entity_category=EntityCategory.CONFIG,
 )
 
 DESCRIPTION_SAX_POWER = SensorEntityDescription(

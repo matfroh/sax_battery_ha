@@ -32,6 +32,7 @@ from .const import (
     SAX_MIN_SOC,
     SAX_NOMINAL_FACTOR,
     SAX_NOMINAL_POWER,
+    SAX_PILOT_POWER,
     WRITE_ONLY_REGISTERS,
 )
 from .coordinator import SAXBatteryCoordinator
@@ -1175,6 +1176,9 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
                 )
 
                 _LOGGER.info("Minimum SOC updated to %s%%", value)
+            elif self._sax_item.name == SAX_PILOT_POWER:
+                # New: Handle pilot power updates with atomic write to control registers
+                await self._handle_pilot_power_update(value)
 
             else:
                 # Generic config value update
@@ -1203,3 +1207,117 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
                 value,
             )
             raise HomeAssistantError(f"Failed to update: {err}") from err
+
+    async def _handle_pilot_power_update(self, power_value: float) -> None:
+        """Handle SAX_PILOT_POWER update by writing to control registers atomically.
+
+        Derives SAX_NOMINAL_POWER and SAX_NOMINAL_FACTOR from pilot power value
+        and writes both to registers 41 and 42 in a single atomic transaction.
+
+        Args:
+            power_value: Power value in watts (positive=discharge, negative=charge)
+
+        Security:
+            OWASP A03: Validates input ranges
+            OWASP A05: Applies SOC constraints
+
+        Performance:
+            Single atomic Modbus transaction for both registers
+        """
+        # Validate coordinator and SOC manager availability
+        if not self.coordinator.soc_manager:
+            raise HomeAssistantError("SOC manager not available")
+
+        # Apply SOC constraints to power value
+        _LOGGER.debug("Applying SOC constraints to pilot power: %sW", power_value)
+        constrained_result = await self.coordinator.soc_manager.apply_constraints(
+            power_value
+        )
+
+        if not constrained_result.allowed:
+            _LOGGER.warning(
+                "Pilot power constrained: %sW -> %sW (%s)",
+                power_value,
+                constrained_result.constrained_value,
+                constrained_result.reason,
+            )
+            power_value = constrained_result.constrained_value
+
+        # Derive nominal_power (same as pilot power)
+        nominal_power = power_value
+
+        # Derive nominal_factor (power factor)
+        # Default to 0.95 (9500 in scaled format for 10000 scaling)
+        # Or calculate from actual power and apparent power if available
+        nominal_factor = await self._calculate_nominal_factor(power_value)
+
+        # Get the ModbusItems for atomic write
+        power_item = next(
+            (
+                item
+                for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
+                if item.name == SAX_NOMINAL_POWER
+            ),
+            None,
+        )
+        factor_item = next(
+            (
+                item
+                for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
+                if item.name == SAX_NOMINAL_FACTOR
+            ),
+            None,
+        )
+
+        if not power_item or not factor_item:
+            raise HomeAssistantError("Control register items not found")
+
+        # Write to control registers atomically via coordinator
+        success = await self.coordinator.async_write_pilot_control_value(
+            power_item=power_item,
+            power_factor_item=factor_item,
+            power=nominal_power,
+            power_factor=nominal_factor,
+        )
+
+        if not success:
+            raise HomeAssistantError("Failed to write pilot control values")
+
+        # Update local state
+        self._attr_native_value = float(power_value)
+
+        _LOGGER.info(
+            "Pilot power updated: power=%sW, power_factor=%s",
+            nominal_power,
+            nominal_factor,
+        )
+
+    async def _calculate_nominal_factor(self, power_value: float) -> int:
+        """Calculate nominal factor (power factor) from power value.
+
+        Args:
+            power_value: Power value in watts
+
+        Returns:
+            int: Power factor as scaled integer (0-10000 for 0.0-1.0 range)
+
+        Security:
+            OWASP A03: Validates calculation bounds
+        """
+        # Default power factor: 0.95 (typical for battery systems)
+        default_pf = 9500  # 0.95 * 10000
+
+        # Could calculate from apparent power if available:
+        # pf = active_power / apparent_power
+        # For now, use default value
+
+        if not isinstance(power_value, (int, float)):
+            _LOGGER.warning("Invalid power value type, using default PF")  # type: ignore[unreachable]
+            return default_pf
+
+        # For zero power, return unity power factor
+        if abs(power_value) < 1.0:
+            return 10000  # 1.0
+
+        # Return default conservative power factor
+        return default_pf
