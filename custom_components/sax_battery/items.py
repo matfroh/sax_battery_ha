@@ -268,6 +268,7 @@ class SAXItem(BaseItem):
     """System-level calculated/aggregated item without physical communication."""
 
     default_value: Any = None
+    enabled_by_default: bool = True
     coordinators: dict[str, Any] = field(default_factory=dict, init=False)
 
     def set_coordinators(self, coordinators: dict[str, Any]) -> None:

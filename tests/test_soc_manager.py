@@ -82,6 +82,7 @@ class TestSOCConstraintChecks:
         assert result.constrained_value == 0.0
         assert "below minimum" in result.reason
 
+
 class TestSOCManagerDisabled:
     """Test SOC manager when disabled."""
 

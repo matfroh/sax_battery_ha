@@ -21,6 +21,7 @@ from .const import (
     CONF_BATTERY_IS_MASTER,
     CONF_BATTERY_PHASE,
     CONF_MIN_SOC,
+    CONF_PILOT_FROM_HA,
     DOMAIN,
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
@@ -716,6 +717,31 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         # Set entity description
         if self._sax_item.entitydescription is not None:
             self.entity_description = self._sax_item.entitydescription  # type: ignore[assignment]
+
+        # Set entity registry enabled state from SAXItem or configuration
+        # Special handling for SAX_PILOT_POWER: enabled only if CONF_PILOT_FROM_HA is True
+        if sax_item.name == SAX_PILOT_POWER:
+            if coordinator.config_entry:
+                pilot_from_ha = coordinator.config_entry.data.get(
+                    CONF_PILOT_FROM_HA, False
+                )
+                self._attr_entity_registry_enabled_default = pilot_from_ha
+                _LOGGER.debug(
+                    "SAX_PILOT_POWER entity enabled_by_default=%s (CONF_PILOT_FROM_HA=%s)",
+                    pilot_from_ha,
+                    pilot_from_ha,
+                )
+            else:
+                # Fallback: disable by default if no config entry
+                self._attr_entity_registry_enabled_default = False
+                _LOGGER.warning(
+                    "No config entry available, SAX_PILOT_POWER disabled by default"
+                )
+        else:
+            # All other config numbers use SAXItem's enabled_by_default
+            self._attr_entity_registry_enabled_default = getattr(
+                self._sax_item, "enabled_by_default", True
+            )
 
         # Set entity name
         if (

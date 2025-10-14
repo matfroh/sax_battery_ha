@@ -245,7 +245,7 @@ DESCRIPTION_SAX_PILOT_POWER= NumberEntityDescription(
     native_step=1,
     native_min_value=LIMIT_MAX_DISCHARGE_PER_BATTERY * -1,
     native_max_value=LIMIT_MAX_CHARGE_PER_BATTERY,
-    entity_category=EntityCategory.CONFIG,
+    # entity_category=EntityCategory.CONFIG,
 )
 
 DESCRIPTION_SAX_POWER = SensorEntityDescription(
@@ -601,6 +601,6 @@ PILOT_ITEMS: list[SAXItem] = [
     SAXItem(name=SOLAR_CHARGING_SWITCH,  mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SOLAR_CHARGING_SWITCH),
     SAXItem(name=MANUAL_CONTROL_SWITCH,  mtype=TypeConstants.SWITCH, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_MANUAL_CONTROL_SWITCH),
     SAXItem(name=SAX_MIN_SOC, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MIN_SOC, translation_key="sax_min_soc"),
-    SAXItem(name=SAX_PILOT_POWER, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_PILOT_POWER, translation_key="sax_pilot_power"),
+    SAXItem(name=SAX_PILOT_POWER, enabled_by_default=False, mtype=TypeConstants.NUMBER, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_PILOT_POWER, translation_key="sax_pilot_power"),
 ]
 # fmt: on
