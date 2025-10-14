@@ -186,11 +186,12 @@ DESCRIPTION_SAX_NOMINAL_POWER = NumberEntityDescription(
 
 DESCRIPTION_SAX_NOMINAL_FACTOR = NumberEntityDescription(
     key=SAX_NOMINAL_FACTOR,
-    name="Power cos(Phi)",
+    name="Power Factor (cos φ)", # Dimensionless (0.0-1.0 range displayed)
     mode=NumberMode.BOX,
     native_unit_of_measurement="",
     native_min_value=0,
-    native_max_value=10000,
+    native_max_value=1.0, # User sees 0.0-1.0 range
+    native_step=0.01,  # 0.01 step for user interface
     entity_category=EntityCategory.DIAGNOSTIC,
 )
 
@@ -206,12 +207,14 @@ DESCRIPTION_SOLAR_CHARGING_SWITCH = SwitchEntityDescription(
     key=SOLAR_CHARGING_SWITCH,
     name="Solar Charging Switch",
     icon="mdi:solar-power",
+    entity_category=EntityCategory.CONFIG,
 )
 
 DESCRIPTION_MANUAL_CONTROL_SWITCH = SwitchEntityDescription(
     key=MANUAL_CONTROL_SWITCH,
     name="Manual Control Switch",
     icon="mdi:hand",
+    entity_category=EntityCategory.CONFIG,
 )
 
 DESCRIPTION_SAX_SOC = SensorEntityDescription(
@@ -532,7 +535,11 @@ DESCRIPTION_SAX_CUMULATIVE_ENERGY_CONSUMED = SensorEntityDescription(
 # Battery items write-only versions: Power limits
 MODBUS_BATTERY_POWER_CONTROL_ITEMS: list[ModbusItem] = [
     ModbusItem(battery_device_id=64, address=41, name=SAX_NOMINAL_POWER, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_POWER,),
-    ModbusItem(battery_device_id=64, address=42, name=SAX_NOMINAL_FACTOR, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_FACTOR,),
+    # Power factor (cos φ) with scaling factor of 1000
+    # User sets value 0.0-1.0 (e.g., 0.95), hardware expects 0-1000 (e.g., 950)
+    # Register value = user_value * 1000
+    # Examples: 0.95 → 950, 1.0 → 1000, 0.85 → 850
+    ModbusItem(battery_device_id=64, address=42, name=SAX_NOMINAL_FACTOR, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1000.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_FACTOR,),
 ]
 # Battery items write-only versions: Power control
 MODBUS_BATTERY_POWER_LIMIT_ITEMS: list[ModbusItem] = [
