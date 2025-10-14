@@ -12,7 +12,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
-from homeassistant.helpers import selector
+from homeassistant.helpers import entity_registry as er, selector
 
 from .const import (
     BATTERY_IDS,
@@ -39,7 +39,9 @@ from .const import (
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
     DOMAIN,
+    SAX_PILOT_POWER,
 )
+from .utils import get_unique_id_for_item
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -466,6 +468,7 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
+        current_pilot_from_ha: bool = False
         if user_input is not None:
             # Get the current configuration values
             current_pilot_from_ha = self.config_entry.data.get(
@@ -505,6 +508,10 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
         # Get current configuration
         pilot_enabled = self.config_entry.data.get(CONF_PILOT_FROM_HA, False)
         limit_power_enabled = self.config_entry.data.get(CONF_LIMIT_POWER, False)
+
+        # If pilot mode was disabled, disable the SAX_PILOT_POWER entity
+        if current_pilot_from_ha and not pilot_enabled:
+            await self._async_disable_pilot_power_entity()
 
         schema: dict[vol.Marker, Any] = {}
 
@@ -583,4 +590,46 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(schema),
             description_placeholders=description_placeholders,
+        )
+
+    async def _async_disable_pilot_power_entity(self) -> None:
+        """Disable SAX_PILOT_POWER entity when pilot mode is disabled.
+
+        Security:
+            OWASP A01: Ensures entity access control follows configuration
+
+        Performance:
+            Single entity registry lookup and update
+        """
+        ent_reg = er.async_get(self.hass)
+
+        # Get unique_id for SAX_PILOT_POWER entity
+        unique_id = get_unique_id_for_item(
+            self.hass,
+            self.config_entry.entry_id,
+            SAX_PILOT_POWER,
+        )
+
+        if not unique_id:
+            _LOGGER.warning("Could not generate unique_id for SAX_PILOT_POWER entity")
+            return
+
+        # Find entity in registry
+        entity_id = ent_reg.async_get_entity_id("number", DOMAIN, unique_id)
+
+        if not entity_id:
+            _LOGGER.debug(
+                "SAX_PILOT_POWER entity not found in registry (unique_id=%s)",
+                unique_id,
+            )
+            return
+
+        # Disable entity
+        ent_reg.async_update_entity(
+            entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
+        )
+
+        _LOGGER.info(
+            "Disabled SAX_PILOT_POWER entity (entity_id=%s) because CONF_PILOT_FROM_HA was set to False",
+            entity_id,
         )
