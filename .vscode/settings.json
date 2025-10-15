@@ -47,6 +47,7 @@
     "ECONNRESET",
     "entitydescription",
     "EPIPE",
+    "hostnames",
     "mformat",
     "mtype",
     "Mult",

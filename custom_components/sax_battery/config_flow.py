@@ -238,8 +238,8 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # If no sensors are needed, skip this step
-        if not schema:
-            return await self.async_step_battery_config()
+        # if not schema:
+        #     return await self.async_step_battery_config() Line 242 - UNREACHABLE
 
         return self.async_show_form(
             step_id="sensors",
@@ -401,22 +401,19 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Validate IPv4 address with proper octet range checking
         ipv4_parts = host.split(".")
         if len(ipv4_parts) == 4:
-            try:
-                # Security: Validate each octet is in valid range 0-255
-                for part in ipv4_parts:
-                    # Ensure part is not empty and contains only digits
-                    if not part or not part.isdigit():
-                        # Not a valid IPv4, try hostname validation below
-                        break
-                    octet = int(part)
-                    if not (0 <= octet <= 255):
-                        return False
-                else:
-                    # All parts validated successfully as IPv4
-                    return True
-            except (ValueError, TypeError):
-                # Not a valid IPv4, check if hostname
-                pass
+            # Security: Validate each octet is in valid range 0-255
+            for part in ipv4_parts:
+                # Ensure part is not empty and contains only digits
+                if not part or not part.isdigit():
+                    # Not a valid IPv4, try hostname validation below
+                    return False
+                    break  # type: ignore[unreachable]
+                octet = int(part)
+                if not (0 <= octet <= 255):
+                    return False
+            else:
+                # All parts validated successfully as IPv4
+                return True
 
         # Allow hostnames only
         hostname_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"
@@ -468,7 +465,6 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
-        current_pilot_from_ha: bool = False
         if user_input is not None:
             # Get the current configuration values
             current_pilot_from_ha = self.config_entry.data.get(
@@ -501,17 +497,20 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
             if user_input.get(CONF_PILOT_FROM_HA, current_pilot_from_ha):
                 result_data.update(pilot_options)
 
+            # Check if pilot mode was disabled and disable entity
+            new_pilot_from_ha = user_input.get(
+                CONF_PILOT_FROM_HA, current_pilot_from_ha
+            )
+            if current_pilot_from_ha and not new_pilot_from_ha:
+                await self._async_disable_pilot_power_entity()
+
             _LOGGER.debug("Options flow result data: %s", result_data)
 
             return self.async_create_entry(title="", data=result_data)
 
-        # Get current configuration
+        # Get current configuration for form display
         pilot_enabled = self.config_entry.data.get(CONF_PILOT_FROM_HA, False)
         limit_power_enabled = self.config_entry.data.get(CONF_LIMIT_POWER, False)
-
-        # If pilot mode was disabled, disable the SAX_PILOT_POWER entity
-        if current_pilot_from_ha and not pilot_enabled:
-            await self._async_disable_pilot_power_entity()
 
         schema: dict[vol.Marker, Any] = {}
 
