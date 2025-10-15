@@ -167,68 +167,6 @@ async def async_setup_entry(
                     detail["sax_item_name"],
                 )
 
-    async def async_turn_on(self, **kwargs: Any) -> None:  # type:ignore[no-untyped-def]
-        """Turn on the control switch."""
-        # OWASP A05: Security misconfiguration - Validate config entry exists
-        if self.coordinator.config_entry is None:
-            msg = "Config entry not available"
-            raise HomeAssistantError(msg)
-
-        # Update config entry for control switches
-        if self._sax_item.name == SOLAR_CHARGING_SWITCH:
-            # Disable manual control when enabling solar charging
-            new_data = {
-                **self.coordinator.config_entry.data,
-                CONF_ENABLE_SOLAR_CHARGING: True,
-                CONF_MANUAL_CONTROL: False,
-            }
-            self.hass.config_entries.async_update_entry(
-                self.coordinator.config_entry, data=new_data
-            )
-            _LOGGER.info("Solar charging mode enabled, manual control disabled")
-        elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
-            # Disable solar charging when enabling manual control
-            new_data = {
-                **self.coordinator.config_entry.data,
-                CONF_MANUAL_CONTROL: True,
-                CONF_ENABLE_SOLAR_CHARGING: False,
-            }
-            self.hass.config_entries.async_update_entry(
-                self.coordinator.config_entry, data=new_data
-            )
-            _LOGGER.info("Manual control mode enabled, solar charging disabled")
-
-        await self.coordinator.async_request_refresh()
-
-    async def async_turn_off(self, **kwargs: Any) -> None:  # type:ignore[no-untyped-def]
-        """Turn off the control switch."""
-        # OWASP A05: Security misconfiguration - Validate config entry exists
-        if self.coordinator.config_entry is None:
-            msg = "Config entry not available"
-            raise HomeAssistantError(msg)
-
-        # Update config entry for control switches
-        if self._sax_item.name == SOLAR_CHARGING_SWITCH:
-            new_data = {
-                **self.coordinator.config_entry.data,
-                CONF_ENABLE_SOLAR_CHARGING: False,
-            }
-            self.hass.config_entries.async_update_entry(
-                self.coordinator.config_entry, data=new_data
-            )
-            _LOGGER.info("Solar charging mode disabled")
-        elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
-            new_data = {
-                **self.coordinator.config_entry.data,
-                CONF_MANUAL_CONTROL: False,
-            }
-            self.hass.config_entries.async_update_entry(
-                self.coordinator.config_entry, data=new_data
-            )
-            _LOGGER.info("Manual control mode disabled")
-
-        await self.coordinator.async_request_refresh()
-
 
 class SAXBatterySwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEntity):
     """SAX Battery switch entity for individual battery control."""

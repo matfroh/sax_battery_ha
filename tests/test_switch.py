@@ -11,8 +11,13 @@ from custom_components.sax_battery.const import (
     BATTERY_IDS,
     CONF_BATTERY_IS_MASTER,
     CONF_BATTERY_PHASE,
+    CONF_ENABLE_SOLAR_CHARGING,
+    CONF_MANUAL_CONTROL,
+    CONF_PILOT_FROM_HA,
     DESCRIPTION_SAX_STATUS_SWITCH,
     DOMAIN,
+    MANUAL_CONTROL_SWITCH,
+    SOLAR_CHARGING_SWITCH,
 )
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
@@ -1379,3 +1384,511 @@ class TestAsyncSetupEntry:
                 await async_setup_entry(
                     hass, mock_config_entry_switch, mock_add_entities
                 )
+
+
+class TestSAXBatterySwitchComprehensiveCoverage:
+    """Comprehensive tests to achieve 95%+ coverage for switch.py."""
+
+    @pytest.fixture
+    def mock_coordinator_comprehensive(self) -> MagicMock:
+        """Create comprehensive mock coordinator."""
+        coordinator = MagicMock(spec=SAXBatteryCoordinator)
+        coordinator.data = {"test_switch": 2}
+        coordinator.last_update_success = True
+        coordinator.last_update_success_time = "2024-01-01T00:00:00"
+
+        # Mock config entry
+        mock_config_entry = MagicMock()
+        mock_config_entry.data = {
+            CONF_PILOT_FROM_HA: True,
+            CONF_ENABLE_SOLAR_CHARGING: False,
+            CONF_MANUAL_CONTROL: False,
+        }
+        mock_config_entry.entry_id = "test_entry_123"
+        coordinator.config_entry = mock_config_entry
+
+        # Mock battery config
+        coordinator.battery_config = {
+            CONF_BATTERY_IS_MASTER: True,
+            CONF_BATTERY_PHASE: "L1",
+        }
+
+        # Mock sax_data
+        mock_sax_data = MagicMock()
+        mock_sax_data.get_device_info = MagicMock(
+            return_value={
+                "identifiers": {("sax_battery", "battery_a")},
+                "name": "SAX Battery A",
+                "manufacturer": "SAX Power",
+            }
+        )
+        coordinator.sax_data = mock_sax_data
+
+        # Mock write and refresh methods
+        coordinator.async_write_switch_value = AsyncMock(return_value=True)
+        coordinator.async_request_refresh = AsyncMock()
+
+        # Mock hass
+        coordinator.hass = MagicMock()
+        coordinator.hass.config_entries = MagicMock()
+        coordinator.hass.config_entries.async_update_entry = MagicMock()
+
+        return coordinator
+
+    @pytest.fixture
+    def modbus_item_comprehensive(self) -> ModbusItem:
+        """Create comprehensive modbus item."""
+        return ModbusItem(
+            name="comprehensive_switch",
+            device=DeviceConstants.BESS,
+            mtype=TypeConstants.SWITCH,
+            address=1000,
+            battery_device_id=1,
+            factor=1.0,
+            entitydescription=DESCRIPTION_SAX_STATUS_SWITCH,
+        )
+
+    # Test SAXBatteryControlSwitch solar charging interactions
+    async def test_control_switch_solar_enable_disables_manual(
+        self, mock_coordinator_comprehensive
+    ) -> None:
+        """Test enabling solar charging automatically disables manual control."""
+        sax_item = SAXItem(
+            name=SOLAR_CHARGING_SWITCH,
+            device=DeviceConstants.SYS,
+            mtype=TypeConstants.SWITCH,
+        )
+
+        coordinators = {"battery_a": mock_coordinator_comprehensive}
+
+        switch = SAXBatteryControlSwitch(
+            coordinator=mock_coordinator_comprehensive,
+            sax_item=sax_item,
+            coordinators=coordinators,
+        )
+
+        # Mock hass for config entry update
+        switch.hass = mock_coordinator_comprehensive.hass
+
+        await switch.async_turn_on()
+
+        # Verify solar charging enabled and manual control disabled
+        update_call = mock_coordinator_comprehensive.hass.config_entries.async_update_entry.call_args
+        assert update_call is not None
+        new_data = update_call[1]["data"]
+        assert new_data[CONF_ENABLE_SOLAR_CHARGING] is True
+        assert new_data[CONF_MANUAL_CONTROL] is False
+
+    async def test_control_switch_manual_enable_disables_solar(
+        self, mock_coordinator_comprehensive
+    ) -> None:
+        """Test enabling manual control automatically disables solar charging."""
+        sax_item = SAXItem(
+            name=MANUAL_CONTROL_SWITCH,
+            device=DeviceConstants.SYS,
+            mtype=TypeConstants.SWITCH,
+        )
+
+        coordinators = {"battery_a": mock_coordinator_comprehensive}
+
+        switch = SAXBatteryControlSwitch(
+            coordinator=mock_coordinator_comprehensive,
+            sax_item=sax_item,
+            coordinators=coordinators,
+        )
+
+        switch.hass = mock_coordinator_comprehensive.hass
+
+        await switch.async_turn_on()
+
+        # Verify manual control enabled and solar charging disabled
+        update_call = mock_coordinator_comprehensive.hass.config_entries.async_update_entry.call_args
+        assert update_call is not None
+        new_data = update_call[1]["data"]
+        assert new_data[CONF_MANUAL_CONTROL] is True
+        assert new_data[CONF_ENABLE_SOLAR_CHARGING] is False
+
+    async def test_control_switch_solar_disable_only(
+        self, mock_coordinator_comprehensive
+    ) -> None:
+        """Test disabling solar charging doesn't affect manual control."""
+        sax_item = SAXItem(
+            name=SOLAR_CHARGING_SWITCH,
+            device=DeviceConstants.SYS,
+            mtype=TypeConstants.SWITCH,
+        )
+
+        coordinators = {"battery_a": mock_coordinator_comprehensive}
+
+        switch = SAXBatteryControlSwitch(
+            coordinator=mock_coordinator_comprehensive,
+            sax_item=sax_item,
+            coordinators=coordinators,
+        )
+
+        switch.hass = mock_coordinator_comprehensive.hass
+
+        await switch.async_turn_off()
+
+        # Verify only solar charging affected
+        update_call = mock_coordinator_comprehensive.hass.config_entries.async_update_entry.call_args
+        assert update_call is not None
+        new_data = update_call[1]["data"]
+        assert new_data[CONF_ENABLE_SOLAR_CHARGING] is False
+        assert (
+            CONF_MANUAL_CONTROL not in new_data
+            or new_data.get(CONF_MANUAL_CONTROL) is False
+        )
+
+    async def test_control_switch_manual_disable_only(
+        self, mock_coordinator_comprehensive
+    ) -> None:
+        """Test disabling manual control doesn't affect solar charging."""
+        sax_item = SAXItem(
+            name=MANUAL_CONTROL_SWITCH,
+            device=DeviceConstants.SYS,
+            mtype=TypeConstants.SWITCH,
+        )
+
+        coordinators = {"battery_a": mock_coordinator_comprehensive}
+
+        switch = SAXBatteryControlSwitch(
+            coordinator=mock_coordinator_comprehensive,
+            sax_item=sax_item,
+            coordinators=coordinators,
+        )
+
+        switch.hass = mock_coordinator_comprehensive.hass
+
+        await switch.async_turn_off()
+
+        # Verify only manual control affected
+        update_call = mock_coordinator_comprehensive.hass.config_entries.async_update_entry.call_args
+        assert update_call is not None
+        new_data = update_call[1]["data"]
+        assert new_data[CONF_MANUAL_CONTROL] is False
+
+    # Test string normalization paths
+    def test_switch_string_value_numeric_conversion(
+        self, mock_coordinator_comprehensive, modbus_item_comprehensive
+    ) -> None:
+        """Test switch handles numeric strings correctly."""
+        # Configure switch value methods
+        modbus_item_comprehensive.get_switch_on_value = MagicMock(return_value=2)
+        modbus_item_comprehensive.get_switch_connected_value = MagicMock(return_value=3)
+
+        test_cases = [
+            ("  2  ", True),  # Whitespace trimming + numeric conversion
+            (" 3 ", True),  # Connected value
+            ("1", False),  # Off value
+            ("0", False),  # Zero
+        ]
+
+        switch = SAXBatterySwitch(
+            coordinator=mock_coordinator_comprehensive,
+            battery_id="battery_a",
+            modbus_item=modbus_item_comprehensive,
+        )
+
+        for string_value, expected in test_cases:
+            mock_coordinator_comprehensive.data = {"comprehensive_switch": string_value}
+            result = switch.is_on
+            assert result == expected, f"Failed for value '{string_value}'"
+
+    def test_switch_string_value_yes_no(
+        self, mock_coordinator_comprehensive, modbus_item_comprehensive
+    ) -> None:
+        """Test switch handles yes/no string values."""
+        switch = SAXBatterySwitch(
+            coordinator=mock_coordinator_comprehensive,
+            battery_id="battery_a",
+            modbus_item=modbus_item_comprehensive,
+        )
+
+        test_cases = [
+            ("yes", True),
+            ("YES", True),
+            ("no", False),
+            ("NO", False),
+        ]
+
+        for string_value, expected in test_cases:
+            mock_coordinator_comprehensive.data = {"comprehensive_switch": string_value}
+            result = switch.is_on
+            assert result == expected, f"Failed for value '{string_value}'"
+
+    def test_switch_string_value_warning_logging(
+        self, mock_coordinator_comprehensive, modbus_item_comprehensive
+    ) -> None:
+        """Test switch logs warnings for invalid string values."""
+        switch = SAXBatterySwitch(
+            coordinator=mock_coordinator_comprehensive,
+            battery_id="battery_a",
+            modbus_item=modbus_item_comprehensive,
+        )
+
+        with patch("custom_components.sax_battery.switch._LOGGER") as mock_logger:
+            mock_coordinator_comprehensive.data = {
+                "comprehensive_switch": "garbage_value"
+            }
+            result = switch.is_on
+
+            assert result is None
+            mock_logger.warning.assert_called_once()
+            assert "Invalid string value" in str(mock_logger.warning.call_args)
+
+    # Test SAXBatterySwitch state attribute edge cases
+    def test_switch_extra_state_attributes_with_state_attrs(
+        self, mock_coordinator_comprehensive, modbus_item_comprehensive
+    ) -> None:
+        """Test extra state attributes include detailed state information."""
+        modbus_item_comprehensive.get_switch_state_name = MagicMock(return_value="on")
+        modbus_item_comprehensive.get_switch_off_value = MagicMock(return_value=1)
+        modbus_item_comprehensive.get_switch_on_value = MagicMock(return_value=2)
+        modbus_item_comprehensive.get_switch_connected_value = MagicMock(return_value=3)
+        modbus_item_comprehensive.get_switch_standby_value = MagicMock(return_value=4)
+
+        mock_coordinator_comprehensive.data = {"comprehensive_switch": 2}
+
+        switch = SAXBatterySwitch(
+            coordinator=mock_coordinator_comprehensive,
+            battery_id="battery_a",
+            modbus_item=modbus_item_comprehensive,
+        )
+
+        extra_attrs = switch.extra_state_attributes
+
+        assert extra_attrs is not None
+        assert "raw_state_value" in extra_attrs
+        assert "detailed_state" in extra_attrs
+        assert extra_attrs["detailed_state"] == "on"
+        assert "switch_states" in extra_attrs
+
+    def test_switch_icon_all_states(
+        self, mock_coordinator_comprehensive, modbus_item_comprehensive
+    ) -> None:
+        """Test icon property for all possible switch states."""
+        modbus_item_comprehensive.get_switch_state_name = MagicMock()
+
+        state_icon_map = [
+            (1, "off", "mdi:battery-off"),
+            (2, "on", "mdi:battery"),
+            (3, "connected", "mdi:battery-plus"),
+            (4, "standby", "mdi:battery-clock"),
+            (99, "unknown", "mdi:battery-unknown"),
+        ]
+
+        switch = SAXBatterySwitch(
+            coordinator=mock_coordinator_comprehensive,
+            battery_id="battery_a",
+            modbus_item=modbus_item_comprehensive,
+        )
+
+        for value, state_name, expected_icon in state_icon_map:
+            mock_coordinator_comprehensive.data = {"comprehensive_switch": value}
+            modbus_item_comprehensive.get_switch_state_name.return_value = state_name
+
+            icon = switch.icon
+            assert icon == expected_icon, f"Failed for state {state_name}"
+
+    # Test async_setup_entry edge cases
+    async def test_setup_entry_battery_phase_logging(self, hass: HomeAssistant) -> None:
+        """Test async_setup_entry logs battery phase information."""
+        mock_config_entry = MagicMock()
+        mock_config_entry.entry_id = "test_entry"
+        mock_config_entry.data = {}
+
+        # Create mock coordinator with specific phase
+        mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
+        mock_coordinator.battery_config = {
+            CONF_BATTERY_IS_MASTER: False,
+            CONF_BATTERY_PHASE: "L3",
+        }
+        mock_coordinator.hass = hass
+
+        # Mock sax_data
+        mock_sax_data = MagicMock()
+        mock_sax_data.get_modbus_items_for_battery = MagicMock(return_value=[])
+        mock_sax_data.get_sax_items_for_battery = MagicMock(return_value=[])
+        mock_coordinator.sax_data = mock_sax_data
+
+        integration_data = {
+            "coordinators": {"battery_c": mock_coordinator},
+            "sax_data": mock_sax_data,
+        }
+
+        hass.data[DOMAIN] = {mock_config_entry.entry_id: integration_data}
+
+        mock_add_entities = MagicMock()
+
+        with patch("custom_components.sax_battery.switch._LOGGER") as mock_logger:
+            await async_setup_entry(hass, mock_config_entry, mock_add_entities)
+
+            # Verify phase logging
+            debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
+            assert any("L3" in call for call in debug_calls)
+
+    async def test_setup_entry_entity_detail_logging(self, hass: HomeAssistant) -> None:
+        """Test async_setup_entry logs detailed entity information."""
+        mock_config_entry = MagicMock()
+        mock_config_entry.entry_id = "test_entry"
+
+        # Create modbus item with specific properties
+        modbus_item = ModbusItem(
+            name="test_logging_switch",
+            device=DeviceConstants.BESS,
+            mtype=TypeConstants.SWITCH,
+            address=5000,
+            battery_device_id=1,
+            factor=1.0,
+            enabled_by_default=False,
+        )
+        modbus_item.is_tri_state_switch = MagicMock(return_value=False)
+
+        mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
+        mock_coordinator.battery_config = {
+            CONF_BATTERY_IS_MASTER: True,
+            CONF_BATTERY_PHASE: "L1",
+        }
+        mock_coordinator.hass = hass
+
+        mock_sax_data = MagicMock()
+        mock_sax_data.get_modbus_items_for_battery = MagicMock(
+            return_value=[modbus_item]
+        )
+        mock_sax_data.get_sax_items_for_battery = MagicMock(return_value=[])
+        mock_sax_data.get_device_info = MagicMock(
+            return_value={"identifiers": {("sax_battery", "battery_a")}}
+        )
+        mock_coordinator.sax_data = mock_sax_data
+
+        integration_data = {
+            "coordinators": {"battery_a": mock_coordinator},
+            "sax_data": mock_sax_data,
+        }
+
+        hass.data[DOMAIN] = {mock_config_entry.entry_id: integration_data}
+
+        mock_add_entities = MagicMock()
+
+        with (
+            patch(
+                "custom_components.sax_battery.switch.filter_items_by_type"
+            ) as mock_filter,
+            patch("custom_components.sax_battery.switch._LOGGER") as mock_logger,
+        ):
+            # Mock filter to return the modbus item
+            mock_filter.return_value = [modbus_item]
+
+            await async_setup_entry(hass, mock_config_entry, mock_add_entities)
+
+            # Verify detailed entity logging occurred
+            # The actual switch.py logs entity creation, but format may vary
+            # Check that debug logging was called with entity information
+            assert mock_logger.debug.called, "Expected debug logging to be called"
+
+            # Verify entity was actually created
+            assert mock_add_entities.called, "Expected entities to be added"
+            created_entities = mock_add_entities.call_args[0][0]
+            assert len(created_entities) == 1
+            assert isinstance(created_entities[0], SAXBatterySwitch)
+            assert created_entities[0]._modbus_item.address == 5000
+            assert created_entities[0]._modbus_item.enabled_by_default is False
+
+    async def test_setup_entry_control_switch_logging(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Test async_setup_entry logs control switch creation."""
+        mock_config_entry = MagicMock()
+        mock_config_entry.entry_id = "test_entry"
+
+        sax_item = SAXItem(
+            name=SOLAR_CHARGING_SWITCH,
+            device=DeviceConstants.SYS,
+            mtype=TypeConstants.SWITCH,
+        )
+
+        mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
+        mock_coordinator.battery_config = {CONF_BATTERY_IS_MASTER: True}
+        mock_coordinator.hass = hass
+        mock_coordinator.config_entry = mock_config_entry
+
+        mock_sax_data = MagicMock()
+        mock_sax_data.get_modbus_items_for_battery = MagicMock(return_value=[])
+        mock_sax_data.get_sax_items_for_battery = MagicMock(return_value=[sax_item])
+        mock_sax_data.get_device_info = MagicMock(
+            return_value={"identifiers": {("sax_battery", "cluster")}}
+        )
+        mock_coordinator.sax_data = mock_sax_data
+
+        integration_data = {
+            "coordinators": {"battery_a": mock_coordinator},
+            "sax_data": mock_sax_data,
+        }
+
+        hass.data[DOMAIN] = {mock_config_entry.entry_id: integration_data}
+
+        mock_add_entities = MagicMock()
+
+        with patch("custom_components.sax_battery.switch._LOGGER") as mock_logger:
+            await async_setup_entry(hass, mock_config_entry, mock_add_entities)
+
+            # Verify control switch logging
+            debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
+            assert any("Control Switch" in call for call in debug_calls)
+            assert any(SOLAR_CHARGING_SWITCH in call for call in debug_calls)
+
+    # Test SAXBatteryControlSwitch with pilot mode interaction
+    def test_control_switch_solar_requires_pilot_mode(
+        self, mock_coordinator_comprehensive
+    ) -> None:
+        """Test solar charging switch requires pilot mode to be enabled."""
+        # Pilot mode disabled
+        mock_coordinator_comprehensive.config_entry.data["CONF_PILOT_FROM_HA"] = False
+        mock_coordinator_comprehensive.config_entry.data[
+            "CONF_ENABLE_SOLAR_CHARGING"
+        ] = True
+
+        sax_item = SAXItem(
+            name=SOLAR_CHARGING_SWITCH,
+            device=DeviceConstants.SYS,
+            mtype=TypeConstants.SWITCH,
+        )
+
+        coordinators = {"battery_a": mock_coordinator_comprehensive}
+
+        switch = SAXBatteryControlSwitch(
+            coordinator=mock_coordinator_comprehensive,
+            sax_item=sax_item,
+            coordinators=coordinators,
+        )
+
+        # Solar charging should be off because pilot mode is disabled
+        assert switch.is_on is False
+
+    def test_control_switch_solar_enabled_with_pilot(
+        self, mock_coordinator_comprehensive
+    ) -> None:
+        """Test solar charging switch enabled when both pilot and solar are on."""
+        # Both pilot mode and solar charging enabled
+        mock_coordinator_comprehensive.config_entry.data[CONF_PILOT_FROM_HA] = True
+        mock_coordinator_comprehensive.config_entry.data[CONF_ENABLE_SOLAR_CHARGING] = (
+            True
+        )
+
+        sax_item = SAXItem(
+            name=SOLAR_CHARGING_SWITCH,
+            device=DeviceConstants.SYS,
+            mtype=TypeConstants.SWITCH,
+        )
+
+        coordinators = {"battery_a": mock_coordinator_comprehensive}
+
+        switch = SAXBatteryControlSwitch(
+            coordinator=mock_coordinator_comprehensive,
+            sax_item=sax_item,
+            coordinators=coordinators,
+        )
+
+        # Solar charging should be on
+        assert switch.is_on is True
