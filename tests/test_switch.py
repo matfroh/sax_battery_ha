@@ -1743,7 +1743,7 @@ class TestSAXBatterySwitchComprehensiveCoverage:
             factor=1.0,
             enabled_by_default=False,
         )
-        modbus_item.is_tri_state_switch = MagicMock(return_value=False)
+        modbus_item.is_tri_state_switch = MagicMock(return_value=False)  # type: ignore[method-assign]
 
         mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
         mock_coordinator.battery_config = {
