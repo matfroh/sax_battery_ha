@@ -1021,12 +1021,12 @@ class TestWriteOnlyRegisterRestoration:
 
         ent_reg = er.async_get(hass)
 
-        # ✅ Create entities with unique_ids that match what get_unique_id_for_item() generates
+        #  Create entities with unique_ids that match what get_unique_id_for_item() generates
         # The function generates: "test_battery_max_discharge" from device name + item name
         ent_reg.async_get_or_create(
             "number",
             DOMAIN,
-            "test_battery_max_discharge",  # ✅ Match generated unique_id
+            "test_battery_max_discharge",  #  Match generated unique_id
             suggested_object_id="sax_cluster_max_discharge",
             config_entry=entry,
             device_id=device.id,
@@ -1034,7 +1034,7 @@ class TestWriteOnlyRegisterRestoration:
         ent_reg.async_get_or_create(
             "number",
             DOMAIN,
-            "test_battery_max_charge",  # ✅ Match generated unique_id
+            "test_battery_max_charge",  #  Match generated unique_id
             suggested_object_id="sax_cluster_max_charge",
             config_entry=entry,
             device_id=device.id,
@@ -1145,7 +1145,7 @@ class TestSOCConstraintStartupCheck:
         mock_coordinator.sax_data = MagicMock()
         mock_coordinator.sax_data.get_modbus_items_for_battery.return_value = []
 
-        # ✅ Track SOC check calls with proper async mock
+        #  Track SOC check calls with proper async mock
         soc_check_called = False
 
         async def track_soc_check():
@@ -1153,7 +1153,7 @@ class TestSOCConstraintStartupCheck:
             soc_check_called = True
             return True
 
-        # ✅ Use AsyncMock for the method that will be awaited
+        #  Use AsyncMock for the method that will be awaited
         mock_soc_manager = MagicMock()
         mock_soc_manager.enabled = True
         mock_soc_manager.check_and_enforce_discharge_limit = AsyncMock(
@@ -1278,7 +1278,7 @@ class TestAsyncSetupEntryWithStartupHook:
                 "async_forward_entry_setups",
                 new=AsyncMock(),
             ),
-            # ✅ Mock the entire startup check function instead of bus
+            #  Mock the entire startup check function instead of bus
             patch(
                 "custom_components.sax_battery._check_soc_constraints_on_startup",
                 new=AsyncMock(),

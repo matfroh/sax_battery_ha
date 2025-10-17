@@ -159,6 +159,7 @@ DESCRIPTION_SAX_MAX_CHARGE = NumberEntityDescription(
     native_max_value=LIMIT_MAX_CHARGE_PER_BATTERY, # default single battery limit - will be adjusted based on battery count
     native_step=100,
     device_class=NumberDeviceClass.POWER,
+    entity_category=EntityCategory.CONFIG,
 )
 
 DESCRIPTION_SAX_MAX_DISCHARGE = NumberEntityDescription(
@@ -170,6 +171,7 @@ DESCRIPTION_SAX_MAX_DISCHARGE = NumberEntityDescription(
     native_max_value=LIMIT_MAX_DISCHARGE_PER_BATTERY, # default single battery limit - will be adjusted based on battery count
     native_step=100,
     device_class=NumberDeviceClass.POWER,
+    entity_category=EntityCategory.CONFIG,
 )
 
 DESCRIPTION_SAX_NOMINAL_POWER = NumberEntityDescription(
@@ -245,7 +247,6 @@ DESCRIPTION_SAX_PILOT_POWER= NumberEntityDescription(
     native_step=1,
     native_min_value=LIMIT_MAX_DISCHARGE_PER_BATTERY * -1,
     native_max_value=LIMIT_MAX_CHARGE_PER_BATTERY,
-    # entity_category=EntityCategory.CONFIG,
 )
 
 DESCRIPTION_SAX_POWER = SensorEntityDescription(
@@ -497,6 +498,7 @@ DESCRIPTION_SAX_COMBINED_SOC = SensorEntityDescription(
     device_class=SensorDeviceClass.BATTERY,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=PERCENTAGE,
+    suggested_display_precision =  0,
 )
 
 DESCRIPTION_SAX_CUMULATIVE_ENERGY_CONSUMED = SensorEntityDescription(

@@ -258,7 +258,9 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         # Set entity registry enabled state based on configuration
         if coordinator.config_entry:
             self._attr_entity_registry_enabled_default = (
-                should_enable_entity_by_default(modbus_item, coordinator.config_entry)
+                should_enable_entity_by_default(
+                    self._modbus_item, coordinator.config_entry
+                )
             )
         else:
             self._attr_entity_registry_enabled_default = getattr(
@@ -860,8 +862,8 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
                         CONF_MIN_SOC: int(value),
                     },
                 )
-
                 _LOGGER.info("Minimum SOC updated to %s%%", value)
+
             elif self._sax_item.name == SAX_PILOT_POWER:
                 # New: Handle pilot power updates with atomic write to control registers
                 await self._handle_pilot_power_update(value)

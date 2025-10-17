@@ -29,6 +29,7 @@ from .coordinator import SAXBatteryCoordinator
 from .entity_utils import filter_items_by_type, filter_sax_items_by_type
 from .enums import TypeConstants
 from .items import ModbusItem, SAXItem
+from .utils import should_enable_entity_by_default
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -456,6 +457,18 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
         # Set entity description from sax item if available
         if self._sax_item.entitydescription is not None:
             self.entity_description = self._sax_item.entitydescription  # type: ignore[assignment]
+
+        # enable SOLAR_CHARGING_SWITCH, MANUAL_CONTROL_SWITCH if CONF_PILOT_FROM_HA is activated
+        if coordinator.config_entry:
+            self._attr_entity_registry_enabled_default = (
+                should_enable_entity_by_default(
+                    self._sax_item, coordinator.config_entry
+                )
+            )
+        else:
+            self._attr_entity_registry_enabled_default = getattr(
+                self._sax_item, "enabled_by_default", True
+            )
 
         # Set entity name
         if (

@@ -473,7 +473,7 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(pilot_item, mock_config_entry, "battery_a")
-        # ✅ Entity is always created for master battery
+        #  Entity is always created for master battery
         assert result is True
 
     def test_exclude_pilot_register_for_slave_battery(self) -> None:
@@ -494,7 +494,7 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(pilot_item, mock_config_entry, "battery_b")
-        # ✅ Only master battery gets write-only register entities
+        #  Only master battery gets write-only register entities
         assert result is False
 
     def test_include_pilot_register_when_pilot_disabled(self) -> None:
@@ -519,7 +519,7 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(pilot_item, mock_config_entry, "battery_a")
-        # ✅ Entity is always created; visibility controlled by entity_registry_enabled_default
+        #  Entity is always created; visibility controlled by entity_registry_enabled_default
         assert result is True
 
     def test_include_power_limit_register_for_master_with_limit_enabled(self) -> None:
@@ -541,7 +541,7 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(limit_item, mock_config_entry, "battery_a")
-        # ✅ Entity is always created for master battery
+        #  Entity is always created for master battery
         assert result is True
 
     def test_exclude_power_limit_register_for_slave_battery(self) -> None:
@@ -562,7 +562,7 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(limit_item, mock_config_entry, "battery_b")
-        # ✅ Only master battery gets write-only register entities
+        #  Only master battery gets write-only register entities
         assert result is False
 
     def test_include_power_limit_register_when_limit_disabled(self) -> None:
@@ -587,7 +587,7 @@ class TestWriteOnlyRegisterHandling:
         )
 
         result = should_include_entity(limit_item, mock_config_entry, "battery_a")
-        # ✅ Entity is always created; visibility controlled by entity_registry_enabled_default
+        #  Entity is always created; visibility controlled by entity_registry_enabled_default
         assert result is True
 
     def test_modbus_item_without_address_attribute(self) -> None:

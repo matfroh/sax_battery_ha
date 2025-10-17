@@ -9,6 +9,7 @@ import pytest
 
 from custom_components.sax_battery.const import (
     BATTERY_IDS,
+    CONF_BATTERY_COUNT,
     CONF_BATTERY_IS_MASTER,
     CONF_BATTERY_PHASE,
     CONF_ENABLE_SOLAR_CHARGING,
@@ -29,6 +30,7 @@ from custom_components.sax_battery.switch import (
     async_setup_entry,
 )
 from custom_components.sax_battery.utils import should_include_entity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -1060,36 +1062,44 @@ class TestAsyncSetupEntry:
 
     @pytest.fixture
     def mock_setup_data(self) -> dict[str, Any]:
-        """Create mock setup data."""
+        """Create mock setup data for testing."""
         mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
-        mock_coordinator.battery_config = {
-            CONF_BATTERY_IS_MASTER: True,
-            CONF_BATTERY_PHASE: "L1",
-        }
+        mock_coordinator.battery_config = {CONF_BATTERY_IS_MASTER: True}
 
-        # Add required sax_data attribute
+        mock_config = MagicMock(spec=ConfigEntry)
+        mock_config.data = {
+            CONF_PILOT_FROM_HA: False,
+            CONF_ENABLE_SOLAR_CHARGING: False,
+            CONF_MANUAL_CONTROL: False,
+        }
+        mock_coordinator.config_entry = mock_config
+
         mock_sax_data = MagicMock()
+        mock_sax_data.get_modbus_items_for_battery.return_value = []
+        mock_sax_data.get_sax_items_for_battery.return_value = []
         mock_sax_data.get_device_info.return_value = {
-            "identifiers": {("sax_battery", "battery_a")},
-            "name": "SAX Battery A",
+            "identifiers": {("sax_battery", "cluster")},
+            "name": "SAX Cluster",
         }
         mock_coordinator.sax_data = mock_sax_data
 
-        mock_sax_data.get_modbus_items_for_battery.return_value = []
-        mock_sax_data.get_sax_items_for_battery.return_value = []
-
         return {
             "coordinators": {"battery_a": mock_coordinator},
-            "sax_data": mock_sax_data,
+            "sax_data": mock_sax_data,  # Also keep in top-level for consistency
         }
 
     @pytest.fixture
     def mock_config_entry_switch(self) -> MagicMock:
         """Create mock config entry for switch tests."""
-        config_entry = MagicMock()
-        config_entry.entry_id = "test_switch_entry"
-        config_entry.data = {"pilot_from_ha": False, "limit_power": False}
-        return config_entry
+        mock_entry = MagicMock(spec=ConfigEntry)
+        mock_entry.entry_id = "test_switch_entry"
+        mock_entry.data = {
+            CONF_BATTERY_COUNT: 1,
+            CONF_PILOT_FROM_HA: False,
+            CONF_ENABLE_SOLAR_CHARGING: False,
+            CONF_MANUAL_CONTROL: False,
+        }
+        return mock_entry
 
     async def test_async_setup_entry_invalid_battery_id(
         self, hass: HomeAssistant, mock_config_entry_switch, mock_setup_data

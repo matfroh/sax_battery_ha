@@ -210,10 +210,20 @@ def should_enable_entity_by_default(
 
         # Pilot control registers require pilot_from_ha feature flag
         if item.address in pilot_control_addresses:
+            _LOGGER.info(
+                "Checking pilot control register %d, pilot_from_ha=%s",
+                item.address,
+                config_entry.data.get(CONF_PILOT_FROM_HA, False),
+            )
             return bool(config_entry.data.get(CONF_PILOT_FROM_HA, False))
 
         # Power limit registers require limit_power feature flag
         if item.address in power_limit_addresses:
+            _LOGGER.info(
+                "Checking power limit register %d, limit_power=%s",
+                item.address,
+                config_entry.data.get(CONF_LIMIT_POWER, False),
+            )
             return bool(config_entry.data.get(CONF_LIMIT_POWER, False))
 
     # For all other entities, respect the item's enabled_by_default attribute
