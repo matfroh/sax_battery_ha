@@ -215,7 +215,7 @@ DESCRIPTION_SOLAR_CHARGING_SWITCH = SwitchEntityDescription(
 DESCRIPTION_MANUAL_CONTROL_SWITCH = SwitchEntityDescription(
     key=MANUAL_CONTROL_SWITCH,
     name="Manual Control Switch",
-    icon="mdi:hand",
+    icon="transmission-tower-export",
     entity_category=EntityCategory.CONFIG,
 )
 
