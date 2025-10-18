@@ -104,7 +104,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._limit_power = user_input[CONF_LIMIT_POWER]
             self._data.update(user_input)
 
-            # ✅ Set solar charging default based on pilot mode
+            #  Set solar charging default based on pilot mode
             if not self._pilot_from_ha:
                 self._data[CONF_ENABLE_SOLAR_CHARGING] = False
 
@@ -169,30 +169,31 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_AUTO_PILOT_INTERVAL] = "invalid_interval"
                 validation_passed = False
 
+            # If validation passed, save data and move to next step
             if validation_passed:
                 self._data.update(user_input)
-                return await self.async_step_sensors()
+                _LOGGER.debug("Pilot options saved: %s", user_input)
+                # Move to the NEXT step (not the same step!)
+                return await self.async_step_sensors()  # Or whatever comes next
 
-        # Create schema without strict validation to allow custom error handling
+        # Show the form
         return self.async_show_form(
             step_id="pilot_options",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_MIN_SOC, default=DEFAULT_MIN_SOC): vol.Any(
-                        int, str
-                    ),
                     vol.Required(
-                        CONF_AUTO_PILOT_INTERVAL, default=DEFAULT_AUTO_PILOT_INTERVAL
-                    ): vol.Any(int, str),
-                    vol.Required(CONF_ENABLE_SOLAR_CHARGING, default=True): bool,
+                        CONF_MIN_SOC,
+                        default=self._data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+                    vol.Required(
+                        CONF_AUTO_PILOT_INTERVAL,
+                        default=self._data.get(
+                            CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
                 }
             ),
             errors=errors,
-            description_placeholders={
-                "min_soc_description": "Minimum State of Charge (%) to prevent deep discharge",
-                "interval_description": "Update interval in seconds for pilot calculations",
-                "solar_description": "Enable solar charging control logic",
-            },
         )
 
     async def async_step_sensors(
