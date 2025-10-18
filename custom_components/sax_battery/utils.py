@@ -18,9 +18,11 @@ from .const import (
     CONF_MASTER_BATTERY,
     CONF_PILOT_FROM_HA,
     DOMAIN,
+    MANUAL_CONTROL_SWITCH,
     MODBUS_BATTERY_POWER_CONTROL_ITEMS,
     MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     MODBUS_BATTERY_REALTIME_ITEMS,
+    SOLAR_CHARGING_SWITCH,
     WRITE_ONLY_REGISTERS,
 )
 from .items import ModbusItem, SAXItem
@@ -192,7 +194,24 @@ def should_enable_entity_by_default(
     Performance:
         Simple boolean checks with efficient set lookups
     """
-    # For write-only registers, check if feature is enabled
+
+    enable_power_control: bool = config_entry.data.get(CONF_PILOT_FROM_HA, False)
+    enable_power_limits: bool = config_entry.data.get(CONF_LIMIT_POWER, False)
+
+    # Handle SAXItem control switches - enabled when pilot mode is active
+    if isinstance(item, SAXItem):
+        if item.name in (SOLAR_CHARGING_SWITCH, MANUAL_CONTROL_SWITCH):
+            _LOGGER.debug(
+                "Checking SAXItem control switch %s, pilot_from_ha=%s",
+                item.name,
+                enable_power_control,
+            )
+            return enable_power_control
+
+        # For other SAXItems, respect the item's enabled_by_default attribute
+        return getattr(item, "enabled_by_default", True)
+
+    # Handle ModbusItem write-only registers
     if (
         isinstance(item, ModbusItem)
         and hasattr(item, "address")
@@ -213,18 +232,18 @@ def should_enable_entity_by_default(
             _LOGGER.info(
                 "Checking pilot control register %d, pilot_from_ha=%s",
                 item.address,
-                config_entry.data.get(CONF_PILOT_FROM_HA, False),
+                enable_power_control,
             )
-            return bool(config_entry.data.get(CONF_PILOT_FROM_HA, False))
+            return enable_power_control
 
         # Power limit registers require limit_power feature flag
         if item.address in power_limit_addresses:
             _LOGGER.info(
                 "Checking power limit register %d, limit_power=%s",
                 item.address,
-                config_entry.data.get(CONF_LIMIT_POWER, False),
+                enable_power_limits,
             )
-            return bool(config_entry.data.get(CONF_LIMIT_POWER, False))
+            return enable_power_limits
 
     # For all other entities, respect the item's enabled_by_default attribute
     return getattr(item, "enabled_by_default", True)
