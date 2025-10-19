@@ -30,13 +30,14 @@ from .const import (
     CONF_AUTO_PILOT_INTERVAL,
     CONF_GRID_POWER_SENSOR,
     CONF_MANUAL_CONTROL,
+    CONF_ENABLE_SOLAR_CHARGING,
     DEFAULT_AUTO_PILOT_INTERVAL,
     DOMAIN,
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
     MANUAL_CONTROL_MODE,
     SAX_NOMINAL_FACTOR,
-    SAX_NOMINAL_POWER,
+    SAX_PILOT_POWER,
     SOLAR_CHARGING_MODE,
 )
 from .coordinator import SAXBatteryCoordinator
@@ -112,26 +113,18 @@ class PowerManager:
         self._update_config_values()
 
     def _resolve_entity_ids(self) -> None:
-        """Resolve entity IDs for power control entities from registry.
-
-        Uses get_unique_id_for_item() utility function to match entity registry
-        unique IDs with the actual entity_id values.
-
-        Security:
-            OWASP A05: Validates entities exist before attempting control
-        """
-        # Security: Validate config entry exists
+        """Resolve entity IDs for power control entities from registry."""
         if not self.coordinator.config_entry:
             _LOGGER.error("Coordinator has no config entry, cannot resolve entity IDs")
             return
 
         ent_reg = er.async_get(self.hass)
 
-        # Resolve SAX_NOMINAL_POWER entity
+        # Resolve SAX_PILOT_POWER entity (the one that actually exists!)
         power_unique_id = get_unique_id_for_item(
             self.hass,
             self.coordinator.config_entry.entry_id,
-            SAX_NOMINAL_POWER,
+            SAX_PILOT_POWER,  # ✅ Changed from SAX_NOMINAL_POWER
         )
 
         if power_unique_id:
@@ -146,10 +139,16 @@ class PowerManager:
                     "Could not find power entity (unique_id: %s)",
                     power_unique_id,
                 )
+            else:
+                _LOGGER.info(
+                    "✓ Resolved power entity: %s (unique_id: %s)",
+                    self._power_entity_id,
+                    power_unique_id,
+                )
         else:
-            _LOGGER.error("Could not generate unique_id for %s", SAX_NOMINAL_POWER)
+            _LOGGER.error("Could not generate unique_id for %s", SAX_PILOT_POWER)
 
-        # Resolve SAX_NOMINAL_FACTOR entity
+        # Resolve SAX_NOMINAL_FACTOR entity (for power factor)
         factor_unique_id = get_unique_id_for_item(
             self.hass,
             self.coordinator.config_entry.entry_id,
@@ -168,11 +167,16 @@ class PowerManager:
                     "Could not find power factor entity (unique_id: %s)",
                     factor_unique_id,
                 )
+            else:
+                _LOGGER.info(
+                    "✓ Resolved power factor entity: %s",
+                    self._power_factor_entity_id,
+                )
         else:
             _LOGGER.error("Could not generate unique_id for %s", SAX_NOMINAL_FACTOR)
 
         _LOGGER.debug(
-            "Resolved entity IDs: power=%s, factor=%s",
+            "Entity resolution complete: power=%s, factor=%s",
             self._power_entity_id,
             self._power_factor_entity_id,
         )
@@ -184,19 +188,20 @@ class PowerManager:
             CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
         )
 
-        # Update state flags
+        # FIX: Use correct constant CONF_ENABLE_SOLAR_CHARGING instead of SOLAR_CHARGING_MODE
         self._state.solar_charging_enabled = bool(
-            self.config_entry.data.get(SOLAR_CHARGING_MODE, False)
+            self.config_entry.data.get(CONF_ENABLE_SOLAR_CHARGING, False)
         )
         self._state.manual_control_enabled = bool(
             self.config_entry.data.get(CONF_MANUAL_CONTROL, False)
         )
 
-        _LOGGER.debug(
-            "Power manager config updated: interval=%ss, solar=%s, manual=%s",
+        _LOGGER.info(
+            "Power manager config updated: interval=%ss, solar=%s, manual=%s, grid_sensor=%s",
             self.update_interval,
             self._state.solar_charging_enabled,
             self._state.manual_control_enabled,
+            self.grid_power_sensor,
         )
 
     async def async_start(self) -> None:
@@ -341,24 +346,9 @@ class PowerManager:
         await self.update_power_setpoint(target_power)
 
     async def update_power_setpoint(self, power: float) -> None:
-        """Update power setpoint via number entity service call.
-
-        Args:
-            power: Power value in watts (positive = discharge, negative = charge)
-
-        Security:
-            OWASP A05: Validates power limits and entity availability
-        Performance:
-            Non-blocking service call for efficiency
-        """
-        # Security: Validate entity ID was resolved
-        if not self._power_entity_id:
-            _LOGGER.error("Power entity not found, cannot update setpoint")
-            return
-
-        # Security: Validate power limits
+        """Update power setpoint via number entity service call."""
         if not isinstance(power, (int, float)):
-            _LOGGER.error("Invalid power value type: %s", type(power))  # type: ignore[unreachable]
+            _LOGGER.error("Invalid power value type: %s", type(power))
             return
 
         # Clamp to absolute limits
@@ -374,22 +364,44 @@ class PowerManager:
         self._state.target_power = clamped_power
         self._state.last_update = datetime.now()
 
-        # Call number entity service (non-blocking for performance)
-        await self.hass.services.async_call(
-            "number",
-            SERVICE_SET_VALUE,
-            {
-                "entity_id": self._power_entity_id,
-                "value": clamped_power,
-            },
-            blocking=False,
-        )
+        # SIMPLE FIX: Use the known entity_id directly
+        # Since we know the entity is number.sax_cluster_pilot_power, just use it
+        power_entity_id = "number.sax_cluster_pilot_power"
+        
+        # Verify entity exists
+        if not self.hass.states.get(power_entity_id):
+            _LOGGER.error(
+                "Power entity %s not found in Home Assistant. Available number entities:",
+                power_entity_id,
+            )
+            for state in self.hass.states.async_all("number"):
+                if "pilot" in state.entity_id.lower() or "power" in state.entity_id.lower():
+                    _LOGGER.error("  - %s", state.entity_id)
+            return
 
-        _LOGGER.debug(
-            "Power setpoint updated to %sW via entity %s",
-            clamped_power,
-            self._power_entity_id,
-        )
+        # Call service
+        try:
+            await self.hass.services.async_call(
+                "number",
+                "set_value",
+                {
+                    "entity_id": power_entity_id,
+                    "value": clamped_power,
+                },
+                blocking=False,
+            )
+
+            _LOGGER.info(
+                "✓ Power setpoint updated to %sW via %s",
+                clamped_power,
+                power_entity_id,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to update power setpoint: %s",
+                err,
+                exc_info=True,
+            )
 
     async def set_solar_charging_mode(self, enabled: bool) -> None:
         """Enable or disable solar charging mode.

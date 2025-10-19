@@ -501,21 +501,27 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
 
         # Get state from config entry or SAX item calculation
         if self._sax_item.name == SOLAR_CHARGING_SWITCH:
-            # ✅ Only enable if pilot mode is also enabled
-            pilot_enabled = bool(
-                self.coordinator.config_entry.data.get(CONF_PILOT_FROM_HA, False)
-            )
+            # ✅ FIXED: Only check solar_enabled, not pilot_enabled
             solar_enabled = bool(
                 self.coordinator.config_entry.data.get(
                     CONF_ENABLE_SOLAR_CHARGING, False
-                )  # Changed default to False
+                )
             )
-            return pilot_enabled and solar_enabled
+            _LOGGER.debug(
+                "Solar charging switch state check: solar_enabled=%s",
+                solar_enabled,
+            )
+            return solar_enabled
 
         if self._sax_item.name == MANUAL_CONTROL_SWITCH:
-            return bool(
+            manual_enabled = bool(
                 self.coordinator.config_entry.data.get(CONF_MANUAL_CONTROL, False)
             )
+            _LOGGER.debug(
+                "Manual control switch state check: manual_enabled=%s",
+                manual_enabled,
+            )
+            return manual_enabled
 
         # Default SAX item calculation
         return bool(self._sax_item.calculate_value(self._coordinators))
@@ -535,23 +541,44 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
             msg = f"Cannot turn on {self.name}: config entry is None"
             raise HomeAssistantError(msg)
 
+        _LOGGER.info("Turning ON control switch: %s", self._sax_item.name)
+
         # Update config entry for control switches
         if self._sax_item.name == SOLAR_CHARGING_SWITCH:
+            new_data = {
+                **self.coordinator.config_entry.data,
+                CONF_ENABLE_SOLAR_CHARGING: True,
+            }
+            _LOGGER.info(
+                "Updating config entry for solar charging: CONF_ENABLE_SOLAR_CHARGING=True",
+            )
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
-                data={
-                    **self.coordinator.config_entry.data,
-                    CONF_ENABLE_SOLAR_CHARGING: True,
-                },
+                data=new_data,
             )
+            
+            # Trigger power manager update if it exists
+            if hasattr(self.coordinator, 'power_manager') and self.coordinator.power_manager:
+                _LOGGER.info("Triggering power manager solar charging mode")
+                await self.coordinator.power_manager.set_solar_charging_mode(True)
+            
         elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
+            new_data = {
+                **self.coordinator.config_entry.data,
+                CONF_MANUAL_CONTROL: True,
+            }
+            _LOGGER.info(
+                "Updating config entry for manual control: CONF_MANUAL_CONTROL=True",
+            )
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
-                data={
-                    **self.coordinator.config_entry.data,
-                    CONF_MANUAL_CONTROL: True,
-                },
+                data=new_data,
             )
+            
+            # Trigger power manager update if it exists
+            if hasattr(self.coordinator, 'power_manager') and self.coordinator.power_manager:
+                _LOGGER.info("Triggering power manager manual control mode")
+                await self.coordinator.power_manager.set_manual_control_mode(True, 0.0)
 
         await self.coordinator.async_request_refresh()
 
@@ -562,22 +589,43 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
             msg = f"Cannot turn off {self.name}: config entry is None"
             raise HomeAssistantError(msg)
 
+        _LOGGER.info("Turning OFF control switch: %s", self._sax_item.name)
+
         # Update config entry for control switches
         if self._sax_item.name == SOLAR_CHARGING_SWITCH:
+            new_data = {
+                **self.coordinator.config_entry.data,
+                CONF_ENABLE_SOLAR_CHARGING: False,
+            }
+            _LOGGER.info(
+                "Updating config entry for solar charging: CONF_ENABLE_SOLAR_CHARGING=False",
+            )
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
-                data={
-                    **self.coordinator.config_entry.data,
-                    CONF_ENABLE_SOLAR_CHARGING: False,
-                },
+                data=new_data,
             )
+            
+            # Trigger power manager update if it exists
+            if hasattr(self.coordinator, 'power_manager') and self.coordinator.power_manager:
+                _LOGGER.info("Disabling power manager solar charging mode")
+                await self.coordinator.power_manager.set_solar_charging_mode(False)
+            
         elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
+            new_data = {
+                **self.coordinator.config_entry.data,
+                CONF_MANUAL_CONTROL: False,
+            }
+            _LOGGER.info(
+                "Updating config entry for manual control: CONF_MANUAL_CONTROL=False",
+            )
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
-                data={
-                    **self.coordinator.config_entry.data,
-                    CONF_MANUAL_CONTROL: False,
-                },
+                data=new_data,
             )
+            
+            # Trigger power manager update if it exists
+            if hasattr(self.coordinator, 'power_manager') and self.coordinator.power_manager:
+                _LOGGER.info("Disabling power manager manual control mode")
+                await self.coordinator.power_manager.set_manual_control_mode(False, 0.0)
 
         await self.coordinator.async_request_refresh()
