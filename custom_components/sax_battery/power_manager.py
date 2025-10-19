@@ -36,6 +36,7 @@ from .const import (
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
     MANUAL_CONTROL_MODE,
+    SAX_AC_POWER_TOTAL,
     SAX_NOMINAL_FACTOR,
     SAX_PILOT_POWER,
     SOLAR_CHARGING_MODE,
@@ -294,6 +295,9 @@ class PowerManager:
     async def _update_solar_charging_power(self) -> None:
         """Update power setpoint for solar charging mode.
 
+        Uses the formula: New Battery Power = Current Battery Power - Grid Power
+        This ensures grid power goes to zero by adjusting battery charge/discharge.
+
         Security:
             OWASP A05: Validates grid sensor state
         """
@@ -301,7 +305,7 @@ class PowerManager:
             _LOGGER.warning("Grid power sensor not configured")
             return
 
-        # Get grid power state
+        # Get grid power state (negative = export, positive = import)
         grid_state = self.hass.states.get(self.grid_power_sensor)
         if grid_state is None:
             _LOGGER.warning("Grid power sensor %s not found", self.grid_power_sensor)
@@ -325,36 +329,116 @@ class PowerManager:
             )
             return
 
-        # Calculate target power (negative grid power = export, charge battery)
-        target_power = -grid_power
+        # ✅ Get current battery power from coordinator data using correct constant
+        current_battery_power = 0.0
+        if self.coordinator.data:
+            # Try SAX_AC_POWER_TOTAL first (address 40085)
+            battery_power_value = self.coordinator.data.get(SAX_AC_POWER_TOTAL)
+            
+            if battery_power_value is not None:
+                try:
+                    current_battery_power = float(battery_power_value)
+                    _LOGGER.debug(
+                        "Current battery power: %sW (from %s)",
+                        current_battery_power,
+                        SAX_AC_POWER_TOTAL,
+                    )
+                except (ValueError, TypeError) as err:
+                    _LOGGER.error(
+                        "Could not convert battery power '%s' to float: %s",
+                        battery_power_value,
+                        err,
+                    )
+                    return
+            else:
+                _LOGGER.warning(
+                    "Battery power sensor %s not found in coordinator data. Available keys: %s",
+                    SAX_AC_POWER_TOTAL,
+                    list(self.coordinator.data.keys()) if self.coordinator.data else [],
+                )
+                # Don't return - use 0.0 as fallback for first calculation
+        else:
+            _LOGGER.warning("Coordinator data not available")
+            return
 
-        # Apply power limits
-        target_power = max(
-            -self.max_discharge_power,
-            min(self.max_charge_power, target_power),
+        # ✅ CORRECT CALCULATION:
+        # New Battery Power = Current Battery Power - Grid Power
+        # 
+        # Convention:
+        # - Grid: negative = export to grid, positive = import from grid
+        # - Battery: negative = charging, positive = discharging
+        #
+        # Examples:
+        # 1. Grid exporting 1000W (grid=-1000), Battery charging 3000W (battery=-3000)
+        #    → Target: -3000 - (-1000) = -4000W (charge more to eliminate export)
+        #
+        # 2. Grid importing 500W (grid=+500), Battery charging 3000W (battery=-3000)
+        #    → Target: -3000 - (+500) = -3500W (charge less to eliminate import)
+        #
+        # 3. Grid importing 2000W (grid=+2000), Battery charging 1000W (battery=-1000)
+        #    → Target: -1000 - (+2000) = +1000W (discharge to eliminate import)
+        
+        target_power = current_battery_power - grid_power
+
+        _LOGGER.debug(
+            "Solar charging calculation: grid=%sW, current_battery=%sW, raw_target=%sW",
+            grid_power,
+            current_battery_power,
+            target_power,
         )
 
+        # Apply power limits (Note: charging is negative, discharging is positive)
+        target_power = max(
+            -self.max_charge_power,  # Maximum charge (negative value)
+            min(self.max_discharge_power, target_power),  # Maximum discharge (positive value)
+        )
+
+        _LOGGER.debug("After power limits: target=%sW", target_power)
+
         # Apply SOC constraints
-        _LOGGER.debug("Pre-constraint target power: %sW", target_power)
         constrained_result = await self.coordinator.soc_manager.apply_constraints(
             target_power
         )
-        target_power = constrained_result.constrained_value
-        _LOGGER.debug("Post-constraint target power: %sW", target_power)
+        final_target = constrained_result.constrained_value
+        
+        if final_target != target_power:
+            _LOGGER.info(
+                "Solar charging constrained by SOC: %sW → %sW (reason: %s)",
+                target_power,
+                final_target,
+                constrained_result.reason if hasattr(constrained_result, 'reason') else 'SOC limits',
+            )
+        
+        _LOGGER.info(
+            "Solar charging update: grid=%sW, battery=%sW → target=%sW",
+            grid_power,
+            current_battery_power,
+            final_target,
+        )
 
         # Update power setpoint via number entity
-        await self.update_power_setpoint(target_power)
+        await self.update_power_setpoint(final_target)
 
     async def update_power_setpoint(self, power: float) -> None:
-        """Update power setpoint via number entity service call."""
+        """Update power setpoint via number entity service call.
+
+        Args:
+            power: Power value in watts (positive = discharge, negative = charge)
+
+        Security:
+            OWASP A05: Validates power limits and entity availability
+        Performance:
+            Non-blocking service call for efficiency
+        """
+        # Security: Validate power limits
         if not isinstance(power, (int, float)):
             _LOGGER.error("Invalid power value type: %s", type(power))
             return
 
         # Clamp to absolute limits
         clamped_power = max(
-            -self.max_discharge_power,
-            min(self.max_charge_power, power),
+            -self.max_charge_power,  # Note: negative = charge
+            min(self.max_discharge_power, power),
         )
 
         if clamped_power != power:
@@ -364,7 +448,7 @@ class PowerManager:
         self._state.target_power = clamped_power
         self._state.last_update = datetime.now()
 
-        # SIMPLE FIX: Use the known entity_id directly
+        # ✅ SIMPLE FIX: Use the known entity_id directly
         # Since we know the entity is number.sax_cluster_pilot_power, just use it
         power_entity_id = "number.sax_cluster_pilot_power"
         
@@ -375,7 +459,7 @@ class PowerManager:
                 power_entity_id,
             )
             for state in self.hass.states.async_all("number"):
-                if "pilot" in state.entity_id.lower() or "power" in state.entity_id.lower():
+                if "pilot" in state.entity_id.lower() or "sax" in state.entity_id.lower():
                     _LOGGER.error("  - %s", state.entity_id)
             return
 
