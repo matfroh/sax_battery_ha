@@ -317,7 +317,7 @@ class ModbusAPI:
         in a single transaction and not strictly validating the response.
 
         Args:
-            value: The nominal power value to write
+            value: The nominal power value to write (can be negative for charging)
             power_factor: Power factor as scaled integer (e.g., 9500 for 0.95)
             modbus_item: Optional modbus item for context (address and device_id)
 
@@ -337,13 +337,30 @@ class ModbusAPI:
 
         if not modbus_item:
             _LOGGER.warning("No Modbus item provided for nominal power write")
-            return False  # Address and slave must be provided via modbus_item
-        try:
-            # Default SAX addresses if no modbus_item provided
+            return False
 
-            # Convert values to 16-bit unsigned integers
-            power_int = max(0, min(65535, int(value))) & 0xFFFF
+        try:
+            # Convert power value to signed 16-bit integer, then to unsigned representation
+            # This handles negative values correctly using two's complement
+            power_int_signed = int(value)
+
+            # Clamp to signed 16-bit range: -32768 to 32767
+            power_int_signed = max(-32768, min(32767, power_int_signed))
+
+            # Convert to unsigned 16-bit using two's complement for negative values
+            # Python's & operation handles this automatically
+            power_int = power_int_signed & 0xFFFF
+
+            # Power factor is always positive
             pf_int = max(0, min(65535, power_factor)) & 0xFFFF
+
+            _LOGGER.debug(
+                "Converting power value: raw=%s, signed=%s, unsigned=0x%04X (%d)",
+                value,
+                power_int_signed,
+                power_int,
+                power_int,
+            )
 
             # Atomic write for registers power and power factor
             result = await self._modbus_client.write_registers(
@@ -354,23 +371,20 @@ class ModbusAPI:
             )
 
             _LOGGER.debug(
-                "Wrote nominal power registers at address %d: power=%s, power_factor=%s",
+                "Wrote nominal power registers at address %d: power=%s (0x%04X), power_factor=%s",
                 modbus_item.address,
+                power_int,
                 power_int,
                 pf_int,
             )
 
             # SAX battery bug workaround: Don't strictly validate transaction ID
-            # Just check that we didn't get a clear error response
             if hasattr(result, "isError"):
                 if result.isError():
-                    # Log the error but still check for SAX-specific success patterns
                     _LOGGER.debug("Write registers returned error status: %s", result)
 
                     # Check if this is a known SAX battery quirk
                     error_str = str(result).lower()
-                    # Some SAX batteries return errors even on successful writes
-                    # Check for specific error patterns that indicate real failures
                     real_errors = [
                         "connection",
                         "timeout",
@@ -394,8 +408,8 @@ class ModbusAPI:
                             "SAX battery returned function_code=255 - treating as success"
                         )
                         return True
-                # No error reported - success
                 return True
+
             # Can't determine error status - assume success
             _LOGGER.debug("Cannot determine error status, assuming success")
             return True  # noqa: TRY300
