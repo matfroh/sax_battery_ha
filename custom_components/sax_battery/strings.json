@@ -43,6 +43,40 @@
                         }
                     }
                 }
+            },
+            "solar_charging_switch": {
+                "name": "Solar Charging",
+                "state": {
+                    "off": "Disabled",
+                    "on": "Enabled"
+                },
+                "state_attributes": {
+                    "mode_conflict": {
+                        "name": "Mode Conflict",
+                        "state": {
+                            "none": "No conflict",
+                            "manual_disabled": "Manual control was disabled",
+                            "solar_disabled": "Solar charging was disabled"
+                        }
+                    }
+                }
+            },
+            "manual_control_switch": {
+                "name": "Manual Control",
+                "state": {
+                    "off": "Disabled",
+                    "on": "Enabled"
+                },
+                "state_attributes": {
+                    "mode_conflict": {
+                        "name": "Mode Conflict",
+                        "state": {
+                            "none": "No conflict",
+                            "solar_disabled": "Solar charging was disabled",
+                            "manual_disabled": "Manual control was disabled"
+                        }
+                    }
+                }
             }
         }
     },

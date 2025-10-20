@@ -137,6 +137,7 @@ class TestPowerManagerInitialization:
         expected_max_charge = 3 * LIMIT_MAX_DISCHARGE_PER_BATTERY
         assert power_manager.max_discharge_power == expected_max_discharge
         assert power_manager.max_charge_power == expected_max_charge
+        assert power_manager._state.solar_charging_enabled is False
 
     def test_configuration_update(
         self,
@@ -174,11 +175,10 @@ class TestPowerManagerInitialization:
             coordinator=mock_coordinator_master,
             config_entry=entry,
         )
-
+        # manual power control should be disabled due to solar charging enabled
         assert power_manager.grid_power_sensor == "sensor.grid_power"
         assert power_manager.update_interval == 15
-        # ToDo: Fix solar charging initialization test
-        # assert power_manager._state.solar_charging_enabled is True
+        assert power_manager._state.manual_control_enabled is False
 
 
 class TestPowerManagerLifecycle:
@@ -458,8 +458,7 @@ class TestModeTransitions:
     ) -> None:
         """Test transition from solar charging to manual control.
 
-        Note: Current implementation prevents manual control when solar charging is active.
-        This test verifies that behavior is enforced.
+        Verifies that enabling manual control automatically disables solar charging.
         """
         mock_coordinator_master.soc_manager.apply_constraints = AsyncMock(  # type:ignore[method-assign]
             return_value=SOCConstraintResult(
@@ -477,15 +476,16 @@ class TestModeTransitions:
         # Enable solar charging
         await power_manager.set_solar_charging_mode(True)
         assert power_manager._state.solar_charging_enabled is True
+        assert power_manager._state.manual_control_enabled is False
 
-        # Try to enable manual control (should be prevented by current implementation)
+        # Enable manual control (should automatically disable solar)
         with patch.object(power_manager, "update_power_setpoint", new=AsyncMock()):
             await power_manager.set_manual_control_mode(True, 1000)
 
-            # Current implementation prevents manual control when solar is active
-            assert power_manager._state.manual_control_enabled is False
-            assert power_manager._state.solar_charging_enabled is True
-            assert power_manager._state.mode == SOLAR_CHARGING_MODE
+            # Manual control enabled, solar charging disabled
+            assert power_manager._state.manual_control_enabled is True
+            assert power_manager._state.solar_charging_enabled is False
+            assert power_manager._state.mode == "manual_control"
 
     async def test_manual_to_solar_transition(
         self,
@@ -493,7 +493,10 @@ class TestModeTransitions:
         mock_coordinator_master: SAXBatteryCoordinator,
         mock_config_entry: ConfigEntry,
     ) -> None:
-        """Test transition from manual control to solar charging."""
+        """Test transition from manual control to solar charging.
+
+        Verifies that enabling solar charging automatically disables manual control.
+        """
         power_manager = PowerManager(
             hass=hass,
             coordinator=mock_coordinator_master,
@@ -501,14 +504,18 @@ class TestModeTransitions:
         )
 
         # Enable manual control
-        power_manager._state.manual_control_enabled = True
+        with patch.object(power_manager, "update_power_setpoint", new=AsyncMock()):
+            await power_manager.set_manual_control_mode(True, 1000)
+            assert power_manager._state.manual_control_enabled is True
+            assert power_manager._state.solar_charging_enabled is False
 
-        # Try to enable solar charging
+        # Enable solar charging (should automatically disable manual control)
         await power_manager.set_solar_charging_mode(True)
 
-        # Solar should not be enabled due to manual control
-        assert power_manager._state.solar_charging_enabled is False
-        assert power_manager._state.manual_control_enabled is True
+        # Solar enabled, manual control disabled
+        assert power_manager._state.solar_charging_enabled is True
+        assert power_manager._state.manual_control_enabled is False
+        assert power_manager._state.mode == "solar_charging"
 
 
 class TestConfigurationUpdates:

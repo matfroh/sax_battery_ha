@@ -500,7 +500,7 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
 
         # Get state from config entry or SAX item calculation
         if self._sax_item.name == SOLAR_CHARGING_SWITCH:
-            # ✅ FIXED: Only check solar_enabled, not pilot_enabled
+            # Only check solar_enabled, not pilot_enabled
             solar_enabled = bool(
                 self.coordinator.config_entry.data.get(
                     CONF_ENABLE_SOLAR_CHARGING, False
@@ -542,14 +542,31 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
 
         _LOGGER.info("Turning ON control switch: %s", self._sax_item.name)
 
-        # Update config entry for control switches
+        # Mutual exclusion: Ensure only one control switch is active at a time
         if self._sax_item.name == SOLAR_CHARGING_SWITCH:
-            new_data = {
-                **self.coordinator.config_entry.data,
-                CONF_ENABLE_SOLAR_CHARGING: True,
-            }
+            # Check if manual control is currently enabled
+            manual_enabled = self.coordinator.config_entry.data.get(
+                CONF_MANUAL_CONTROL, False
+            )
+            if manual_enabled:
+                _LOGGER.warning(
+                    "Cannot enable solar charging: manual control is active. "
+                    "Disabling manual control first."
+                )
+                # Auto-disable manual control
+                new_data = {
+                    **self.coordinator.config_entry.data,
+                    CONF_MANUAL_CONTROL: False,
+                    CONF_ENABLE_SOLAR_CHARGING: True,
+                }
+            else:
+                new_data = {
+                    **self.coordinator.config_entry.data,
+                    CONF_ENABLE_SOLAR_CHARGING: True,
+                }
+
             _LOGGER.info(
-                "Updating config entry for solar charging: CONF_ENABLE_SOLAR_CHARGING=True",
+                "Updating config entry: CONF_ENABLE_SOLAR_CHARGING=True, CONF_MANUAL_CONTROL=False"
             )
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
@@ -562,15 +579,37 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
                 and self.coordinator.power_manager
             ):
                 _LOGGER.info("Triggering power manager solar charging mode")
+                # First disable manual control, then enable solar charging
+                if manual_enabled:
+                    await self.coordinator.power_manager.set_manual_control_mode(
+                        False, 0.0
+                    )
                 await self.coordinator.power_manager.set_solar_charging_mode(True)
 
         elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
-            new_data = {
-                **self.coordinator.config_entry.data,
-                CONF_MANUAL_CONTROL: True,
-            }
+            # Check if solar charging is currently enabled
+            solar_enabled = self.coordinator.config_entry.data.get(
+                CONF_ENABLE_SOLAR_CHARGING, False
+            )
+            if solar_enabled:
+                _LOGGER.warning(
+                    "Cannot enable manual control: solar charging is active. "
+                    "Disabling solar charging first."
+                )
+                # Auto-disable solar charging
+                new_data = {
+                    **self.coordinator.config_entry.data,
+                    CONF_ENABLE_SOLAR_CHARGING: False,
+                    CONF_MANUAL_CONTROL: True,
+                }
+            else:
+                new_data = {
+                    **self.coordinator.config_entry.data,
+                    CONF_MANUAL_CONTROL: True,
+                }
+
             _LOGGER.info(
-                "Updating config entry for manual control: CONF_MANUAL_CONTROL=True",
+                "Updating config entry: CONF_MANUAL_CONTROL=True, CONF_ENABLE_SOLAR_CHARGING=False"
             )
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
@@ -583,6 +622,9 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
                 and self.coordinator.power_manager
             ):
                 _LOGGER.info("Triggering power manager manual control mode")
+                # First disable solar charging, then enable manual control
+                if solar_enabled:
+                    await self.coordinator.power_manager.set_solar_charging_mode(False)
                 await self.coordinator.power_manager.set_manual_control_mode(True, 0.0)
 
         await self.coordinator.async_request_refresh()
@@ -603,7 +645,7 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
                 CONF_ENABLE_SOLAR_CHARGING: False,
             }
             _LOGGER.info(
-                "Updating config entry for solar charging: CONF_ENABLE_SOLAR_CHARGING=False",
+                "Updating config entry for solar charging: CONF_ENABLE_SOLAR_CHARGING=False"
             )
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,
@@ -624,7 +666,7 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
                 CONF_MANUAL_CONTROL: False,
             }
             _LOGGER.info(
-                "Updating config entry for manual control: CONF_MANUAL_CONTROL=False",
+                "Updating config entry for manual control: CONF_MANUAL_CONTROL=False"
             )
             self.hass.config_entries.async_update_entry(
                 self.coordinator.config_entry,

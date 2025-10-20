@@ -39,7 +39,7 @@ from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem
 from custom_components.sax_battery.modbusobject import ModbusAPI
 from custom_components.sax_battery.models import BatteryModel, SAXBatteryData
-from custom_components.sax_battery.soc_manager import SOCConstraintResult, SOCManager
+from custom_components.sax_battery.soc_manager import SOCManager
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
@@ -247,7 +247,7 @@ def soc_manager(mock_coordinator) -> SOCManager:
         enabled=True,
     )
 
-    return manager
+    return manager  # noqa: RET504
 
 
 @pytest.fixture

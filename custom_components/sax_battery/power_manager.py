@@ -205,19 +205,28 @@ class PowerManager:
             CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
         )
 
-        # FIX: Use correct constant CONF_ENABLE_SOLAR_CHARGING instead of SOLAR_CHARGING_MODE
-        self._state.solar_charging_enabled = bool(
+        solar_enabled = bool(
             self.config_entry.data.get(CONF_ENABLE_SOLAR_CHARGING, False)
         )
-        self._state.manual_control_enabled = bool(
-            self.config_entry.data.get(CONF_MANUAL_CONTROL, False)
-        )
+        manual_enabled = bool(self.config_entry.data.get(CONF_MANUAL_CONTROL, False))
+
+        # Security: Enforce mutual exclusion at startup
+        if solar_enabled and manual_enabled:
+            _LOGGER.warning(
+                "Both solar charging and manual control are enabled in config - "
+                "defaulting to solar charging mode"
+            )
+            solar_enabled = True
+            manual_enabled = False
+
+        self._state.solar_charging_enabled = solar_enabled
+        self._state.manual_control_enabled = manual_enabled
 
         _LOGGER.info(
             "Power manager config updated: interval=%ss, solar=%s, manual=%s, grid_sensor=%s",
             self.update_interval,
-            self._state.solar_charging_enabled,
-            self._state.manual_control_enabled,
+            solar_enabled,
+            manual_enabled,
             self.grid_power_sensor,
         )
 
@@ -468,7 +477,6 @@ class PowerManager:
         self._state.target_power = clamped_power
         self._state.last_update = datetime.now()
 
-        # ✅ SIMPLE FIX: Use the known entity_id directly
         # Since we know the entity is number.sax_cluster_pilot_power, just use it
         power_entity_id = "number.sax_cluster_pilot_power"
 
@@ -517,18 +525,20 @@ class PowerManager:
             enabled: True to enable solar charging mode
 
         Security:
-            OWASP A01: Validates only one mode can be active
+            OWASP A01: Power manager state synchronized with switch state
         """
-        if enabled and self._state.manual_control_enabled:
-            _LOGGER.warning(
-                "Cannot enable solar charging while manual control is active"
-            )
-            return
-
         self._state.solar_charging_enabled = enabled
         self._state.mode = SOLAR_CHARGING_MODE if enabled else MANUAL_CONTROL_MODE
 
-        _LOGGER.info("Solar charging mode %s", "enabled" if enabled else "disabled")
+        # Update manual control state (mutual exclusion)
+        if enabled:
+            self._state.manual_control_enabled = False
+
+        _LOGGER.info(
+            "Solar charging mode %s (manual_control=%s)",
+            "enabled" if enabled else "disabled",
+            self._state.manual_control_enabled,
+        )
 
         if enabled:
             await self._async_update_power(None)
@@ -541,17 +551,15 @@ class PowerManager:
             power: Manual power setpoint (only used if enabled=True)
 
         Security:
-            OWASP A01: Validates only one mode can be active
+            OWASP A01: Power manager state synchronized with switch state
             OWASP A05: Applies SOC constraints
         """
-        if enabled and self._state.solar_charging_enabled:
-            _LOGGER.warning(
-                "Cannot enable manual control while solar charging is active"
-            )
-            return
-
         self._state.manual_control_enabled = enabled
         self._state.mode = MANUAL_CONTROL_MODE if enabled else SOLAR_CHARGING_MODE
+
+        # Update solar charging state (mutual exclusion)
+        if enabled:
+            self._state.solar_charging_enabled = False
 
         if enabled:
             # Apply SOC constraints to manual power
@@ -560,7 +568,11 @@ class PowerManager:
             )
             await self.update_power_setpoint(constrained_result.constrained_value)
 
-        _LOGGER.info("Manual control mode %s", "enabled" if enabled else "disabled")
+        _LOGGER.info(
+            "Manual control mode %s (solar_charging=%s)",
+            "enabled" if enabled else "disabled",
+            self._state.solar_charging_enabled,
+        )
 
     @property
     def current_mode(self) -> str:
