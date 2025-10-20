@@ -20,7 +20,6 @@ from .const import (
     CONF_BATTERY_PHASE,
     CONF_ENABLE_SOLAR_CHARGING,
     CONF_MANUAL_CONTROL,
-    CONF_PILOT_FROM_HA,
     DOMAIN,
     MANUAL_CONTROL_SWITCH,
     SOLAR_CHARGING_SWITCH,
@@ -556,12 +555,15 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
                 self.coordinator.config_entry,
                 data=new_data,
             )
-            
+
             # Trigger power manager update if it exists
-            if hasattr(self.coordinator, 'power_manager') and self.coordinator.power_manager:
+            if (
+                hasattr(self.coordinator, "power_manager")
+                and self.coordinator.power_manager
+            ):
                 _LOGGER.info("Triggering power manager solar charging mode")
                 await self.coordinator.power_manager.set_solar_charging_mode(True)
-            
+
         elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
             new_data = {
                 **self.coordinator.config_entry.data,
@@ -574,9 +576,12 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
                 self.coordinator.config_entry,
                 data=new_data,
             )
-            
+
             # Trigger power manager update if it exists
-            if hasattr(self.coordinator, 'power_manager') and self.coordinator.power_manager:
+            if (
+                hasattr(self.coordinator, "power_manager")
+                and self.coordinator.power_manager
+            ):
                 _LOGGER.info("Triggering power manager manual control mode")
                 await self.coordinator.power_manager.set_manual_control_mode(True, 0.0)
 
@@ -604,12 +609,15 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
                 self.coordinator.config_entry,
                 data=new_data,
             )
-            
+
             # Trigger power manager update if it exists
-            if hasattr(self.coordinator, 'power_manager') and self.coordinator.power_manager:
+            if (
+                hasattr(self.coordinator, "power_manager")
+                and self.coordinator.power_manager
+            ):
                 _LOGGER.info("Disabling power manager solar charging mode")
                 await self.coordinator.power_manager.set_solar_charging_mode(False)
-            
+
         elif self._sax_item.name == MANUAL_CONTROL_SWITCH:
             new_data = {
                 **self.coordinator.config_entry.data,
@@ -622,9 +630,12 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
                 self.coordinator.config_entry,
                 data=new_data,
             )
-            
+
             # Trigger power manager update if it exists
-            if hasattr(self.coordinator, 'power_manager') and self.coordinator.power_manager:
+            if (
+                hasattr(self.coordinator, "power_manager")
+                and self.coordinator.power_manager
+            ):
                 _LOGGER.info("Disabling power manager manual control mode")
                 await self.coordinator.power_manager.set_manual_control_mode(False, 0.0)
 

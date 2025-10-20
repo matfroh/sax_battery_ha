@@ -624,6 +624,141 @@ def mock_modbus_api_obj(mock_modbus_api):  # ✅ Different name, uses parent
     ...
 ```
 
+### Fixture Location and Scope (Critical Rule)
+
+**Centralize fixtures in `conftest.py` for reusability and consistency:**
+
+- **All reusable fixtures go in `conftest.py`**: Use `tests/conftest.py` for integration-wide fixtures
+- **Test-specific fixtures use unique names**: If a test needs a specialized version of a `conftest.py` fixture, create a new fixture with a descriptive name that extends or modifies the base fixture
+- **Never duplicate fixture names**: Shadowing fixtures from `conftest.py` in test files causes confusing behavior and breaks other tests
+- **Document fixture dependencies**: Clearly comment which fixtures depend on others
+
+**Pattern for Test-Specific Fixture Customization:**
+
+```python
+# tests/conftest.py
+@pytest.fixture
+def mock_soc_manager() -> SOCManager:
+    """Create a properly configured SOCManager for testing.
+
+    Returns real SOCManager instance with mocked dependencies.
+    Security:
+        OWASP A05: Validates manager has required attributes for testing
+    """
+    # Create mock coordinator with required attributes
+    mock_coordinator = MagicMock()
+    mock_coordinator.data = {}
+
+    # Create mock Home Assistant instance
+    mock_hass = MagicMock()
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+
+    # Mock entity registry for entity ID lookups
+    mock_entity_registry = MagicMock()
+    mock_entity_registry.async_get_entity_id = MagicMock(return_value="number.test_entity")
+    mock_hass.data = {
+        "entity_registry": mock_entity_registry
+    }
+
+    mock_coordinator.hass = mock_hass
+
+    # Create mock config_entry
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "test_entry_123"
+    mock_coordinator.config_entry = mock_entry
+
+    # Create mock SAXBatteryData with get_unique_id_for_item
+    mock_sax_data = MagicMock()
+    mock_sax_data.get_unique_id_for_item = MagicMock(return_value=None)
+    mock_coordinator.sax_data = mock_sax_data
+
+    # Create REAL SOCManager instance with mocked dependencies
+    manager = SOCManager(
+        coordinator=mock_coordinator,
+        min_soc=20.0,
+        enabled=True,
+    )
+
+    return manager
+
+
+# tests/test_soc_manager.py
+class TestCheckAndEnforceDischargeLimit:
+    """Test check_and_enforce_discharge_limit method."""
+
+    @patch("homeassistant.helpers.entity_platform.async_get_current_platform")
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_writes_to_entity(
+        self,
+        mock_entity_registry,
+        mock_get_platform,
+        mock_soc_manager,  # ✅ Use fixture from conftest.py
+    ) -> None:
+        """Test enforcement writes to SAX_MAX_DISCHARGE entity.
+
+        Security:
+            OWASP A05: Validates proper constraint enforcement
+        """
+        # ✅ Customize the fixture for this specific test
+        mock_soc_manager.coordinator.data = {SAX_COMBINED_SOC: 8.0}
+        mock_soc_manager.coordinator.sax_data.get_unique_id_for_item.return_value = (
+            "sax_cluster_max_discharge"
+        )
+
+        # ✅ Mock additional test-specific dependencies
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id.return_value = "number.sax_max_discharge"
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # Execute test
+        result = await mock_soc_manager.check_and_enforce_discharge_limit()
+
+        # Verify behavior
+        assert result is True
+```
+
+**When to Create Test-Specific Fixtures:**
+
+```python
+# ✅ GOOD: Test needs significantly different setup
+@pytest.fixture
+def mock_soc_manager_disabled(mock_soc_manager) -> SOCManager:
+    """SOC manager with enforcement disabled for specific tests."""
+    mock_soc_manager.enabled = False
+    return mock_soc_manager
+
+# ✅ GOOD: Test needs different data setup
+@pytest.fixture
+def mock_soc_manager_low_soc(mock_soc_manager) -> SOCManager:
+    """SOC manager with critically low SOC for boundary tests."""
+    mock_soc_manager.coordinator.data = {SAX_COMBINED_SOC: 5.0}
+    return mock_soc_manager
+
+# ❌ BAD: Shadowing conftest.py fixture
+@pytest.fixture
+def mock_soc_manager():  # ❌ Duplicates conftest.py fixture name
+    """This breaks other tests that depend on the base fixture."""
+    ...
+```
+
+**Fixture Organization Checklist:**
+
+- [ ] All fixtures used in 3+ test files are in `conftest.py`
+- [ ] Test-specific fixtures have unique, descriptive names
+- [ ] No fixture name conflicts between `conftest.py` and test files
+- [ ] Fixture dependencies are documented with docstrings
+- [ ] Test-specific fixtures extend base fixtures via parameters
+- [ ] Complex fixture setup is centralized to avoid duplication
+
+**Benefits of This Approach:**
+
+✅ **Consistency**: All tests use the same base fixture setup from `conftest.py`
+✅ **Maintainability**: Fixture changes propagate to all tests automatically
+✅ **Type Safety**: IDEs can track fixture dependencies and detect conflicts
+✅ **Test Isolation**: Tests remain independent while sharing infrastructure
+✅ **No Breaking Changes**: Adding test-specific fixtures doesn't break existing tests
+✅ **OWASP A05 Compliance**: Centralized security validations in fixtures
+
 ### Testing Home Assistant Data Access
 
 **Critical Rule**: Never access `hass.data` directly in tests - always use proper integration setup and fixtures.

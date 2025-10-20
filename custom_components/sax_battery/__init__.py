@@ -8,8 +8,8 @@ import re
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
@@ -27,6 +27,7 @@ from .const import (
     CONF_PILOT_FROM_HA,
     DEFAULT_PORT,
     DOMAIN,
+    MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
 )
@@ -34,13 +35,12 @@ from .coordinator import SAXBatteryCoordinator
 from .modbusobject import ModbusAPI
 from .models import SAXBatteryData
 from .power_manager import PowerManager
-from .utils import get_unique_id_for_item
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
-    Platform.SENSOR,
     Platform.NUMBER,
+    Platform.SENSOR,
     Platform.SWITCH,
 ]
 
@@ -60,6 +60,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
 
         # Initialize coordinators for each battery
         coordinators: dict[str, SAXBatteryCoordinator] = {}
+        master_coordinator: SAXBatteryCoordinator | None = (
+            None  # ✅ Define outside block
+        )
+
         for battery_id, battery_config in batteries_config.items():
             if not battery_config.get(CONF_BATTERY_ENABLED, True):
                 _LOGGER.debug("Skipping disabled battery %s", battery_id)
@@ -69,11 +73,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
             )
             coordinators[battery_id] = coordinator
 
+            # ✅ Track master coordinator
+            if battery_config.get(CONF_BATTERY_IS_MASTER, False):
+                master_coordinator = coordinator
+
         if not coordinators:
             raise ConfigEntryNotReady("No batteries enabled")  # noqa: TRY301
 
         # Store coordinators and data BEFORE power manager initialization
-        # This prevents KeyError when power manager tries to access hass.data[DOMAIN]
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
             "coordinators": coordinators,
             "sax_data": sax_data,
@@ -88,14 +95,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
         if power_manager_enabled:
             master_battery_id = sax_data.master_battery_id
             if master_battery_id and master_battery_id in coordinators:
-                master_coordinator = coordinators[master_battery_id]
+                if not master_coordinator:  # Safety check
+                    master_coordinator = coordinators[master_battery_id]
+
                 power_manager = PowerManager(
                     hass=hass,
                     coordinator=master_coordinator,
                     config_entry=entry,
                 )
 
-                # Store power manager in integration data (now safe)
+                # Store power manager in integration data
                 hass.data[DOMAIN][entry.entry_id]["power_manager"] = power_manager
 
                 # Start power manager
@@ -111,20 +120,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
         # Log device and entity registry state before platform setup
         await _log_registry_state_before_setup(hass, entry, coordinators, sax_data)
 
-        # Store coordinators
+        # Store coordinators in runtime_data
         entry.runtime_data = coordinators
 
         # Set up platforms
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-        # Register the startup check to run after HA has fully started
-        # Pass hass and entry_id to the listener so it can access stored data
-        async def _startup_check_wrapper(event: Event) -> None:
-            """Wrapper to pass entry_id to startup check."""
-            await _check_soc_constraints_on_startup(hass, entry.entry_id, event)
+        # Wait for first coordinator update to ensure data is available
+        for coordinator in coordinators.values():
+            await coordinator.async_config_entry_first_refresh()
 
-        # Register the startup check to run after HA has fully started
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _startup_check_wrapper)
+        # ✅ Check SOC constraints after entities exist and data is available
+        if master_coordinator and master_coordinator.soc_manager:
+            _LOGGER.debug("Checking SOC constraints after initial setup")
+            try:
+                await master_coordinator.soc_manager.check_and_enforce_discharge_limit()
+            except Exception as err:  # noqa: BLE001
+                # Don't fail setup if SOC check fails - log and continue
+                _LOGGER.warning("Failed to check SOC constraints on startup: %s", err)
 
         # Log comprehensive setup summary with registry information
         await _log_comprehensive_setup_summary(
@@ -138,119 +151,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
     except Exception as err:
         _LOGGER.exception("Failed to setup SAX Battery integration")
         raise ConfigEntryNotReady(f"Unexpected error during setup: {err}") from err
-
-
-# Schedule SOC constraint enforcement check after HA startup completes
-async def _check_soc_constraints_on_startup(
-    hass: HomeAssistant, entry_id: str, _event: Event
-) -> None:
-    """Check and enforce SOC discharge limits after Home Assistant startup.
-
-    This ensures that discharge limits are properly enforced on restart,
-    updating both hardware registers and entity UI states to reflect
-    current SOC constraint status.
-
-    For write-only registers (41-44), this also restores the last known values
-    from entity states since these cannot be read from hardware.
-
-    Args:
-        hass: Home Assistant instance
-        entry_id: Config entry ID to access stored coordinators
-        _event: Startup event (unused)
-
-    Security:
-        OWASP A05: Hardware-level battery protection on startup
-
-    Performance:
-        Efficient entity state restoration with single registry query
-    """
-    _LOGGER.debug("Home Assistant startup complete, checking SOC constraints")
-
-    # Small delay to ensure all entities are fully initialized
-    await asyncio.sleep(5)
-
-    # Security: Validate domain and entry exist before access
-    if DOMAIN not in hass.data:
-        _LOGGER.warning(
-            "SAX Battery domain not found in hass.data during startup check"
-        )
-        return
-
-    integration_data = hass.data[DOMAIN].get(entry_id)
-    if not integration_data:
-        _LOGGER.warning(
-            "SAX Battery integration data not found for entry %s during startup check",
-            entry_id,
-        )
-        return
-
-    # Get coordinators from stored integration data
-    coordinators = integration_data.get("coordinators", {})
-    if not coordinators:
-        _LOGGER.warning("No coordinators found during startup SOC check")
-        return
-
-    # Get entity registry for state restoration
-    ent_reg = er.async_get(hass)
-
-    # Restore write-only register values from entity states
-    await _restore_write_only_register_values(hass, entry_id, coordinators, ent_reg)
-
-    # Find master coordinator for SOC constraint checking
-    master_coordinator = None
-    for coordinator in coordinators.values():
-        if coordinator.battery_config.get(CONF_BATTERY_IS_MASTER, False):
-            master_coordinator = coordinator
-            break
-
-    if not master_coordinator:
-        _LOGGER.warning("No master coordinator found for SOC constraint check")
-        return
-
-    # Check SOC constraints using master coordinator's SOC manager
-    if master_coordinator.soc_manager and master_coordinator.soc_manager.enabled:
-        _LOGGER.debug("Checking SOC constraints on startup using master coordinator")
-
-        try:
-            # Get combined SOC from master coordinator data
-            current_soc = await master_coordinator.soc_manager.get_current_soc()
-            min_soc = master_coordinator.soc_manager.min_soc
-
-            _LOGGER.info(
-                "Startup SOC check: combined_soc=%s%%, min=%s%%",
-                current_soc,
-                min_soc,
-            )
-
-            if current_soc < min_soc:
-                _LOGGER.warning(
-                    "Combined SOC %s%% below minimum %s%% on startup - enforcing discharge limit",
-                    current_soc,
-                    min_soc,
-                )
-
-                # Enforce hardware limit using master coordinator's SOC manager
-                enforced = await master_coordinator.soc_manager.check_and_enforce_discharge_limit()
-
-                if enforced:
-                    _LOGGER.info(
-                        "Discharge limit enforced on startup (combined SOC: %s%%)",
-                        current_soc,
-                    )
-                else:
-                    _LOGGER.error("Failed to enforce discharge limit on startup")
-            else:
-                _LOGGER.debug(
-                    "Combined SOC %s%% above minimum %s%% - no enforcement needed",
-                    current_soc,
-                    min_soc,
-                )
-
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.error(
-                "Error checking SOC constraints on startup: %s",
-                err,
-            )
 
 
 async def _restore_write_only_register_values(
@@ -289,10 +189,25 @@ async def _restore_write_only_register_values(
 
     for entity_name, item_name in write_only_items.items():
         try:
+            modbus_item = next(
+                (
+                    item
+                    for item in MODBUS_BATTERY_POWER_LIMIT_ITEMS
+                    if item.name == item_name
+                ),
+                None,
+            )
+
+            if not modbus_item:
+                _LOGGER.error(
+                    "Could not find %s in MODBUS_BATTERY_POWER_LIMIT_ITEMS",
+                    item_name,
+                )
+                return
+
             # Use proper unique_id generation function
-            unique_id = get_unique_id_for_item(
-                master_coordinator.hass,
-                master_coordinator.config_entry.entry_id,
+            unique_id = master_coordinator.sax_data.get_unique_id_for_item(
+                modbus_item,
                 item_name,
             )
 

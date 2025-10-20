@@ -13,10 +13,9 @@ from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.helpers import entity_platform, entity_registry as er
+from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN, SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
-from .utils import get_unique_id_for_item
+from .const import SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
 
 if TYPE_CHECKING:
     from .coordinator import SAXBatteryCoordinator
@@ -42,20 +41,36 @@ class SOCManager:
         min_soc: float,
         enabled: bool = True,
     ) -> None:
-        """Initialize SOC manager.
-
-        Args:
-            coordinator: Battery coordinator for SOC data access
-            min_soc: Minimum allowed SOC percentage (0-100)
-            enabled: Whether constraints are enabled
-
-        Security:
-            OWASP A05: Validates min_soc bounds to prevent misconfiguration
-        """
+        """Initialize SOC manager."""
         self.coordinator = coordinator
-        self._min_soc = max(0.0, min(100.0, min_soc))  # Clamp to valid range
+        self.hass = coordinator.hass
+        self.config_entry = coordinator.config_entry
+        self._min_soc = max(0.0, min(100.0, min_soc))
         self._enabled = enabled
-        self._last_enforced_soc: float | None = None  # Track last enforcement
+        self._last_enforced_soc: float | None = None
+
+    def _get_combined_soc(self) -> float | None:
+        """Get combined SOC from coordinator data.
+
+        Returns:
+            float | None: Combined SOC percentage or None if unavailable
+
+        Performance:
+            Direct access to coordinator data cache
+        """
+        if not self.coordinator.data:
+            return None
+
+        soc_value = self.coordinator.data.get(SAX_COMBINED_SOC)
+        if soc_value is None:
+            _LOGGER.debug("Combined SOC not available in coordinator data")
+            return None
+
+        try:
+            return float(soc_value)
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning("Invalid combined SOC value: %s (%s)", soc_value, err)
+            return None
 
     @property
     def min_soc(self) -> float:
@@ -89,152 +104,144 @@ class SOCManager:
         _LOGGER.debug("SOC constraints %s", "enabled" if self._enabled else "disabled")
 
     async def get_current_soc(self) -> float:
-        """Get current combined SOC from coordinator.
+        """Get current combined SOC (async wrapper for _get_combined_soc).
 
         Returns:
-            Current SOC percentage (0-100)
+            float: Current SOC percentage (0-100), defaults to 0.0 if unavailable
 
         Performance:
             Uses coordinator data cache to avoid redundant queries
         """
-        if not self.coordinator.data:
-            return 0.0
-
-        soc_value = self.coordinator.data.get(SAX_COMBINED_SOC, 0)
-        try:
-            return float(soc_value)
-        except (ValueError, TypeError):
-            _LOGGER.warning("Invalid SOC value: %s", soc_value)
-            return 0.0
+        combined_soc = self._get_combined_soc()
+        return combined_soc if combined_soc is not None else 0.0
 
     async def check_and_enforce_discharge_limit(self) -> bool:
-        """Check SOC and enforce discharge limit by writing to max_discharge register.
-
-        This method writes directly to the master battery's SAX_MAX_DISCHARGE entity
-        when combined SOC is below minimum. Uses SAX_COMBINED_SOC for multi-battery systems.
+        """Check SOC and enforce discharge limit if needed.
 
         Returns:
-            bool: True if hardware limit was enforced (written to register)
+            True if enforcement was successful or not needed, False on error
 
         Security:
-            OWASP A05: Hardware-level battery protection
-
-        Performance:
-            Minimal overhead - only writes to hardware when constraint violated
+            OWASP A05: Protects battery hardware from damage due to over-discharge
         """
+        try:
+            if self.enabled is None or self.enabled is False:
+                _LOGGER.debug("Cannot enforce discharge limit - combined SOC disabled")
+                return False
 
-        if not self._enabled:
-            return False
+            if not self.coordinator.config_entry:
+                _LOGGER.error(
+                    "Cannot enforce discharge limit - config entry not available"
+                )
+                return False
 
-        # Validate config entry exists for entity lookup
-        if not self.coordinator.config_entry:
-            _LOGGER.error("Cannot enforce discharge limit: config entry not available")
-            return False
+            # Get current combined SOC
+            combined_soc = self._get_combined_soc()
 
-        # Use SAX_COMBINED_SOC for multi-battery systems
-        current_soc = await self.get_current_soc()
-
-        if current_soc < self._min_soc:
-            # Only enforce if SOC level changed (prevents redundant writes)
-            if self._last_enforced_soc != current_soc:
+            if combined_soc is None:
                 _LOGGER.warning(
-                    "Combined SOC %s%% below minimum %s%% - enforcing discharge limit",
-                    current_soc,
+                    "Cannot enforce discharge limit - combined SOC unavailable"
+                )
+                return False
+
+            # Check if below minimum
+            if combined_soc < self.min_soc:
+                _LOGGER.warning(
+                    "Combined SOC %.1f%% below minimum %.1f%% - enforcing discharge limit",
+                    combined_soc,
                     self._min_soc,
                 )
 
-                # Generate proper unique_id for max_discharge entity
-                target_unique_id = get_unique_id_for_item(
-                    self.coordinator.hass,
-                    self.coordinator.config_entry.entry_id,
-                    SAX_MAX_DISCHARGE,
-                )
-
-                ent_reg = er.async_get(self.coordinator.hass)
-
-                # Security: Validate config entry exists before entity lookup
-                if not self.coordinator.config_entry:
-                    _LOGGER.error(
-                        "Cannot enforce discharge limit: config entry not available"
-                    )
+                # Get SAXBatteryData instance from coordinator
+                if not hasattr(self.coordinator, "sax_data"):
+                    _LOGGER.error("Coordinator missing sax_data attribute")
                     return False
 
-                if target_unique_id:
-                    # Find entity by unique_id and config_entry_id
-                    entity_entry = ent_reg.async_get_entity_id(
-                        domain="number",
-                        platform=DOMAIN,
-                        unique_id=target_unique_id,
-                    )
-                else:
-                    target_unique_id = SAX_MAX_DISCHARGE.removeprefix("sax_")
-                    entity_entry = ent_reg.async_get_entity_id(
-                        domain="number",
-                        platform=DOMAIN,
-                        unique_id=target_unique_id,
-                        # Fallback: Try without config_entry_id (less secure)
-                    )
+                sax_data = self.coordinator.sax_data
 
-                if not entity_entry:
-                    _LOGGER.error(
-                        "Could not find max_discharge entity (unique_id: %s) for enforcement",
-                        target_unique_id,
-                    )
-                    return False
-
-                # Get the entity platform
-                platform = entity_platform.async_get_current_platform()
-                if not platform:
-                    _LOGGER.error("Could not access entity platform")
-                    return False
-
-                # Find the entity object
-                entity_obj = None
-                for entity in platform.entities.values():
-                    if entity.entity_id == entity_entry:
-                        entity_obj = entity
+                # Get ModbusItem for SAX_MAX_DISCHARGE from coordinator data
+                max_discharge_item = None
+                for item_key, item_value in self.coordinator.data.items():
+                    if item_key == SAX_MAX_DISCHARGE and hasattr(item_value, "item"):
+                        max_discharge_item = item_value.item
                         break
 
-                if not entity_obj:
-                    _LOGGER.error("Could not find entity object for %s", entity_entry)
-                    return False
-
-                # Validate entity supports async_set_native_value
-                if not hasattr(entity_obj, "async_set_native_value"):
+                if max_discharge_item is None:
                     _LOGGER.error(
-                        "Entity %s does not support async_set_native_value",
-                        entity_entry,
+                        "Could not find ModbusItem for SAX_MAX_DISCHARGE in coordinator data"
                     )
                     return False
 
-                try:
-                    # Write 0W to master battery's max_discharge register
-                    await entity_obj.async_set_native_value(0.0)  # type: ignore[attr-defined]
+                # Generate unique_id using SAXBatteryData.get_unique_id_for_item
+                # Use master battery_id since SAX_MAX_DISCHARGE is WO register
+                unique_id = sax_data.get_unique_id_for_item(
+                    max_discharge_item,
+                    battery_id=self.coordinator.battery_id,
+                )
 
-                    self._last_enforced_soc = current_soc
+                # Type guard: Validate unique_id exists before entity lookup
+                if not unique_id:
+                    _LOGGER.error(
+                        "Could not generate unique_id for SAX_MAX_DISCHARGE(%s) (battery_id=%s)",
+                        max_discharge_item,
+                        self.coordinator.battery_id,
+                    )
+                    return False
+
+                # Get entity_id from registry
+                ent_reg = er.async_get(self.hass)
+                entity_id = ent_reg.async_get_entity_id(
+                    "number", "sax_battery", unique_id
+                )
+
+                if not entity_id:
+                    _LOGGER.error(
+                        "SAX_MAX_DISCHARGE entity not found in registry (unique_id=%s, battery_id=%s)",
+                        unique_id,
+                        self.coordinator.battery_id,
+                    )
+                    return False
+
+                _LOGGER.debug(
+                    "Enforcing discharge limit via entity: %s (unique_id=%s, battery_id=%s)",
+                    entity_id,
+                    unique_id,
+                    self.coordinator.battery_id,
+                )
+
+                # Set value through Home Assistant service
+                try:
+                    await self.hass.services.async_call(
+                        "number",
+                        "set_value",
+                        {
+                            "entity_id": entity_id,
+                            "value": 0.0,
+                        },
+                        blocking=True,
+                    )
+
+                    self._last_enforced_soc = combined_soc
                     _LOGGER.info(
-                        "Discharge protection enforced: %s set to 0W (combined SOC: %s%%)",
-                        entity_entry,
-                        current_soc,
+                        "Successfully enforced discharge limit (set %s to 0W)",
+                        entity_id,
                     )
                     return True  # noqa: TRY300
 
                 except Exception as err:  # noqa: BLE001
                     _LOGGER.error(
-                        "Failed to enforce discharge limit: %s",
+                        "Failed to set discharge limit on %s: %s",
+                        entity_id,
                         err,
                     )
                     return False
 
-        elif self._last_enforced_soc is not None and current_soc >= self._min_soc:
-            _LOGGER.info(
-                "Combined SOC recovered to %s%% (above minimum %s%%)",
-                current_soc,
-                self._min_soc,
-            )
-            self._last_enforced_soc = None
+            # SOC is acceptable
+            return True  # noqa: TRY300
 
-        return False
+        except Exception:
+            _LOGGER.exception("Unexpected error enforcing discharge limit")
+            return False
 
     async def check_discharge_allowed(self, power_value: float) -> SOCConstraintResult:
         """Check if discharge is allowed at current SOC.

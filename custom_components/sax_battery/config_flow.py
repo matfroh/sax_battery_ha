@@ -39,9 +39,9 @@ from .const import (
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
     DOMAIN,
+    PILOT_ITEMS,
     SAX_PILOT_POWER,
 )
-from .utils import get_unique_id_for_item
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -603,11 +603,42 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
         """
         ent_reg = er.async_get(self.hass)
 
-        # Get unique_id for SAX_PILOT_POWER entity
-        unique_id = get_unique_id_for_item(
-            self.hass,
-            self.config_entry.entry_id,
-            SAX_PILOT_POWER,
+        # Get SAXBatteryData instance from integration data
+        integration_data = self.hass.data.get(DOMAIN, {}).get(
+            self.config_entry.entry_id
+        )
+
+        if not integration_data:
+            _LOGGER.warning(
+                "Integration data not found for entry %s",
+                self.config_entry.entry_id,
+            )
+            return
+
+        sax_data = integration_data.get("sax_data")
+        if not sax_data:
+            _LOGGER.warning(
+                "SAXBatteryData not found in integration data for entry %s",
+                self.config_entry.entry_id,
+            )
+            return
+
+        # Find the pilot power item from PILOT_ITEMS
+        pilot_power_item = next(
+            (item for item in PILOT_ITEMS if item.name == SAX_PILOT_POWER),
+            None,
+        )
+
+        if not pilot_power_item:
+            _LOGGER.error(
+                "SAX_PILOT_POWER item not found in PILOT_ITEMS - cannot generate unique_id"
+            )
+            return
+
+        # Use SAXBatteryData method for unique_id generation
+        unique_id = sax_data.get_unique_id_for_item(
+            pilot_power_item,
+            battery_id=None,  # Cluster-wide entity
         )
 
         if not unique_id:

@@ -27,6 +27,7 @@ from .const import (
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
     LIMIT_REFRESH_INTERVAL,
     MODBUS_BATTERY_POWER_CONTROL_ITEMS,
+    REFRESH_REGISTERS,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
     SAX_MIN_SOC,
@@ -338,7 +339,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         # Set default values based on register type
         if self._modbus_item.name == SAX_MAX_CHARGE:
             default_value = LIMIT_MAX_CHARGE_PER_BATTERY * battery_count
-            self._attr_native_max_value = float(default_value)
+            self.native_max_value = float(default_value)
 
             # Priority: cached > config > default
             if cached_value is not None:
@@ -353,7 +354,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
         elif self._modbus_item.name == SAX_MAX_DISCHARGE:
             default_value = LIMIT_MAX_DISCHARGE_PER_BATTERY * battery_count
-            self._attr_native_max_value = float(default_value)
+            self.native_max_value = float(default_value)
 
             # Priority: cached > config > default
             if cached_value is not None:
@@ -416,6 +417,10 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
     async def _periodic_write(self, _: Any) -> None:
         """Write the value periodically."""
         if self._local_value is not None:
+            if self._modbus_item.address in REFRESH_REGISTERS:
+                await self.coordinator.async_write_number_value(
+                    self._modbus_item, self._local_value
+                )
             await self.async_set_native_value(self._local_value)
 
     async def async_set_native_value(self, value: float) -> None:
@@ -800,7 +805,7 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             True if entity is available, False otherwise
         """
         # ToDo: Check number.sax_cluster_pilot_power which is not calculated
-        # Could need special avalable response
+        # Could need special available response
 
         # Entities depend on coordinator state for calculated values
         return super().available and self.coordinator.last_update_success

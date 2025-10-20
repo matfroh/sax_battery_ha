@@ -292,3 +292,113 @@ class SAXBatteryData:
 
         _LOGGER.error("Unknown device type: %s, %s", battery_id, device)  # type: ignore [unreachable]
         raise ValueError(f"Unknown device type: {device}")
+
+    def get_unique_id_for_item(
+        self,
+        item: ModbusItem | SAXItem,
+        battery_id: str | None = None,
+    ) -> str | None:
+        """Generate unique ID for an entity item using device info.
+
+        Uses SAXBatteryData.get_device_info() for consistent device naming
+        instead of duplicating device name logic.
+
+        Args:
+            item: ModbusItem or SAXItem instance
+            battery_id: Battery ID for the battery that handles this entity.
+                       - For WO registers: master battery ID (hardware communication)
+                       - For per-battery sensors: specific battery ID
+                       - For virtual entities: None (no hardware)
+
+        Returns:
+            Unique ID string or None if generation fails
+
+        Examples:
+            # WO register entity - uses master battery for Modbus but cluster device
+            sax_data.get_unique_id_for_item(max_discharge_item, battery_id="battery_a")
+            # Returns: "sax_cluster_max_discharge"
+
+            # Per-battery sensor (BESS device)
+            sax_data.get_unique_id_for_item(temperature_item, battery_id="battery_a")
+            # Returns: "sax_battery_a_temperature"
+
+            # Virtual entity (SYS device, no hardware)
+            sax_data.get_unique_id_for_item(min_soc_item, battery_id=None)
+            # Returns: "sax_cluster_min_soc"
+
+        Security:
+            OWASP A01: Proper entity identification prevents unauthorized access
+            OWASP A03: Input validation prevents injection attacks
+
+        Performance:
+            Uses existing device info cache - no registry lookups
+        """
+        try:
+            # Validate item name is not empty
+            if not item.name or not item.name.strip():
+                _LOGGER.warning("Cannot generate unique_id: item name is empty")
+                return None
+
+            # Normalize item name (remove "sax_" prefix if present, convert to lowercase)
+            clean_item_name = item.name.removeprefix("sax_").lower()
+
+            # Get device type from item definition
+            device = item.device
+
+            # Generate unique_id based on device type and battery_id
+            if battery_id is None:
+                # Virtual/calculated entity (no hardware backing)
+                # Examples: min_soc, combined_soc, cumulative_energy
+                # Always uses cluster device regardless of item.device
+                unique_id = f"sax_cluster_{clean_item_name}"
+                _LOGGER.debug(
+                    "Generated cluster unique_id '%s' for virtual item '%s'",
+                    unique_id,
+                    item.name,
+                )
+            else:
+                # Hardware-backed or coordinator-managed entity
+                # Get device info based on item's device type
+                device_info: DeviceInfo | None = self.get_device_info(
+                    battery_id, device
+                )
+                if device_info is None:
+                    _LOGGER.warning(
+                        "Cannot generate unique_id: no device info for battery_id=%s, device=%s",
+                        battery_id,
+                        device.value,
+                    )
+                    return None
+
+                # Validate device name exists and is not None
+                device_name_raw = device_info.get("name")
+                if not device_name_raw:
+                    _LOGGER.warning(
+                        "Cannot generate unique_id: device info has no name for battery_id=%s, device=%s",
+                        battery_id,
+                        device.value,
+                    )
+                    return None
+
+                device_name_clean = (
+                    device_name_raw.lower().replace(" ", "_").removeprefix("sax_")
+                )
+                unique_id = f"sax_{device_name_clean}_{clean_item_name}"
+                _LOGGER.debug(
+                    "Generated unique_id '%s' for item '%s' (battery_id=%s, device=%s)",
+                    unique_id,
+                    item.name,
+                    battery_id,
+                    device.value,
+                )
+
+            return unique_id  # noqa: TRY300
+
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error(
+                "Error generating unique_id for item %s (battery_id=%s): %s",
+                item.name,
+                battery_id,
+                err,
+            )
+            return None

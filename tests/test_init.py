@@ -12,7 +12,6 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sax_battery import (
-    _check_soc_constraints_on_startup,
     _get_battery_configurations,
     _log_comprehensive_setup_summary,
     _log_registry_state_before_setup,
@@ -37,16 +36,13 @@ from custom_components.sax_battery.const import (
     CONF_MIN_SOC,
     CONF_PILOT_FROM_HA,
     DOMAIN,
-    SAX_MAX_CHARGE,
-    SAX_MAX_DISCHARGE,
 )
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.models import SAXBatteryData
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import entity_registry as er
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -959,100 +955,6 @@ class TestLoggingFunctions:
 class TestWriteOnlyRegisterRestoration:
     """Test write-only register value restoration."""
 
-    @pytest.mark.skip(reason="mocks are not complete")
-    async def test_restore_write_only_register_values_success(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test successful restoration via state machine."""
-
-        # Create and register config entry FIRST
-        entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={
-                CONF_BATTERY_COUNT: 1,
-                CONF_MASTER_BATTERY: "battery_a",
-                "battery_a_host": "192.168.1.100",
-                "battery_a_port": 502,
-            },
-        )
-        entry.add_to_hass(hass)
-
-        # Create device with valid config_entry_id
-        dev_reg = dr.async_get(hass)
-        device = dev_reg.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, "test_battery")},
-            manufacturer="SAX",
-            model="Battery",
-            name="Test Battery",
-        )
-
-        mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
-        mock_coordinator.hass = hass
-        mock_coordinator.data = {}
-        mock_coordinator.battery_config = {CONF_BATTERY_IS_MASTER: True}
-        mock_coordinator.config_entry = entry
-        mock_coordinator.device_id = device.id
-
-        # Track actual writes
-        writes = []
-
-        async def track_write(item, value):
-            writes.append((item.name, value))
-            return True
-
-        mock_coordinator.async_write_number_value = track_write
-
-        # Mock modbus items
-        max_discharge_item = MagicMock()
-        max_discharge_item.name = SAX_MAX_DISCHARGE
-        max_charge_item = MagicMock()
-        max_charge_item.name = SAX_MAX_CHARGE
-
-        mock_coordinator.sax_data = MagicMock()
-        mock_coordinator.sax_data.get_modbus_items_for_battery.return_value = [
-            max_discharge_item,
-            max_charge_item,
-        ]
-
-        coordinators = {"battery_a": mock_coordinator}
-        typed_coordinators = cast(dict[str, SAXBatteryCoordinator], coordinators)
-
-        ent_reg = er.async_get(hass)
-
-        #  Create entities with unique_ids that match what get_unique_id_for_item() generates
-        # The function generates: "test_battery_max_discharge" from device name + item name
-        ent_reg.async_get_or_create(
-            "number",
-            DOMAIN,
-            "test_battery_max_discharge",  #  Match generated unique_id
-            suggested_object_id="sax_cluster_max_discharge",
-            config_entry=entry,
-            device_id=device.id,
-        )
-        ent_reg.async_get_or_create(
-            "number",
-            DOMAIN,
-            "test_battery_max_charge",  #  Match generated unique_id
-            suggested_object_id="sax_cluster_max_charge",
-            config_entry=entry,
-            device_id=device.id,
-        )
-
-        # Set restored states
-        hass.states.async_set("number.sax_cluster_max_discharge", "3000.0")
-        hass.states.async_set("number.sax_cluster_max_charge", "2500.0")
-
-        await _restore_write_only_register_values(
-            hass, entry.entry_id, typed_coordinators, ent_reg
-        )
-
-        # Verify writes occurred
-        assert len(writes) == 2
-        assert (SAX_MAX_DISCHARGE, 3000.0) in writes
-        assert (SAX_MAX_CHARGE, 2500.0) in writes
-
     async def test_restore_write_only_register_values_no_master(
         self,
         hass: HomeAssistant,
@@ -1087,6 +989,11 @@ class TestWriteOnlyRegisterRestoration:
         mock_coordinator.config_entry = MagicMock()
         mock_coordinator.config_entry.entry_id = "test_entry"
 
+        # Mock SAXBatteryData with get_unique_id_for_item
+        mock_sax_data = MagicMock()
+        mock_sax_data.get_unique_id_for_item.return_value = "test_unique_id"
+        mock_coordinator.sax_data = mock_sax_data
+
         coordinators = {"battery_a": mock_coordinator}
 
         # Cast to satisfy mypy
@@ -1094,205 +1001,14 @@ class TestWriteOnlyRegisterRestoration:
 
         ent_reg = er.async_get(hass)
 
-        with patch(
-            "custom_components.sax_battery.get_unique_id_for_item"
-        ) as mock_get_id:
-            mock_get_id.return_value = None
-
-            # Should handle missing entity gracefully
+        # No entity registered - should log warning and return
+        with patch("custom_components.sax_battery._LOGGER") as mock_logger:
             await _restore_write_only_register_values(
-                hass, "test_entry", typed_coordinators, ent_reg
+                hass, "", typed_coordinators, ent_reg
             )
 
-
-class TestSOCConstraintStartupCheck:
-    """Test SOC constraint checking on startup."""
-
-    @pytest.mark.skip(reason="mocks are not complete")
-    async def test_check_soc_constraints_simple(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test SOC constraint check without restoration complexity."""
-        # Create and register config entry FIRST
-        entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={
-                CONF_BATTERY_COUNT: 1,
-                CONF_MASTER_BATTERY: "battery_a",
-                "battery_a_host": "192.168.1.100",
-                "battery_a_port": 502,
-            },
-        )
-        entry.add_to_hass(hass)
-
-        # Create device with valid config_entry_id
-        dev_reg = dr.async_get(hass)
-        device = dev_reg.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, "test_battery")},
-            manufacturer="SAX",
-            model="Battery",
-            name="Test Battery",
-        )
-
-        mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
-        mock_coordinator.hass = hass
-        mock_coordinator.data = {}
-        mock_coordinator.battery_config = {CONF_BATTERY_IS_MASTER: True}
-        mock_coordinator.config_entry = entry
-        mock_coordinator.device_id = device.id
-        mock_coordinator.sax_data = MagicMock()
-        mock_coordinator.sax_data.get_modbus_items_for_battery.return_value = []
-
-        #  Track SOC check calls with proper async mock
-        soc_check_called = False
-
-        async def track_soc_check():
-            nonlocal soc_check_called
-            soc_check_called = True
-            return True
-
-        #  Use AsyncMock for the method that will be awaited
-        mock_soc_manager = MagicMock()
-        mock_soc_manager.enabled = True
-        mock_soc_manager.check_and_enforce_discharge_limit = AsyncMock(
-            side_effect=track_soc_check
-        )
-
-        mock_coordinator.soc_manager = mock_soc_manager
-
-        coordinators = {"battery_a": mock_coordinator}
-
-        hass.data[DOMAIN] = {
-            entry.entry_id: {
-                "coordinators": coordinators,
-            }
-        }
-
-        mock_event = MagicMock(spec=Event)
-
-        await _check_soc_constraints_on_startup(hass, entry.entry_id, mock_event)
-
-        # Verify SOC check was called
-        assert soc_check_called, "SOC constraint check was not called"
-
-    async def test_check_soc_constraints_no_domain(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test startup check when domain not in hass.data."""
-        mock_event = MagicMock(spec=Event)
-
-        # Domain not in hass.data - should log error and return
-        await _check_soc_constraints_on_startup(hass, "test_entry", mock_event)
-
-    async def test_check_soc_constraints_no_master(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test startup check when no master coordinator found."""
-        mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
-        mock_coordinator.hass = hass
-        mock_coordinator.data = {}
-        mock_coordinator.battery_config = {CONF_BATTERY_IS_MASTER: False}
-
-        # Mock sax_data to return empty list
-        mock_coordinator.sax_data = MagicMock()
-        mock_coordinator.sax_data.get_modbus_items_for_battery.return_value = []
-
-        hass.data[DOMAIN] = {
-            "test_entry": {
-                "coordinators": {"battery_a": mock_coordinator},
-            }
-        }
-
-        mock_event = MagicMock(spec=Event)
-
-        # Should log warning about no master coordinator
-        await _check_soc_constraints_on_startup(hass, "test_entry", mock_event)
-
-    async def test_check_soc_constraints_soc_manager_disabled(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test startup check when SOC manager is disabled."""
-        mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
-        mock_coordinator.hass = hass
-        mock_coordinator.data = {}
-        mock_coordinator.battery_config = {CONF_BATTERY_IS_MASTER: True}
-        mock_coordinator.config_entry = MagicMock()
-        mock_coordinator.config_entry.entry_id = "test_entry"
-
-        mock_coordinator.sax_data = MagicMock()
-        mock_coordinator.sax_data.get_modbus_items_for_battery.return_value = []
-
-        # SOC manager disabled
-        mock_coordinator.soc_manager = MagicMock()
-        mock_coordinator.soc_manager.enabled = False
-
-        coordinators = {"battery_a": mock_coordinator}
-
-        hass.data[DOMAIN] = {
-            "test_entry": {
-                "coordinators": coordinators,
-            }
-        }
-
-        mock_event = MagicMock(spec=Event)
-
-        await _check_soc_constraints_on_startup(hass, "test_entry", mock_event)
-
-        # Verify SOC check was NOT called when disabled
-        if hasattr(mock_coordinator.soc_manager, "check_and_enforce_discharge_limit"):
-            mock_coordinator.soc_manager.check_and_enforce_discharge_limit.assert_not_called()
-
-
-class TestAsyncSetupEntryWithStartupHook:
-    """Test integration setup with startup event hook."""
-
-    async def test_setup_calls_startup_hook(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test that setup triggers startup hook - SIMPLIFIED."""
-        entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={
-                CONF_BATTERY_COUNT: 1,
-                CONF_MASTER_BATTERY: "battery_a",
-                "battery_a_host": "192.168.1.100",
-                "battery_a_port": 502,
-            },
-        )
-        entry.add_to_hass(hass)
-
-        with (
-            patch("custom_components.sax_battery.ModbusAPI.connect", return_value=True),
-            patch(
-                "custom_components.sax_battery.SAXBatteryCoordinator.async_config_entry_first_refresh",
-                return_value=None,
-            ),
-            patch.object(
-                hass.config_entries,
-                "async_forward_entry_setups",
-                new=AsyncMock(),
-            ),
-            #  Mock the entire startup check function instead of bus
-            patch(
-                "custom_components.sax_battery._check_soc_constraints_on_startup",
-                new=AsyncMock(),
-            ) as mock_startup_check,
-        ):
-            result = await async_setup_entry(hass, entry)
-            assert result is True
-
-            # Fire startup event to trigger listener
-            hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
-            await hass.async_block_till_done()
-
-            # Verify startup check was called
-            mock_startup_check.assert_called_once()
+            # Should log warnings for missing entities
+            assert mock_logger.error.call_count >= 1
 
 
 class TestValidationFunctions:

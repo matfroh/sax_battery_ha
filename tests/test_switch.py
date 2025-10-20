@@ -18,6 +18,7 @@ from custom_components.sax_battery.const import (
     DESCRIPTION_SAX_STATUS_SWITCH,
     DOMAIN,
     MANUAL_CONTROL_SWITCH,
+    SOLAR_CHARGING_MODE,
     SOLAR_CHARGING_SWITCH,
 )
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
@@ -820,6 +821,12 @@ class TestSAXBatteryControlSwitch:
     ) -> None:
         """Test control switch is_on for solar charging switch."""
         mock_sax_item_control.name = "solar_charging_switch"
+
+        # Mock config entry with solar_charging_mode disabled
+        mock_config_entry = MagicMock()
+        mock_config_entry.data = {SOLAR_CHARGING_MODE: False}
+        mock_control_coordinator.config_entry = mock_config_entry
+
         coordinators = {"battery_a": mock_control_coordinator}
 
         switch = SAXBatteryControlSwitch(

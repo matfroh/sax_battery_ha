@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, Mock, patch
 
-import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sax_battery.config_flow import (
@@ -25,7 +24,6 @@ from custom_components.sax_battery.const import (
     CONF_PF_SENSOR,
     CONF_PILOT_FROM_HA,
     CONF_POWER_SENSOR,
-    CONF_PRIORITY_DEVICES,
     DEFAULT_AUTO_PILOT_INTERVAL,
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
@@ -59,8 +57,8 @@ class TestSAXBatteryConfigFlowExtended:
 
         # Test with battery count too high
         result = await flow.async_step_user({CONF_BATTERY_COUNT: 5})
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "control_options"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "control_options"
         errors = result.get("errors")
         assert errors is not None
 
@@ -79,8 +77,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "pilot_options"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "pilot_options"
         assert flow._pilot_from_ha is True
         assert flow._limit_power is False
 
@@ -97,8 +95,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "battery_config"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
         assert flow._pilot_from_ha is False
         assert flow._limit_power is True
 
@@ -117,8 +115,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "pilot_options"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "pilot_options"
         errors = result.get("errors")
         assert errors is not None
         assert "invalid_min_soc" in errors.get(CONF_MIN_SOC, "")
@@ -138,8 +136,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "pilot_options"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "pilot_options"
         errors = result.get("errors")
         assert errors is not None
         assert "invalid_interval" in errors.get(CONF_AUTO_PILOT_INTERVAL, "")
@@ -158,8 +156,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "pilot_options"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "pilot_options"
         errors = result.get("errors")
         assert errors is not None
         assert CONF_MIN_SOC in errors
@@ -178,35 +176,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "priority_devices"
-
-    @pytest.mark.skip(reason="pilot will be removed")
-    async def test_sensors_step_without_pilot(self, hass: HomeAssistant) -> None:
-        """Test sensors step when pilot is disabled."""
-        flow = SAXBatteryConfigFlow()
-        flow.hass = hass
-        flow._pilot_from_ha = False
-
-        # Should skip sensors step
-        result = await flow.async_step_sensors({})
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "priority_devices"
-
-    async def test_priority_devices_step(self, hass: HomeAssistant) -> None:
-        """Test priority devices step."""
-        flow = SAXBatteryConfigFlow()
-        flow.hass = hass
-
-        result = await flow.async_step_priority_devices(
-            {
-                CONF_PRIORITY_DEVICES: ["switch.ev_charger", "climate.heat_pump"],
-            }
-        )
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "battery_config"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "priority_devices"
 
     async def test_battery_config_invalid_host_format(
         self, hass: HomeAssistant
@@ -223,8 +194,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "battery_config"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
         errors = result.get("errors")
         assert errors is not None
         assert "invalid_host_format" in errors.get("battery_a_host", "")
@@ -242,8 +213,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "battery_config"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
         errors = result.get("errors")
         assert errors is not None
         assert "invalid_host" in errors.get("battery_a_host", "")
@@ -261,8 +232,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "battery_config"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
         errors = result.get("errors")
         assert errors is not None
         # Fix: Check if errors exists before using 'in' operator
@@ -281,8 +252,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "battery_config"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
         errors = result.get("errors")
         assert errors is not None
         # Fix: Check if errors exists before using 'in' operator
@@ -306,8 +277,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "battery_config"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
         errors = result.get("errors")
         assert errors is not None
         assert "invalid_master" in errors.get(CONF_MASTER_BATTERY, "")
@@ -327,8 +298,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["title"] == "SAX Battery System (1 batteries)"
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
+        assert result.get("title") == "SAX Battery System (1 batteries)"
         assert CONF_BATTERIES in result["data"]
         assert CONF_MASTER_BATTERY in result["data"]
         assert result["data"][CONF_MASTER_BATTERY] == "battery_a"
@@ -353,11 +324,13 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["title"] == "SAX Battery System (3 batteries)"
-        assert result["data"][CONF_MASTER_BATTERY] == "battery_b"
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
+        assert result.get("title") == "SAX Battery System (3 batteries)"
+        data = result.get("data")
+        assert data is not None
+        assert data[CONF_MASTER_BATTERY] == "battery_b"
         # Verify master is set correctly
-        batteries = result["data"][CONF_BATTERIES]
+        batteries = data[CONF_BATTERIES]
         assert batteries["battery_b"][CONF_BATTERY_IS_MASTER] is True
         assert batteries["battery_a"][CONF_BATTERY_IS_MASTER] is False
         assert batteries["battery_c"][CONF_BATTERY_IS_MASTER] is False
@@ -390,8 +363,8 @@ class TestSAXBatteryConfigFlowExtended:
         result = await flow.async_step_reconfigure({})
 
         # Should abort when no entry ID is provided
-        assert result["type"] == FlowResultType.ABORT
-        assert result["reason"] == "unknown"
+        assert result.get("type") == FlowResultType.ABORT
+        assert result.get("reason") == "unknown"
 
     async def test_reconfigure_step_invalid_entry_id(self, hass: HomeAssistant) -> None:
         """Test reconfigure step with invalid entry ID."""
@@ -403,8 +376,8 @@ class TestSAXBatteryConfigFlowExtended:
         with patch.object(hass.config_entries, "async_get_entry", return_value=None):
             result = await flow.async_step_reconfigure({})
 
-            assert result["type"] == FlowResultType.ABORT
-            assert result["reason"] == "unknown"
+            assert result.get("type") == FlowResultType.ABORT
+            assert result.get("reason") == "unknown"
 
     async def test_async_get_options_flow(self, hass: HomeAssistant) -> None:
         """Test getting options flow."""
@@ -422,9 +395,9 @@ class TestSAXBatteryConfigFlowExtended:
         # Test the uncovered line 81: return self.async_show_form for initial display
         result = await flow.async_step_user(None)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "user"
-        assert result["errors"] == {}
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "user"
+        assert result.get("errors") == {}
 
         # Verify schema includes battery count selection
         data_schema = result.get("data_schema")
@@ -447,8 +420,8 @@ class TestSAXBatteryConfigFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "sensors"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "sensors"
         assert flow._data[CONF_MIN_SOC] == 25
         assert flow._data[CONF_AUTO_PILOT_INTERVAL] == 30
         assert flow._data[CONF_ENABLE_SOLAR_CHARGING] is True
@@ -464,8 +437,8 @@ class TestSAXBatteryConfigFlowExtended:
         # Test the uncovered lines 206-208: schema creation for pilot mode
         result = await flow.async_step_sensors(None)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "sensors"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "sensors"
 
         # Verify schema includes power and PF sensor selectors
         data_schema = result.get("data_schema")
@@ -473,19 +446,6 @@ class TestSAXBatteryConfigFlowExtended:
         schema_keys = [str(key) for key in data_schema.schema]
         assert any(CONF_POWER_SENSOR in key for key in schema_keys)
         assert any(CONF_PF_SENSOR in key for key in schema_keys)
-
-    @pytest.mark.skip(reason="pilot will be removed")
-    async def test_sensors_step_pilot_disabled_skip(self, hass: HomeAssistant) -> None:
-        """Test sensors step skips to priority devices when pilot disabled."""
-        flow = SAXBatteryConfigFlow()
-        flow.hass = hass
-        flow._pilot_from_ha = False
-
-        # Test the uncovered lines 224-225: empty schema skips to priority devices
-        result = await flow.async_step_sensors(None)
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "priority_devices"
 
     async def test_sensors_step_with_pilot_form_display(
         self, hass: HomeAssistant
@@ -498,8 +458,8 @@ class TestSAXBatteryConfigFlowExtended:
         # Test the uncovered line 227: return self.async_show_form with sensor schema
         result = await flow.async_step_sensors(None)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "sensors"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "sensors"
         assert "power_sensor_description" in result["description_placeholders"]  # type: ignore[operator]
         assert "pf_sensor_description" in result["description_placeholders"]  # type: ignore[operator]
 
@@ -533,8 +493,8 @@ class TestSAXBatteryConfigFlowExtended:
 
             result = await flow.async_step_reconfigure(user_input)
 
-            assert result["type"] == FlowResultType.CREATE_ENTRY
-            assert result["title"] == "SAX Battery"
+            assert result.get("type") == FlowResultType.CREATE_ENTRY
+            assert result.get("title") == "SAX Battery"
             assert result["data"] == user_input
 
     async def test_reconfigure_step_loads_existing_config(
@@ -576,8 +536,8 @@ class TestSAXBatteryConfigFlowExtended:
             assert flow._limit_power is True
 
             # Should proceed to control options step
-            assert result["type"] == FlowResultType.FORM
-            assert result["step_id"] == "control_options"
+            assert result.get("type") == FlowResultType.FORM
+            assert result.get("step_id") == "control_options"
 
     async def test_reconfigure_with_entry_domain_mismatch(
         self, hass: HomeAssistant
@@ -598,7 +558,7 @@ class TestSAXBatteryConfigFlowExtended:
         ):
             result = await flow.async_step_reconfigure({})
 
-            assert result["type"] == FlowResultType.ABORT
+            assert result.get("type") == FlowResultType.ABORT
             assert result["reason"] == "unknown"
 
     async def test_validate_host_comprehensive_cases(self, hass: HomeAssistant) -> None:
@@ -683,11 +643,13 @@ class TestSAXBatteryOptionsFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["data"][CONF_PILOT_FROM_HA] is True
-        assert result["data"][CONF_MIN_SOC] == 30
-        assert result["data"][CONF_AUTO_PILOT_INTERVAL] == 60
-        assert result["data"][CONF_ENABLE_SOLAR_CHARGING] is False
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
+        data = result.get("data")
+        assert data is not None
+        assert data[CONF_PILOT_FROM_HA] is True
+        assert data[CONF_MIN_SOC] == 30
+        assert data[CONF_AUTO_PILOT_INTERVAL] == 60
+        assert data[CONF_ENABLE_SOLAR_CHARGING] is False
 
     async def test_options_flow_pilot_enabled_to_disabled(
         self, hass: HomeAssistant
@@ -711,7 +673,7 @@ class TestSAXBatteryOptionsFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
         assert result["data"][CONF_PILOT_FROM_HA] is False
         assert result["data"][CONF_LIMIT_POWER] is True
         # Pilot-specific options should not be included when pilot is disabled
@@ -736,8 +698,8 @@ class TestSAXBatteryOptionsFlowExtended:
 
         result = await options_flow.async_step_init(None)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "init"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "init"
         # Verify schema includes pilot-specific options
         data_schema = result.get("data_schema")
         if data_schema is not None:
@@ -761,8 +723,8 @@ class TestSAXBatteryOptionsFlowExtended:
 
         result = await options_flow.async_step_init(None)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "init"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "init"
         # Verify schema does not include pilot-specific options
         data_schema = result.get("data_schema")
         if data_schema is not None:
@@ -790,7 +752,7 @@ class TestSAXBatteryOptionsFlowExtended:
 
         result = await options_flow.async_step_init(None)
 
-        assert result["type"] == FlowResultType.FORM
+        assert result.get("type") == FlowResultType.FORM
         # Verify existing options are used as defaults
         # Note: Testing exact default values requires inspecting the schema
         # which is complex, so we just verify the form is shown correctly
@@ -809,8 +771,8 @@ class TestSAXBatteryOptionsFlowExtended:
         # Should handle missing values gracefully with defaults
         result = await options_flow.async_step_init(None)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "init"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "init"
 
     async def test_options_flow_partial_user_input(self, hass: HomeAssistant) -> None:
         """Test options flow with partial user input."""
@@ -834,7 +796,7 @@ class TestSAXBatteryOptionsFlowExtended:
             }
         )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
         assert result["data"][CONF_PILOT_FROM_HA] is True  # From current data
         assert result["data"][CONF_LIMIT_POWER] is True  # From user input
         assert result["data"][CONF_MIN_SOC] == 35  # From user input
@@ -865,8 +827,8 @@ class TestSAXBatteryConfigFlowCompleteValidation:
                 }
             )
 
-            assert result["type"] == FlowResultType.FORM
-            assert result["step_id"] == "sensors"
+            assert result.get("type") == FlowResultType.FORM
+            assert result.get("step_id") == "sensors"
             assert flow._data[CONF_MIN_SOC] == min_soc
             assert flow._data[CONF_AUTO_PILOT_INTERVAL] == interval
 
@@ -889,8 +851,8 @@ class TestSAXBatteryConfigFlowCompleteValidation:
 
         result = await flow.async_step_battery_config(valid_input)
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["title"] == "SAX Battery System (2 batteries)"
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
+        assert result.get("title") == "SAX Battery System (2 batteries)"
 
         # Verify battery configuration structure
         batteries = result["data"][CONF_BATTERIES]
@@ -925,8 +887,8 @@ class TestSAXBatteryConfigFlowCompleteValidation:
         # Test form display uses options over data when available
         result = await options_flow.async_step_init(None)
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "init"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "init"
 
         # Test saving updated configuration
         updated_input = {
@@ -937,7 +899,7 @@ class TestSAXBatteryConfigFlowCompleteValidation:
 
         result = await options_flow.async_step_init(updated_input)
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
         assert result["data"][CONF_PILOT_FROM_HA] is False
         assert result["data"][CONF_LIMIT_POWER] is False
         # MIN_SOC should not be included when pilot is disabled
@@ -997,9 +959,9 @@ class TestSAXBatteryConfigFlowSecurityValidation:
             )
 
             if should_pass:
-                assert result["type"] == FlowResultType.CREATE_ENTRY
+                assert result.get("type") == FlowResultType.CREATE_ENTRY
             else:
-                assert result["type"] == FlowResultType.FORM
+                assert result.get("type") == FlowResultType.FORM
                 errors = result.get("errors")
                 # Fix: Check if errors exists before calling .get()
                 if errors is not None:
@@ -1019,7 +981,7 @@ class TestSAXBatteryConfigFlowSecurityValidation:
 
         result = await flow.async_step_battery_config(test_input)
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
         batteries = result["data"][CONF_BATTERIES]
         # Verify host was stripped of whitespace
         assert batteries["battery_a"][CONF_BATTERY_HOST] == "192.168.1.100"
@@ -1053,8 +1015,8 @@ class TestSAXBatteryConfigFlowMissingCoverage:
         )
 
         # Line 212: Should proceed to battery_config, not priority_devices
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "battery_config"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
 
     async def test_priority_devices_form_display_no_input(
         self, hass: HomeAssistant
@@ -1069,8 +1031,8 @@ class TestSAXBatteryConfigFlowMissingCoverage:
         result = await flow.async_step_priority_devices(None)
 
         # Line 242: Should show form for priority devices selection
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "priority_devices"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "priority_devices"
         assert "priority_devices_description" in result["description_placeholders"]  # type: ignore[operator]
 
     async def test_reconfigure_entry_wrong_domain(self, hass: HomeAssistant) -> None:
@@ -1089,8 +1051,8 @@ class TestSAXBatteryConfigFlowMissingCoverage:
             result = await flow.async_step_reconfigure({})
 
             # Lines 417, 419: Should abort with "unknown" reason
-            assert result["type"] == FlowResultType.ABORT
-            assert result["reason"] == "unknown"
+            assert result.get("type") == FlowResultType.ABORT
+            assert result.get("reason") == "unknown"
 
     async def test_reconfigure_entry_is_none(self, hass: HomeAssistant) -> None:
         """Test reconfigure aborts when entry not found (line 413)."""
@@ -1102,8 +1064,8 @@ class TestSAXBatteryConfigFlowMissingCoverage:
             result = await flow.async_step_reconfigure({})
 
             # Line 413: Should abort when entry is None
-            assert result["type"] == FlowResultType.ABORT
-            assert result["reason"] == "unknown"
+            assert result.get("type") == FlowResultType.ABORT
+            assert result.get("reason") == "unknown"
 
     async def test_options_flow_description_placeholders_pilot_disabled(
         self, hass: HomeAssistant
@@ -1122,181 +1084,12 @@ class TestSAXBatteryConfigFlowMissingCoverage:
         result = await options_flow.async_step_init(None)
 
         # Line 514: Should have description for disabled pilot mode
-        assert result["type"] == FlowResultType.FORM
+        assert result.get("type") == FlowResultType.FORM
         placeholders = result.get("description_placeholders")
         assert placeholders is not None
         assert "pilot_options" in placeholders
         # Verify message indicates pilot is disabled
         assert "disabled" in placeholders["pilot_options"]
-
-    async def test_async_disable_pilot_power_entity_no_unique_id(
-        self, hass: HomeAssistant
-    ) -> None:
-        """Test _async_disable_pilot_power_entity when unique_id generation fails (line 614-615)."""
-        mock_entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={CONF_PILOT_FROM_HA: True},
-            entry_id="test_disable_no_unique_id",
-        )
-        mock_entry.add_to_hass(hass)
-
-        options_flow = SAXBatteryOptionsFlowHandler(mock_entry)
-        options_flow.hass = hass
-
-        # Mock get_unique_id_for_item to return None
-        with (
-            patch(
-                "custom_components.sax_battery.config_flow.get_unique_id_for_item",
-                return_value=None,
-            ),
-            patch("custom_components.sax_battery.config_flow._LOGGER") as mock_logger,
-        ):
-            await options_flow._async_disable_pilot_power_entity()
-
-            # Lines 614-615: Should log warning and return early
-            mock_logger.warning.assert_called_once()
-            assert "Could not generate unique_id" in str(mock_logger.warning.call_args)
-
-    async def test_async_disable_pilot_power_entity_not_found(
-        self, hass: HomeAssistant
-    ) -> None:
-        """Test _async_disable_pilot_power_entity when entity not in registry (line 621-628)."""
-        mock_entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={CONF_PILOT_FROM_HA: True},
-            entry_id="test_disable_not_found",
-        )
-        mock_entry.add_to_hass(hass)
-
-        options_flow = SAXBatteryOptionsFlowHandler(mock_entry)
-        options_flow.hass = hass
-
-        # Mock entity registry to return None (entity not found)
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = None
-
-        with (
-            patch(
-                "custom_components.sax_battery.config_flow.get_unique_id_for_item",
-                return_value="test_unique_id",
-            ),
-            patch(
-                "custom_components.sax_battery.config_flow.er.async_get",
-                return_value=mock_ent_reg,
-            ),
-            patch("custom_components.sax_battery.config_flow._LOGGER") as mock_logger,
-        ):
-            await options_flow._async_disable_pilot_power_entity()
-
-            # Lines 621-628: Should log debug and return early
-            mock_logger.debug.assert_called_once()
-            assert "not found in registry" in str(mock_logger.debug.call_args)
-
-    async def test_async_disable_pilot_power_entity_success(
-        self, hass: HomeAssistant
-    ) -> None:
-        """Test _async_disable_pilot_power_entity successfully disables entity (line 630-632)."""
-        mock_entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={CONF_PILOT_FROM_HA: True},
-            entry_id="test_disable_success",
-        )
-        mock_entry.add_to_hass(hass)
-
-        options_flow = SAXBatteryOptionsFlowHandler(mock_entry)
-        options_flow.hass = hass
-
-        # Mock entity registry with entity found
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = "number.sax_pilot_power"
-        mock_ent_reg.async_update_entity = Mock()
-
-        with (
-            patch(
-                "custom_components.sax_battery.config_flow.get_unique_id_for_item",
-                return_value="test_unique_id",
-            ),
-            patch(
-                "custom_components.sax_battery.config_flow.er.async_get",
-                return_value=mock_ent_reg,
-            ),
-            patch("custom_components.sax_battery.config_flow._LOGGER") as mock_logger,
-        ):
-            await options_flow._async_disable_pilot_power_entity()
-
-            # Lines 630-632: Should disable entity and log info
-            mock_ent_reg.async_update_entity.assert_called_once()
-            mock_logger.info.assert_called_once()
-            assert "Disabled SAX_PILOT_POWER entity" in str(mock_logger.info.call_args)
-
-    async def test_options_flow_pilot_enabled_description(
-        self, hass: HomeAssistant
-    ) -> None:
-        """Test options flow description when pilot enabled."""
-        mock_entry = Mock()
-        mock_entry.data = {
-            CONF_PILOT_FROM_HA: True,  # Pilot enabled
-            CONF_LIMIT_POWER: False,
-            CONF_MIN_SOC: 20,
-            CONF_AUTO_PILOT_INTERVAL: 30,
-        }
-        mock_entry.options = {}
-
-        options_flow = SAXBatteryOptionsFlowHandler(mock_entry)
-        options_flow.hass = hass
-
-        result = await options_flow.async_step_init(None)
-
-        assert result["type"] == FlowResultType.FORM
-        placeholders = result.get("description_placeholders")
-        assert placeholders is not None
-        assert "pilot_options" in placeholders
-        # When enabled, description should be about configuration
-        assert "Configure" in placeholders["pilot_options"]
-
-    async def test_options_flow_disables_pilot_entity_on_toggle_off(
-        self, hass: HomeAssistant
-    ) -> None:
-        """Test options flow disables pilot entity when toggled off (line 514 equivalent)."""
-        mock_entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={CONF_PILOT_FROM_HA: True},  # Currently enabled
-            entry_id="test_disable_on_toggle",
-        )
-        mock_entry.add_to_hass(hass)
-
-        options_flow = SAXBatteryOptionsFlowHandler(mock_entry)
-        options_flow.hass = hass
-
-        # Mock entity registry
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = "number.sax_pilot_power"
-        mock_ent_reg.async_update_entity = Mock()
-
-        with (
-            patch(
-                "custom_components.sax_battery.config_flow.get_unique_id_for_item",
-                return_value="test_unique_id",
-            ),
-            patch(
-                "custom_components.sax_battery.config_flow.er.async_get",
-                return_value=mock_ent_reg,
-            ),
-            patch("custom_components.sax_battery.config_flow._LOGGER") as mock_logger,
-        ):
-            # Toggle pilot mode off
-            result = await options_flow.async_step_init(
-                {
-                    CONF_PILOT_FROM_HA: False,  # Disable pilot
-                    CONF_LIMIT_POWER: False,
-                }
-            )
-
-            # Should disable the entity
-            assert result["type"] == FlowResultType.CREATE_ENTRY
-            mock_ent_reg.async_update_entity.assert_called_once()
-            mock_logger.info.assert_called_once()
-            assert "Disabled SAX_PILOT_POWER entity" in str(mock_logger.info.call_args)
 
 
 class TestSAXBatteryConfigFlowEdgeCases:
@@ -1318,8 +1111,8 @@ class TestSAXBatteryConfigFlowEdgeCases:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "priority_devices"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "priority_devices"
         # Verify all sensors stored in data
         # assert flow._data[CONF_GRID_POWER_SENSOR] == "sensor.grid_power"
         assert flow._data[CONF_POWER_SENSOR] == "sensor.battery_power"
@@ -1340,7 +1133,7 @@ class TestSAXBatteryConfigFlowEdgeCases:
     #     )
 
     #     # IPv6 should be accepted as valid host format
-    #     assert result["type"] == FlowResultType.CREATE_ENTRY
+    #     assert result.get("type") == FlowResultType.CREATE_ENTRY
     #     batteries = result["data"][CONF_BATTERIES]
     #     assert batteries["battery_a"][CONF_BATTERY_HOST] == "2001:db8::1"
 
@@ -1367,12 +1160,14 @@ class TestSAXBatteryConfigFlowEdgeCases:
             }
         )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["data"][CONF_PILOT_FROM_HA] is True
-        assert result["data"][CONF_LIMIT_POWER] is True
-        assert result["data"][CONF_MIN_SOC] == 25
-        assert result["data"][CONF_AUTO_PILOT_INTERVAL] == 45
-        assert result["data"][CONF_ENABLE_SOLAR_CHARGING] is True
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
+        data = result.get("data")
+        assert data is not None
+        assert data[CONF_PILOT_FROM_HA] is True
+        assert data[CONF_LIMIT_POWER] is True
+        assert data[CONF_MIN_SOC] == 25
+        assert data[CONF_AUTO_PILOT_INTERVAL] == 45
+        assert data[CONF_ENABLE_SOLAR_CHARGING] is True
 
     async def test_control_options_solar_charging_default(
         self, hass: HomeAssistant
@@ -1390,7 +1185,7 @@ class TestSAXBatteryConfigFlowEdgeCases:
             }
         )
 
-        assert result["type"] == FlowResultType.FORM
+        assert result.get("type") == FlowResultType.FORM
         assert flow._data[CONF_ENABLE_SOLAR_CHARGING] is False
 
     async def test_validate_host_boundary_length(self, hass: HomeAssistant) -> None:
@@ -1448,8 +1243,8 @@ class TestSAXBatteryConfigFlowEdgeCases:
                 }
             )
 
-            assert result["type"] == FlowResultType.FORM
-            assert result["step_id"] == "sensors"
+            assert result.get("type") == FlowResultType.FORM
+            assert result.get("step_id") == "sensors"
             assert flow._data[CONF_MIN_SOC] == min_soc
             assert flow._data[CONF_AUTO_PILOT_INTERVAL] == interval
 
@@ -1485,12 +1280,14 @@ class TestSAXBatteryOptionsFlowCompleteFlow:
             }
         )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["data"][CONF_PILOT_FROM_HA] is True
-        assert result["data"][CONF_LIMIT_POWER] is True
-        assert result["data"][CONF_MIN_SOC] == 30
-        assert result["data"][CONF_AUTO_PILOT_INTERVAL] == 60
-        assert result["data"][CONF_ENABLE_SOLAR_CHARGING] is False
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
+        data = result.get("data")
+        assert data is not None
+        assert data[CONF_PILOT_FROM_HA] is True
+        assert data[CONF_LIMIT_POWER] is True
+        assert data[CONF_MIN_SOC] == 30
+        assert data[CONF_AUTO_PILOT_INTERVAL] == 60
+        assert data[CONF_ENABLE_SOLAR_CHARGING] is False
 
     async def test_options_flow_disable_limit_power_only(
         self, hass: HomeAssistant
@@ -1516,11 +1313,12 @@ class TestSAXBatteryOptionsFlowCompleteFlow:
                 CONF_ENABLE_SOLAR_CHARGING: True,
             }
         )
-
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["data"][CONF_PILOT_FROM_HA] is True
-        assert result["data"][CONF_LIMIT_POWER] is False
-        assert result["data"][CONF_MIN_SOC] == 25
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
+        data = result.get("data")
+        assert data is not None
+        assert data[CONF_PILOT_FROM_HA] is True
+        assert data[CONF_LIMIT_POWER] is False
+        assert data[CONF_MIN_SOC] == 25
 
 
 class TestSAXBatteryConfigFlowSecurityEdgeCases:
@@ -1565,8 +1363,10 @@ class TestSAXBatteryConfigFlowSecurityEdgeCases:
             }
         )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        batteries = result["data"][CONF_BATTERIES]
+        assert result.get("type") == FlowResultType.CREATE_ENTRY
+        data = result.get("data")
+        assert data is not None
+        batteries = data[CONF_BATTERIES]
         # Verify port was converted to int
         assert isinstance(batteries["battery_a"][CONF_BATTERY_PORT], int)
         assert batteries["battery_a"][CONF_BATTERY_PORT] == 8502
@@ -1592,7 +1392,7 @@ class TestSAXBatteryConfigFlowSecurityEdgeCases:
         # Display form to verify defaults use options
         result = await options_flow.async_step_init(None)
 
-        assert result["type"] == FlowResultType.FORM
+        assert result.get("type") == FlowResultType.FORM
         # Options should take precedence in form defaults
         # (This is tested by the schema defaults, though hard to assert directly)
 
@@ -1610,16 +1410,16 @@ class TestSAXBatteryConfigFlowDeadCodeRemoval:
         # Case 1: Pilot enabled → Shows sensor form
         flow._pilot_from_ha = True
         result = await flow.async_step_sensors(None)
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "sensors"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "sensors"
 
         # Case 2: Pilot disabled → Already handled by async_step_sensors
         # No dead code path needed
         flow._pilot_from_ha = False
         flow._battery_count = 1
         result = await flow.async_step_sensors({})
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "battery_config"
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
 
     async def test_host_validation_ipv4_no_exception_handling_needed(
         self, hass: HomeAssistant

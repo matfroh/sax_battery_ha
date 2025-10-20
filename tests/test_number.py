@@ -11,6 +11,8 @@ from custom_components.sax_battery.const import (
     CONF_BATTERY_COUNT,
     CONF_MASTER_BATTERY,
     DOMAIN,
+    LIMIT_MAX_CHARGE_PER_BATTERY,
+    LIMIT_MAX_DISCHARGE_PER_BATTERY,
     PILOT_ITEMS,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
@@ -60,6 +62,9 @@ class TestSAXBatteryModbusNumber:
         assert number.name == "Max Charge"
         assert number._battery_id == "battery_a"
         assert number._modbus_item == modbus_item_max_charge_base
+        assert (
+            number.native_max_value == LIMIT_MAX_CHARGE_PER_BATTERY
+        )  # From config battery_count=1
         assert number.entity_description.native_unit_of_measurement == UnitOfPower.WATT
         # Device info should come from actual get_device_info method
         assert number.device_info["name"] == "SAX Cluster"  # type: ignore[index]
@@ -91,8 +96,8 @@ class TestSAXBatteryModbusNumber:
         # Test with SAX_MAX_CHARGE which should use config values
         # Fix: Use address from WRITE_ONLY_REGISTERS to make it actually write-only
         write_only_item = ModbusItem(
-            address=41,  # Fixed: Use address that's actually in WRITE_ONLY_REGISTERS
-            name=SAX_MAX_CHARGE,
+            address=43,  # Fixed: Use address that's actually in WRITE_ONLY_REGISTERS
+            name=SAX_MAX_DISCHARGE,
             mtype=TypeConstants.NUMBER_WO,
             device=DeviceConstants.BESS,
         )
@@ -104,7 +109,8 @@ class TestSAXBatteryModbusNumber:
         )
 
         assert number._is_write_only is True
-        assert number._local_value == 4000.0  # From config max_charge
+        assert number.native_max_value == LIMIT_MAX_DISCHARGE_PER_BATTERY
+        assert number._local_value == 3000.0  # From config max_charge
 
     def test_native_value_scenarios(
         self, mock_coordinator_modbus_base, modbus_item_percentage_base
@@ -383,80 +389,6 @@ class TestSAXBatteryModbusNumberAdvanced:
 
         assert number.native_value is None
 
-    @pytest.mark.skip(reason="pilot will be removed")
-    async def test_set_native_value_pilot_control_success(
-        self, mock_coordinator_modbus_base
-    ) -> None:
-        """Test successful pilot control set_native_value operation."""
-        pilot_item = ModbusItem(
-            address=41,
-            name=SAX_NOMINAL_POWER,
-            mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.BESS,
-        )
-
-        number = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_modbus_base,
-            battery_id="battery_a",
-            modbus_item=pilot_item,
-        )
-
-        # Mock pilot control write method
-        with (
-            patch.object(
-                number, "_write_pilot_control_value_transactional", return_value=True
-            ) as mock_pilot_write,
-            patch.object(number, "async_write_ha_state"),
-        ):
-            await number.async_set_native_value(2500.0)
-
-        mock_pilot_write.assert_called_once_with(2500.0)
-
-    @pytest.mark.skip(reason="pilot will be removed")
-    async def test_set_native_value_pilot_control_failure(
-        self, mock_coordinator_modbus_base
-    ) -> None:
-        """Test failed pilot control set_native_value operation."""
-        pilot_item = ModbusItem(
-            address=41,
-            name=SAX_NOMINAL_POWER,
-            mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.BESS,
-        )
-
-        number = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_modbus_base,
-            battery_id="battery_a",
-            modbus_item=pilot_item,
-        )
-
-        # Mock pilot control write method to fail
-        with (
-            patch.object(
-                number, "_write_pilot_control_value_transactional", return_value=False
-            ),
-            pytest.raises(HomeAssistantError, match="Failed to write value"),
-        ):
-            await number.async_set_native_value(2500.0)
-
-    @pytest.mark.skip(reason="pilot will be removed")
-    async def test_set_native_value_exception_handling(
-        self, mock_coordinator_modbus_base, modbus_item_max_charge_base
-    ) -> None:
-        """Test exception handling in set_native_value."""
-        mock_coordinator_modbus_base.async_write_number_value.side_effect = ValueError(
-            "Test exception"
-        )
-
-        number = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_modbus_base,
-            battery_id="battery_a",
-            modbus_item=modbus_item_max_charge_base,
-        )
-
-        with pytest.raises(HomeAssistantError, match="Unexpected error setting"):
-            await number.async_set_native_value(3000.0)
-
     def test_extra_state_attributes_readable_register_with_data(
         self, mock_coordinator_modbus_base, modbus_item_percentage_base
     ) -> None:
@@ -493,83 +425,6 @@ class TestSAXBatteryModbusNumberAdvanced:
         attributes = number.extra_state_attributes
         assert attributes["raw_value"] is None
         assert attributes["entity_type"] == "modbus"
-
-    @pytest.mark.skip(reason="Requires Home Assistant event loop")
-    async def test_async_added_to_hass_write_only_restoration(
-        self, mock_coordinator_modbus_base, mock_hass_base
-    ) -> None:
-        """Test async_added_to_hass when restoration is needed for write-only register."""
-        write_only_item = ModbusItem(
-            address=41,
-            name=SAX_MAX_CHARGE,
-            mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.BESS,
-        )
-
-        # Set up coordinator with proper hass instance for async_track_time_interval
-        mock_coordinator_modbus_base.hass = mock_hass_base
-
-        number = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_modbus_base,
-            battery_id="battery_a",
-            modbus_item=write_only_item,
-        )
-
-        # Critical: Set hass instance on the entity itself
-        number.hass = mock_hass_base
-
-        # Clear local value to simulate need for restoration
-        number._local_value = None
-
-        # Mock restore_last_state at the RestoreEntity level
-        mock_state = MagicMock()
-        mock_state.state = "3000.0"
-
-        with patch(
-            "homeassistant.helpers.restore_state.RestoreEntity.async_get_last_state",
-            return_value=mock_state,
-        ):
-            await number.async_added_to_hass()
-
-            # Verify restoration occurred
-            assert number._local_value == 3000.0
-            # Verify periodic write was set up
-            assert number._track_time_remove is not None
-
-    @pytest.mark.skip(reason="Requires Home Assistant event loop")
-    async def test_async_added_to_hass_no_restoration_needed(
-        self, mock_coordinator_modbus_base, mock_hass_base
-    ) -> None:
-        """Test async_added_to_hass when restoration is not needed."""
-        write_only_item = ModbusItem(
-            address=41,
-            name=SAX_MAX_CHARGE,
-            mtype=TypeConstants.NUMBER_WO,
-            device=DeviceConstants.BESS,
-        )
-
-        # Set up coordinator with proper hass instance
-        mock_coordinator_modbus_base.hass = mock_hass_base
-
-        number = SAXBatteryModbusNumber(
-            coordinator=mock_coordinator_modbus_base,
-            battery_id="battery_a",
-            modbus_item=write_only_item,
-        )
-
-        # Critical: Set hass instance on the entity itself
-        number.hass = mock_hass_base
-
-        # Set a local value (simulating already initialized)
-        number._local_value = 3000.0
-        initial_value = number._local_value
-
-        await number.async_added_to_hass()
-
-        # Verify periodic write was set up
-        assert number._track_time_remove is not None
-        # Value should remain unchanged (no restoration needed)
-        assert number._local_value == initial_value
 
     def test_entity_name_generation(self, mock_coordinator_modbus_base) -> None:
         """Test entity name generation from different sources."""

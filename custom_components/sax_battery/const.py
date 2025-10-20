@@ -106,6 +106,7 @@ MANUAL_CONTROL_MODE = "manual_control"
 LIMIT_MAX_CHARGE_PER_BATTERY = 3500  # Watts per battery
 LIMIT_MAX_DISCHARGE_PER_BATTERY = 4600  # Watts per battery
 LIMIT_REFRESH_INTERVAL = 3  # minutes for periodic refresh of write-only registers
+REFRESH_REGISTERS = {43, 44}  # Registers to refresh periodically
 
 
 @dataclass(frozen=True)

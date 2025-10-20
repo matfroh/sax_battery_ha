@@ -20,7 +20,6 @@ from datetime import datetime, timedelta
 import logging
 from typing import Any
 
-from homeassistant.components.input_number import SERVICE_SET_VALUE
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -28,21 +27,21 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     CONF_AUTO_PILOT_INTERVAL,
+    CONF_ENABLE_SOLAR_CHARGING,
     CONF_GRID_POWER_SENSOR,
     CONF_MANUAL_CONTROL,
-    CONF_ENABLE_SOLAR_CHARGING,
     DEFAULT_AUTO_PILOT_INTERVAL,
     DOMAIN,
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
     MANUAL_CONTROL_MODE,
+    PILOT_ITEMS,
     SAX_AC_POWER_TOTAL,
     SAX_NOMINAL_FACTOR,
     SAX_PILOT_POWER,
     SOLAR_CHARGING_MODE,
 )
 from .coordinator import SAXBatteryCoordinator
-from .utils import get_unique_id_for_item
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,10 +121,19 @@ class PowerManager:
         ent_reg = er.async_get(self.hass)
 
         # Resolve SAX_PILOT_POWER entity (the one that actually exists!)
-        power_unique_id = get_unique_id_for_item(
-            self.hass,
-            self.coordinator.config_entry.entry_id,
-            SAX_PILOT_POWER,  # ✅ Changed from SAX_NOMINAL_POWER
+        # Find the pilot power item from the list
+        pilot_power_item = next(
+            (item for item in PILOT_ITEMS if item.name == SAX_PILOT_POWER),
+            None,
+        )
+
+        if not pilot_power_item:
+            _LOGGER.error("Could not find %s in PILOT_ITEMS", SAX_PILOT_POWER)
+            return
+
+        power_unique_id = self.coordinator.sax_data.get_unique_id_for_item(
+            pilot_power_item,
+            SAX_PILOT_POWER,
         )
 
         if power_unique_id:
@@ -149,10 +157,18 @@ class PowerManager:
         else:
             _LOGGER.error("Could not generate unique_id for %s", SAX_PILOT_POWER)
 
+        power_factor_item = next(
+            (item for item in PILOT_ITEMS if item.name == SAX_NOMINAL_FACTOR),
+            None,
+        )
+
+        if not power_factor_item:
+            _LOGGER.error("Could not find %s in PILOT_ITEMS", SAX_NOMINAL_FACTOR)
+            return
+
         # Resolve SAX_NOMINAL_FACTOR entity (for power factor)
-        factor_unique_id = get_unique_id_for_item(
-            self.hass,
-            self.coordinator.config_entry.entry_id,
+        factor_unique_id = self.coordinator.sax_data.get_unique_id_for_item(
+            power_factor_item,
             SAX_NOMINAL_FACTOR,
         )
 
@@ -334,7 +350,7 @@ class PowerManager:
         if self.coordinator.data:
             # Try SAX_AC_POWER_TOTAL first (address 40085)
             battery_power_value = self.coordinator.data.get(SAX_AC_POWER_TOTAL)
-            
+
             if battery_power_value is not None:
                 try:
                     current_battery_power = float(battery_power_value)
@@ -363,7 +379,7 @@ class PowerManager:
 
         # ✅ CORRECT CALCULATION:
         # New Battery Power = Current Battery Power - Grid Power
-        # 
+        #
         # Convention:
         # - Grid: negative = export to grid, positive = import from grid
         # - Battery: negative = charging, positive = discharging
@@ -377,7 +393,7 @@ class PowerManager:
         #
         # 3. Grid importing 2000W (grid=+2000), Battery charging 1000W (battery=-1000)
         #    → Target: -1000 - (+2000) = +1000W (discharge to eliminate import)
-        
+
         target_power = current_battery_power - grid_power
 
         _LOGGER.debug(
@@ -390,7 +406,9 @@ class PowerManager:
         # Apply power limits (Note: charging is negative, discharging is positive)
         target_power = max(
             -self.max_charge_power,  # Maximum charge (negative value)
-            min(self.max_discharge_power, target_power),  # Maximum discharge (positive value)
+            min(
+                self.max_discharge_power, target_power
+            ),  # Maximum discharge (positive value)
         )
 
         _LOGGER.debug("After power limits: target=%sW", target_power)
@@ -400,15 +418,17 @@ class PowerManager:
             target_power
         )
         final_target = constrained_result.constrained_value
-        
+
         if final_target != target_power:
             _LOGGER.info(
                 "Solar charging constrained by SOC: %sW → %sW (reason: %s)",
                 target_power,
                 final_target,
-                constrained_result.reason if hasattr(constrained_result, 'reason') else 'SOC limits',
+                constrained_result.reason
+                if hasattr(constrained_result, "reason")
+                else "SOC limits",
             )
-        
+
         _LOGGER.info(
             "Solar charging update: grid=%sW, battery=%sW → target=%sW",
             grid_power,
@@ -432,7 +452,7 @@ class PowerManager:
         """
         # Security: Validate power limits
         if not isinstance(power, (int, float)):
-            _LOGGER.error("Invalid power value type: %s", type(power))
+            _LOGGER.error("Invalid power value type: %s", type(power))  # type:ignore[unreachable]
             return
 
         # Clamp to absolute limits
@@ -451,7 +471,7 @@ class PowerManager:
         # ✅ SIMPLE FIX: Use the known entity_id directly
         # Since we know the entity is number.sax_cluster_pilot_power, just use it
         power_entity_id = "number.sax_cluster_pilot_power"
-        
+
         # Verify entity exists
         if not self.hass.states.get(power_entity_id):
             _LOGGER.error(
@@ -459,7 +479,10 @@ class PowerManager:
                 power_entity_id,
             )
             for state in self.hass.states.async_all("number"):
-                if "pilot" in state.entity_id.lower() or "sax" in state.entity_id.lower():
+                if (
+                    "pilot" in state.entity_id.lower()
+                    or "power" in state.entity_id.lower()
+                ):
                     _LOGGER.error("  - %s", state.entity_id)
             return
 
@@ -481,7 +504,7 @@ class PowerManager:
                 power_entity_id,
             )
         except Exception as err:
-            _LOGGER.error(
+            _LOGGER.error(  # noqa: G201
                 "Failed to update power setpoint: %s",
                 err,
                 exc_info=True,

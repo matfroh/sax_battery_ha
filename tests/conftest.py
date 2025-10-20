@@ -177,7 +177,7 @@ def mock_coordinator_pilot_control_base(mock_hass_base, mock_config_entry_base):
 def modbus_item_max_charge_base():
     """Create power number ModbusItem for testing."""
     return ModbusItem(
-        address=100,
+        address=44,
         name=SAX_MAX_CHARGE,
         mtype=TypeConstants.NUMBER_WO,
         device=DeviceConstants.SYS,
@@ -217,37 +217,86 @@ def modbus_item_pilot_power_base():
 
 
 @pytest.fixture
-def mock_soc_manager():
-    """Create mock SOC manager for testing.
+def soc_manager(mock_coordinator) -> SOCManager:
+    """Create real SOCManager instance for integration testing.
+
+    This fixture provides a real SOCManager with mocked coordinator for tests
+    that need to verify actual SOCManager behavior (not just interface compliance).
+
+    Performance:
+        Reusable fixture reduces test setup overhead
 
     Security:
-        OWASP A05: Provides safe mock for constraint validation
+        OWASP A05: Validates actual constraint enforcement logic
+
+    Returns:
+        Real SOCManager instance with mocked dependencies
     """
+    # Ensure hass.services.async_call is AsyncMock (awaitable)
+    mock_coordinator.hass.services.async_call = AsyncMock(return_value=None)
 
-    manager = MagicMock(spec=SOCManager)
-    manager.min_soc = 20.0
-    manager.enabled = True
+    # Ensure config_entry exists
+    if not hasattr(mock_coordinator, "config_entry"):
+        mock_coordinator.config_entry = MagicMock()
+        mock_coordinator.config_entry.entry_id = "test_entry_123"
 
-    # Default behavior: allow all operations
-    manager.apply_constraints = AsyncMock(
-        return_value=SOCConstraintResult(
-            allowed=True,
-            constrained_value=1000.0,
-            reason=None,
-        )
+    # Create real SOCManager instance (not a mock)
+    manager = SOCManager(
+        coordinator=mock_coordinator,
+        min_soc=20.0,
+        enabled=True,
     )
-
-    manager.check_discharge_allowed = AsyncMock(
-        return_value=SOCConstraintResult(
-            allowed=True,
-            constrained_value=1000.0,
-            reason=None,
-        )
-    )
-
-    manager.get_current_soc = AsyncMock(return_value=75.0)
 
     return manager
+
+
+@pytest.fixture
+def mock_soc_manager() -> SOCManager:
+    """Create a properly configured SOCManager for testing.
+
+    Returns real SOCManager instance with mocked dependencies.
+    Security:
+        OWASP A05: Validates manager has required attributes for testing
+    """
+    # Create mock coordinator with required attributes
+    mock_coordinator = MagicMock()
+    mock_coordinator.data = {}
+
+    # Create mock Home Assistant instance
+    mock_hass = MagicMock()
+    # FIX: Use AsyncMock for async_call since it's awaitable
+    mock_hass.services.async_call = AsyncMock(return_value=None)
+
+    # Mock entity registry for entity ID lookups
+    mock_entity_registry = MagicMock()
+    mock_entity_registry.async_get_entity_id = MagicMock(
+        return_value="number.test_entity"
+    )
+    mock_hass.data = {"entity_registry": mock_entity_registry}
+
+    mock_coordinator.hass = mock_hass
+
+    # Create mock config_entry
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "test_entry_123"
+    mock_coordinator.config_entry = mock_entry
+
+    # Create mock SAXBatteryData with get_unique_id_for_item
+    mock_sax_data = MagicMock()
+    mock_sax_data.get_unique_id_for_item = MagicMock(return_value=None)
+    mock_coordinator.sax_data = mock_sax_data
+
+    # Create mock battery_id
+    mock_coordinator.battery_id = "battery_a"
+
+    # Create REAL SOCManager instance with mocked dependencies
+    manager = SOCManager(
+        coordinator=mock_coordinator,
+        min_soc=20.0,
+        enabled=True,
+    )
+
+    return manager  # noqa: RET504
 
 
 @pytest.fixture

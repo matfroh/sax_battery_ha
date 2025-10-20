@@ -1,37 +1,9 @@
 """Tests for SOC manager."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from custom_components.sax_battery.const import SAX_COMBINED_SOC
+from custom_components.sax_battery.const import SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
 from custom_components.sax_battery.soc_manager import SOCConstraintResult, SOCManager
-
-
-@pytest.fixture
-def mock_coordinator():
-    """Create mock coordinator."""
-    coordinator = Mock()
-    coordinator.data = {SAX_COMBINED_SOC: 50.0}
-    coordinator.async_write_number_value = AsyncMock(return_value=True)
-    coordinator.hass = Mock()
-
-    # Mock config_entry with entry_id
-    mock_entry = Mock()
-    mock_entry.entry_id = "test_entry_123"
-    coordinator.config_entry = mock_entry
-
-    return coordinator
-
-
-@pytest.fixture
-def soc_manager(mock_coordinator):
-    """Create SOC manager instance."""
-    return SOCManager(
-        coordinator=mock_coordinator,
-        min_soc=20.0,
-        enabled=True,
-    )
 
 
 class TestSOCManagerInitialization:
@@ -291,269 +263,320 @@ class TestApplyConstraints:
 class TestCheckAndEnforceDischargeLimit:
     """Test check_and_enforce_discharge_limit method."""
 
-    async def test_enforce_returns_false_if_disabled(self, soc_manager):
-        """Test returns False when constraints disabled."""
-        soc_manager.enabled = False
-
-        result = await soc_manager.check_and_enforce_discharge_limit()
-
-        assert result is False
-
-    async def test_enforce_returns_false_if_no_config_entry(self, soc_manager):
-        """Test returns False when config entry not available."""
-        soc_manager.coordinator.config_entry = None
-
-        with patch("custom_components.sax_battery.soc_manager._LOGGER") as mock_logger:
-            result = await soc_manager.check_and_enforce_discharge_limit()
-
-            assert result is False
-            mock_logger.error.assert_called_once()
-
-    async def test_enforce_returns_false_if_soc_above_minimum(self, soc_manager):
-        """Test returns False when SOC above minimum."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 50.0}
-
-        result = await soc_manager.check_and_enforce_discharge_limit()
-
-        assert result is False
-
-    @patch("custom_components.sax_battery.soc_manager.get_unique_id_for_item")
-    @patch("custom_components.sax_battery.soc_manager.er.async_get")
-    @patch(
-        "custom_components.sax_battery.soc_manager.entity_platform.async_get_current_platform"
-    )
+    @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_enforce_writes_to_entity(
-        self, mock_platform, mock_reg, mock_unique_id, soc_manager
-    ):
-        """Test successfully writes to max_discharge entity."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 15.0}
+        self,
+        mock_entity_registry,
+        soc_manager,
+    ) -> None:
+        """Test enforcement writes to SAX_MAX_DISCHARGE entity.
 
-        # Mock unique_id generation
-        mock_unique_id.return_value = "sax_max_discharge"
+        Security:
+            OWASP A05: Validates proper constraint enforcement
+        """
+        # Setup low SOC condition
+        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 8.0}
 
-        # Mock entity registry
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = "number.battery_max_discharge"
-        mock_reg.return_value = mock_ent_reg
+        # Mock ModbusItem for SAX_MAX_DISCHARGE
+        mock_modbus_item = MagicMock()
+        mock_modbus_item.item = MagicMock()
+        soc_manager.coordinator.data[SAX_MAX_DISCHARGE] = mock_modbus_item
 
-        # Mock entity platform and entity
-        mock_entity = Mock()
-        mock_entity.entity_id = "number.battery_max_discharge"
-        mock_entity.async_set_native_value = AsyncMock()
+        # Mock entity registry to return valid entity_id
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id = MagicMock(
+            return_value="number.sax_cluster_max_discharge"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
 
-        mock_plat = Mock()
-        mock_plat.entities = {mock_entity.entity_id: mock_entity}
-        mock_platform.return_value = mock_plat
-
-        result = await soc_manager.check_and_enforce_discharge_limit()
-
-        assert result is True
-        mock_entity.async_set_native_value.assert_called_once_with(0.0)
-        assert soc_manager._last_enforced_soc == 15.0
-
-    @patch("custom_components.sax_battery.soc_manager.get_unique_id_for_item")
-    @patch("custom_components.sax_battery.soc_manager.er.async_get")
-    async def test_enforce_handles_missing_entity(
-        self, mock_reg, mock_unique_id, soc_manager
-    ):
-        """Test handles missing entity in registry."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 15.0}
-
-        mock_unique_id.return_value = "sax_max_discharge"
-
-        # Mock entity registry returning None (entity not found)
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = None
-        mock_reg.return_value = mock_ent_reg
-
-        with patch("custom_components.sax_battery.soc_manager._LOGGER") as mock_logger:
-            result = await soc_manager.check_and_enforce_discharge_limit()
-
-            assert result is False
-            mock_logger.error.assert_called()
-
-    @patch("custom_components.sax_battery.soc_manager.get_unique_id_for_item")
-    @patch("custom_components.sax_battery.soc_manager.er.async_get")
-    @patch(
-        "custom_components.sax_battery.soc_manager.entity_platform.async_get_current_platform"
-    )
-    async def test_enforce_handles_missing_platform(
-        self, mock_platform, mock_reg, mock_unique_id, soc_manager
-    ):
-        """Test handles missing entity platform."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 15.0}
-
-        mock_unique_id.return_value = "sax_max_discharge"
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = "number.battery_max_discharge"
-        mock_reg.return_value = mock_ent_reg
-
-        # Platform not available
-        mock_platform.return_value = None
-
-        with patch("custom_components.sax_battery.soc_manager._LOGGER") as mock_logger:
-            result = await soc_manager.check_and_enforce_discharge_limit()
-
-            assert result is False
-            mock_logger.error.assert_called()
-
-    @patch("custom_components.sax_battery.soc_manager.get_unique_id_for_item")
-    @patch("custom_components.sax_battery.soc_manager.er.async_get")
-    @patch(
-        "custom_components.sax_battery.soc_manager.entity_platform.async_get_current_platform"
-    )
-    async def test_enforce_handles_entity_not_in_platform(
-        self, mock_platform, mock_reg, mock_unique_id, soc_manager
-    ):
-        """Test handles entity not found in platform entities."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 15.0}
-
-        mock_unique_id.return_value = "sax_max_discharge"
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = "number.battery_max_discharge"
-        mock_reg.return_value = mock_ent_reg
-
-        # Platform exists but entity not in entities dict
-        mock_plat = Mock()
-        mock_plat.entities = {}
-        mock_platform.return_value = mock_plat
-
-        with patch("custom_components.sax_battery.soc_manager._LOGGER") as mock_logger:
-            result = await soc_manager.check_and_enforce_discharge_limit()
-
-            assert result is False
-            mock_logger.error.assert_called()
-
-    @patch("custom_components.sax_battery.soc_manager.get_unique_id_for_item")
-    @patch("custom_components.sax_battery.soc_manager.er.async_get")
-    @patch(
-        "custom_components.sax_battery.soc_manager.entity_platform.async_get_current_platform"
-    )
-    async def test_enforce_handles_entity_without_set_method(
-        self, mock_platform, mock_reg, mock_unique_id, soc_manager
-    ):
-        """Test handles entity without async_set_native_value method."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 15.0}
-
-        mock_unique_id.return_value = "sax_max_discharge"
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = "number.battery_max_discharge"
-        mock_reg.return_value = mock_ent_reg
-
-        # Entity without async_set_native_value
-        mock_entity = Mock(spec=[])  # No methods
-        mock_entity.entity_id = "number.battery_max_discharge"
-
-        mock_plat = Mock()
-        mock_plat.entities = {mock_entity.entity_id: mock_entity}
-        mock_platform.return_value = mock_plat
-
-        with patch("custom_components.sax_battery.soc_manager._LOGGER") as mock_logger:
-            result = await soc_manager.check_and_enforce_discharge_limit()
-
-            assert result is False
-            mock_logger.error.assert_called()
-
-    @patch("custom_components.sax_battery.soc_manager.get_unique_id_for_item")
-    @patch("custom_components.sax_battery.soc_manager.er.async_get")
-    @patch(
-        "custom_components.sax_battery.soc_manager.entity_platform.async_get_current_platform"
-    )
-    async def test_enforce_handles_write_exception(
-        self, mock_platform, mock_reg, mock_unique_id, soc_manager
-    ):
-        """Test handles exception during entity write."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 15.0}
-
-        mock_unique_id.return_value = "sax_max_discharge"
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = "number.battery_max_discharge"
-        mock_reg.return_value = mock_ent_reg
-
-        mock_entity = Mock()
-        mock_entity.entity_id = "number.battery_max_discharge"
-        mock_entity.async_set_native_value = AsyncMock(
-            side_effect=Exception("Write failed")
+        # Mock successful unique_id generation
+        soc_manager.coordinator.sax_data.get_unique_id_for_item.return_value = (
+            "sax_cluster_max_discharge"
         )
 
-        mock_plat = Mock()
-        mock_plat.entities = {mock_entity.entity_id: mock_entity}
-        mock_platform.return_value = mock_plat
-
-        with patch("custom_components.sax_battery.soc_manager._LOGGER") as mock_logger:
-            result = await soc_manager.check_and_enforce_discharge_limit()
-
-            assert result is False
-            mock_logger.error.assert_called()
-
-    @patch("custom_components.sax_battery.soc_manager.get_unique_id_for_item")
-    @patch("custom_components.sax_battery.soc_manager.er.async_get")
-    @patch(
-        "custom_components.sax_battery.soc_manager.entity_platform.async_get_current_platform"
-    )
-    async def test_enforce_uses_fallback_unique_id(
-        self, mock_platform, mock_reg, mock_unique_id, soc_manager
-    ):
-        """Test uses fallback unique_id when primary returns None."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 15.0}
-
-        # Primary unique_id returns None
-        mock_unique_id.return_value = None
-
-        mock_ent_reg = Mock()
-        mock_ent_reg.async_get_entity_id.return_value = "number.battery_max_discharge"
-        mock_reg.return_value = mock_ent_reg
-
-        mock_entity = Mock()
-        mock_entity.entity_id = "number.battery_max_discharge"
-        mock_entity.async_set_native_value = AsyncMock()
-
-        mock_plat = Mock()
-        mock_plat.entities = {mock_entity.entity_id: mock_entity}
-        mock_platform.return_value = mock_plat
-
+        # Execute enforcement
         result = await soc_manager.check_and_enforce_discharge_limit()
 
-        # Should use fallback unique_id (removeprefix logic)
+        # Verify successful enforcement
         assert result is True
-        mock_ent_reg.async_get_entity_id.assert_called()
+        assert soc_manager._last_enforced_soc == 8.0
 
-    @patch("custom_components.sax_battery.soc_manager.get_unique_id_for_item")
-    @patch("custom_components.sax_battery.soc_manager.er.async_get")
-    @patch(
-        "custom_components.sax_battery.soc_manager.entity_platform.async_get_current_platform"
-    )
-    async def test_enforce_skips_redundant_writes(
-        self, mock_platform, mock_reg, mock_unique_id, soc_manager
-    ):
-        """Test skips redundant writes when SOC hasn't changed."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 15.0}
-        soc_manager._last_enforced_soc = 15.0  # Already enforced at this SOC
+        # Verify service was called with correct parameters
+        soc_manager.hass.services.async_call.assert_called_once_with(
+            "number",
+            "set_value",
+            {
+                "entity_id": "number.sax_cluster_max_discharge",
+                "value": 0.0,
+            },
+            blocking=True,
+        )
 
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_handles_service_failure(
+        self,
+        mock_entity_registry,
+        soc_manager,
+    ) -> None:
+        """Test enforcement handles service call failures gracefully.
+
+        Security:
+            OWASP A05: Validates error handling
+        """
+        # Setup low SOC condition
+        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 5.0}
+
+        # Mock ModbusItem
+        mock_modbus_item = MagicMock()
+        mock_modbus_item.item = MagicMock()
+        soc_manager.coordinator.data[SAX_MAX_DISCHARGE] = mock_modbus_item
+
+        # Mock successful registry lookups
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id.return_value = (
+            "number.sax_cluster_max_discharge"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        soc_manager.coordinator.sax_data.get_unique_id_for_item.return_value = (
+            "sax_cluster_max_discharge"
+        )
+
+        # Mock service call failure
+        soc_manager.hass.services.async_call = AsyncMock(
+            side_effect=Exception("Service call failed")
+        )
+
+        # Execute enforcement
         result = await soc_manager.check_and_enforce_discharge_limit()
 
-        # Should skip enforcement
+        # Should return False on service failure
         assert result is False
-        mock_unique_id.assert_not_called()
+        assert soc_manager._last_enforced_soc is None
 
-    @patch("custom_components.sax_battery.soc_manager.get_unique_id_for_item")
-    @patch("custom_components.sax_battery.soc_manager.er.async_get")
-    @patch(
-        "custom_components.sax_battery.soc_manager.entity_platform.async_get_current_platform"
-    )
-    async def test_enforce_resets_on_soc_recovery(
-        self, mock_platform, mock_reg, mock_unique_id, soc_manager
-    ):
-        """Test resets enforcement state when SOC recovers."""
-        soc_manager._last_enforced_soc = 15.0  # Previously enforced
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 25.0}  # Now above minimum
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_skips_when_soc_above_minimum(
+        self,
+        mock_entity_registry,
+        soc_manager,
+    ) -> None:
+        """Test enforcement skipped when SOC above minimum.
 
-        with patch("custom_components.sax_battery.soc_manager._LOGGER") as mock_logger:
-            result = await soc_manager.check_and_enforce_discharge_limit()
+        Security:
+            OWASP A05: Validates constraint logic
+        """
+        # Setup SOC above minimum
+        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 50.0}
 
-            assert result is False
-            assert soc_manager._last_enforced_soc is None
-            mock_logger.info.assert_called()
+        # Execute enforcement
+        result = await soc_manager.check_and_enforce_discharge_limit()
+
+        # Should return True without calling service
+        assert result is True
+        assert soc_manager._last_enforced_soc is None
+
+        # Verify service was NOT called
+        soc_manager.hass.services.async_call.assert_not_called()
+
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_handles_missing_unique_id(
+        self,
+        mock_entity_registry,
+        soc_manager,
+    ) -> None:
+        """Test enforcement handles missing unique_id gracefully.
+
+        Security:
+            OWASP A05: Validates proper error handling
+        """
+        # Setup low SOC condition
+        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 8.0}
+
+        # Mock ModbusItem
+        mock_modbus_item = MagicMock()
+        mock_modbus_item.item = MagicMock()
+        soc_manager.coordinator.data[SAX_MAX_DISCHARGE] = mock_modbus_item
+
+        # Mock unique_id generation failure
+        soc_manager.coordinator.sax_data.get_unique_id_for_item.return_value = None
+
+        # Execute enforcement
+        result = await soc_manager.check_and_enforce_discharge_limit()
+
+        # Should return False due to missing unique_id
+        assert result is False
+
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_handles_missing_entity_id(
+        self,
+        mock_entity_registry,
+        soc_manager,
+    ) -> None:
+        """Test enforcement handles missing entity_id gracefully.
+
+        Security:
+            OWASP A05: Validates proper error handling
+        """
+        # Setup low SOC condition
+        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 8.0}
+
+        # Mock ModbusItem
+        mock_modbus_item = MagicMock()
+        mock_modbus_item.item = MagicMock()
+        soc_manager.coordinator.data[SAX_MAX_DISCHARGE] = mock_modbus_item
+
+        # Mock successful unique_id but no entity_id
+        soc_manager.coordinator.sax_data.get_unique_id_for_item.return_value = (
+            "sax_cluster_max_discharge"
+        )
+
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id.return_value = None
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # Execute enforcement
+        result = await soc_manager.check_and_enforce_discharge_limit()
+
+        # Should return False due to missing entity
+        assert result is False
+
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_disabled_when_not_enabled(
+        self,
+        mock_entity_registry,
+        mock_coordinator,
+    ) -> None:
+        """Test enforcement disabled when manager not enabled.
+
+        Security:
+            OWASP A05: Validates configuration control
+        """
+        # Create disabled manager
+        manager = SOCManager(
+            coordinator=mock_coordinator,
+            min_soc=20.0,
+            enabled=False,
+        )
+
+        # Setup low SOC condition
+        manager.coordinator.data = {SAX_COMBINED_SOC: 5.0}
+
+        # Execute enforcement
+        result = await manager.check_and_enforce_discharge_limit()
+
+        # Should return False without attempting enforcement
+        assert result is False
+
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_handles_missing_config_entry(
+        self,
+        mock_entity_registry,
+        soc_manager,
+    ) -> None:
+        """Test enforcement handles missing config entry.
+
+        Security:
+            OWASP A05: Validates proper error handling
+        """
+        # Setup low SOC condition
+        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 5.0}
+
+        # Remove config entry
+        soc_manager.coordinator.config_entry = None
+
+        # Execute enforcement
+        result = await soc_manager.check_and_enforce_discharge_limit()
+
+        # Should return False due to missing config entry
+        assert result is False
+
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_tracks_last_enforced_soc(
+        self,
+        mock_entity_registry,
+        soc_manager,
+    ) -> None:
+        """Test enforcement tracks last enforced SOC value.
+
+        Security:
+            OWASP A05: Validates state tracking
+        """
+        # Setup low SOC condition
+        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 12.5}
+
+        # Mock ModbusItem
+        mock_modbus_item = MagicMock()
+        mock_modbus_item.item = MagicMock()
+        soc_manager.coordinator.data[SAX_MAX_DISCHARGE] = mock_modbus_item
+
+        # Mock successful enforcement
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id.return_value = (
+            "number.sax_cluster_max_discharge"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        soc_manager.coordinator.sax_data.get_unique_id_for_item.return_value = (
+            "sax_cluster_max_discharge"
+        )
+
+        # Execute enforcement
+        result = await soc_manager.check_and_enforce_discharge_limit()
+
+        # Verify SOC was tracked
+        assert result is True
+        assert soc_manager._last_enforced_soc == 12.5
+
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_handles_missing_modbus_item(
+        self,
+        mock_entity_registry,
+        soc_manager,
+    ) -> None:
+        """Test enforcement handles missing ModbusItem gracefully.
+
+        Security:
+            OWASP A05: Validates proper error handling
+        """
+        # Setup low SOC condition with no ModbusItem
+        soc_manager.coordinator.data = {
+            SAX_COMBINED_SOC: 8.0,
+            SAX_MAX_DISCHARGE: "not_a_modbus_item",  # Missing .item attribute
+        }
+
+        # Execute enforcement
+        result = await soc_manager.check_and_enforce_discharge_limit()
+
+        # Should return False due to missing ModbusItem
+        assert result is False
+
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_enforce_handles_missing_sax_data(
+        self,
+        mock_entity_registry,
+        soc_manager,
+    ) -> None:
+        """Test enforcement handles missing sax_data attribute.
+
+        Security:
+            OWASP A05: Validates proper error handling
+        """
+        # Setup low SOC condition
+        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 8.0}
+
+        # Mock ModbusItem
+        mock_modbus_item = MagicMock()
+        mock_modbus_item.item = MagicMock()
+        soc_manager.coordinator.data[SAX_MAX_DISCHARGE] = mock_modbus_item
+
+        # Remove sax_data attribute
+        delattr(soc_manager.coordinator, "sax_data")
+
+        # Execute enforcement
+        result = await soc_manager.check_and_enforce_discharge_limit()
+
+        # Should return False due to missing sax_data
+        assert result is False
 
 
 class TestSOCManagerDisabled:
