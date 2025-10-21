@@ -13,6 +13,17 @@
             "min_soc_out_of_range": "Minimum SOC must be between 0 and 100"
         }
     },
+    "device": {
+        "dev_bms": {
+            "name": "Battery Management System"
+        },
+        "dev_bess": {
+            "name": "Battery Energy Storage System"
+        },
+        "dev_sm": {
+            "name": "Smart Meter"
+        }
+    },
     "entity": {
         "sensor": {
             "sax_cumulative_energy_produced": {

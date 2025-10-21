@@ -83,6 +83,17 @@
       }
     }
   },
+    "device": {
+      "dev_bms": {
+        "name": "Battery Management System"
+      },
+      "dev_bess": {
+        "name": "Battery Energy Storage System {battery_id}"
+      },
+      "dev_sm": {
+        "name": "Smart Meter"
+      }
+    },
   "entity": {
     "sensor": {
       "soc": {

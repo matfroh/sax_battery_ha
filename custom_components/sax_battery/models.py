@@ -22,6 +22,7 @@ from .const import (
     CONF_MASTER_BATTERY,
     DEFAULT_DEVICE_INFO,
     DOMAIN,
+    MODBUS_BATTERY_BMS_ITEMS,
     MODBUS_BATTERY_SMARTMETER_ITEMS,
     MODBUS_BATTERY_SWITCH_ITEMS,
     MODBUS_BATTERY_UNDOCUMENTED_ITEMS,
@@ -106,6 +107,7 @@ class BatteryModel(BaseModel):
         if self.is_master:
             # MODBUS_BATTERY_SMARTMETER_ITEMS already includes all smart meter data
             # Including basic items, phase items, and battery-accessible smart meter data
+            items.extend(MODBUS_BATTERY_BMS_ITEMS)
             items.extend(MODBUS_BATTERY_SMARTMETER_ITEMS)
             items.extend(MODBUS_BATTERY_UNDOCUMENTED_ITEMS)
             switch_item: ModbusItem = MODBUS_BATTERY_SWITCH_ITEMS[0]
@@ -268,6 +270,7 @@ class SAXBatteryData:
                 manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
                 model=DEFAULT_DEVICE_INFO.model,
                 sw_version=DEFAULT_DEVICE_INFO.sw_version,
+                translation_key="dev_bms",
             )
 
         if device == DeviceConstants.SM:
@@ -278,6 +281,7 @@ class SAXBatteryData:
                 manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
                 model=DEFAULT_DEVICE_INFO.model,
                 sw_version=DEFAULT_DEVICE_INFO.sw_version,
+                translation_key="dev_sm",
             )
 
         if device == DeviceConstants.BESS:
@@ -288,6 +292,10 @@ class SAXBatteryData:
                 manufacturer=DEFAULT_DEVICE_INFO.manufacturer,
                 model=DEFAULT_DEVICE_INFO.model,
                 sw_version=DEFAULT_DEVICE_INFO.sw_version,
+                translation_key="dev_bess",
+                translation_placeholders={
+                    "battery_id": battery_id.removeprefix("battery_").upper()
+                },
             )
 
         _LOGGER.error("Unknown device type: %s, %s", battery_id, device)  # type: ignore [unreachable]

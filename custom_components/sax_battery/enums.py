@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class DeviceConstants(Enum):
+class DeviceConstants(StrEnum):
     """Device type constants."""
 
     SYS = "cluster"  # device handles entities for batteries
@@ -35,7 +35,7 @@ class DeviceConstants(Enum):
 # fmt: on
 
 
-class TypeConstants(Enum):  # item types -> not home assistant types
+class TypeConstants(StrEnum):  # item types -> not home assistant types
     """Modbus type constants mapped to Home Assistant entity types."""
 
     SENSOR = "sensor"  # holding read only

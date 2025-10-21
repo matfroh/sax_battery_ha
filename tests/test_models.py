@@ -7,11 +7,11 @@ from unittest.mock import MagicMock
 from custom_components.sax_battery.const import (
     MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     SAX_COMBINED_SOC,
-    SAX_CURRENT_L1,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
     SAX_MIN_SOC,
     SAX_POWER,
+    SAX_SMARTMETER_ENERGY_PRODUCED,
     SAX_SOC,
 )
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
@@ -688,9 +688,9 @@ class TestSAXBatteryDataGetUniqueId:
                 "unique_id": "sax_cluster_max_charge",
             },
             # Per-battery sensor (BESS device)
-            SAX_CURRENT_L1: {
+            SAX_SMARTMETER_ENERGY_PRODUCED: {
                 "battery_id": "battery_a",
-                "unique_id": "sax_smart_meter_current_l1",
+                "unique_id": "sax_smart_meter_smartmeter_energy_produced",
             },
             # Virtual entity (cluster device, battery_id=None)
             SAX_COMBINED_SOC: {
