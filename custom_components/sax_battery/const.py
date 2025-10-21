@@ -489,7 +489,7 @@ DESCRIPTION_SAX_CUMULATIVE_ENERGY_PRODUCED = SensorEntityDescription(
     key=SAX_CUMULATIVE_ENERGY_PRODUCED,
     name="Sax Cumulative Energy Produced",
     device_class=SensorDeviceClass.ENERGY,
-    state_class=SensorStateClass.TOTAL_INCREASING,
+    state_class=SensorStateClass.TOTAL,
     native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
 )
 
@@ -506,7 +506,7 @@ DESCRIPTION_SAX_CUMULATIVE_ENERGY_CONSUMED = SensorEntityDescription(
     key=SAX_CUMULATIVE_ENERGY_CONSUMED,
     name="Sax Cumulative Energy Consumed",
     device_class=SensorDeviceClass.ENERGY,
-    state_class=SensorStateClass.TOTAL_INCREASING,
+    state_class=SensorStateClass.TOTAL,
     native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
 )
 
