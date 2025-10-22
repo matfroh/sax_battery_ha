@@ -125,7 +125,10 @@ class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEnt
         self._battery_id = battery_id
 
         # Generate unique ID using class name pattern
-        item_name: str = self._modbus_item.name.removeprefix("sax_")
+        item_name: str = self._modbus_item.name.removeprefix("sax_").removeprefix(
+            "smartmeter_"
+        )
+
         if "smartmeter" in item_name:
             self._attr_unique_id = f"sax_{item_name}"
         else:

@@ -1,146 +1,278 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "SAX Battery Configuration",
-        "description": "Set up your SAX Battery system to integrate with Home Assistant.",
-        "data": {
-          "battery_count": "Select your number of batteries (1 to 3)"
+    "title": "SAX Battery",
+    "config": {
+        "abort": {
+            "already_configured": "Device is already configured"
+        },
+        "error": {
+            "cannot_connect": "Failed to connect to battery",
+            "invalid_auth": "Invalid authentication",
+            "unknown": "Unexpected error"
+        },
+        "step": {
+            "battery_config": {
+                "data": {
+                    "battery_a_host": "Battery A IP Address",
+                    "battery_a_port": "Battery A Port",
+                    "battery_b_host": "Battery B IP Address",
+                    "battery_b_port": "Battery B Port",
+                    "battery_c_host": "Battery C IP Address",
+                    "battery_c_port": "Battery C Port",
+                    "master_battery": "Master Battery"
+                },
+                "description": "Configure connection details for each of your SAX Battery units.",
+                "title": "Battery Connection Settings"
+            },
+            "control_options": {
+                "data": {
+                    "limit_power": "Enable power limitations (you need registers 43 and 44 to be writable). Once setup, you can create automations that send the proper values to this number entity with your own rules.",
+                    "pilot_from_ha": "Control battery from Home Assistant replacing the SAX smartmeter (you need register 41 and 42 set to write)."
+                },
+                "description": "Configure how you want Home Assistant to interact with your SAX Battery system. You can continue without selecting any of this option, this will just add the sensors. The added option here require you to contact SAX's customer service.",
+                "title": "Control Options"
+            },
+            "pilot_options": {
+                "data": {
+                    "auto_pilot_interval": "Control Update Interval (seconds), 60 seconds should be enough",
+                    "enable_solar_charging": "Enable Solar Charging, zero balance",
+                    "min_soc": "Minimum State of Charge (%)"
+                },
+                "description": "Configure advanced battery control parameters when Home Assistant is managing your battery system.",
+                "title": "Battery Control Settings"
+            },
+            "priority_devices": {
+                "data": {
+                    "priority_devices": "Priority Devices, if enabled, battery will not discharge or charge"
+                },
+                "description": "Select devices that will get priority over the battery, if power above 50W is detected battery will neither charge nor discharge. This is typically an EV charger",
+                "title": "Priority Devices setup"
+            },
+            "sensors": {
+                "data": {
+                    "pf_sensor": "Power Factor Sensor, called cos(phi) or PF",
+                    "power_sensor": "Power Consumption Sensor, in Watts, a negative value means consuming from the grid and positive value equals injection into the grid"
+                },
+                "description": "Select the sensors that monitor your home's power usage for intelligent battery control.",
+                "title": "Power Monitoring Sensors"
+            },
+            "user": {
+                "data": {
+                    "battery_count": "Select your number of batteries (1 to 3)"
+                },
+                "description": "Set up your SAX Battery system to integrate with Home Assistant.",
+                "title": "SAX Battery Configuration"
+            }
         }
-      },
-      "control_options": {
-        "title": "Control Options",
-        "description": "Configure how you want Home Assistant to interact with your SAX Battery system. You can continue without selecting any of this option, this will just add the sensors. The added option here require you to contact SAX's customer service.",
-        "data": {
-          "pilot_from_ha": "Control battery from Home Assistant replacing the SAX smartmeter (you need register 41 and 42 set to write).",
-          "limit_power": "Enable power limitations (you need registers 43 and 44 to be writable). Once setup, you can create automations that send the proper values to this number entity with your own rules."
-        }
-      },
-      "pilot_options": {
-        "title": "Battery Control Settings",
-        "description": "Configure advanced battery control parameters when Home Assistant is managing your battery system.",
-        "data": {
-          "min_soc": "Minimum State of Charge (%)",
-          "auto_pilot_interval": "Control Update Interval (seconds), 60 seconds should be enough",
-          "enable_solar_charging": "Enable Solar Charging, zero balance"
-        }
-      },
-      "sensors": {
-        "title": "Power Monitoring Sensors",
-        "description": "Select the sensors that monitor your home's power usage for intelligent battery control.",
-        "data": {
-          "power_sensor": "Power Consumption Sensor, in Watts, a negative value means consuming from the grid and positive value equals injection into the grid",
-          "pf_sensor": "Power Factor Sensor, called cos(phi) or PF"
-        }
-      },
-      "priority_devices": {
-        "title": "Priority Devices setup",
-        "description": "Select devices that will get priority over the battery, if power above 50W is detected battery will neither charge nor discharge. This is typically an EV charger",
-        "data": {
-          "priority_devices": "Priority Devices, if enabled, battery will not discharge or charge"
-        }
-      },
-      "battery_config": {
-        "title": "Battery Connection Settings",
-        "description": "Configure connection details for each of your SAX Battery units.",
-        "data": {
-          "battery_a_host": "Battery A IP Address",
-          "battery_a_port": "Battery A Port",
-          "battery_b_host": "Battery B IP Address",
-          "battery_b_port": "Battery B Port",
-          "battery_c_host": "Battery C IP Address",
-          "battery_c_port": "Battery C Port",
-          "master_battery": "Master Battery"
-        }
-      }
     },
-    "error": {
-      "cannot_connect": "Failed to connect to battery",
-      "invalid_auth": "Invalid authentication",
-      "unknown": "Unexpected error"
-    },
-    "abort": {
-      "already_configured": "Device is already configured"
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "SAX Battery Options",
-        "description": "Update your SAX Battery configuration settings.",
-        "data": {
-          "battery_count": "Number of Batteries",
-          "pilot_from_ha": "Control battery from Home Assistant",
-          "limit_power": "Enable power limitations",
-          "min_soc": "Minimum State of Charge (%)",
-          "auto_pilot_interval": "Control Update Interval (seconds)",
-          "enable_solar_charging": "Enable Solar Charging",
-          "power_sensor": "Power Consumption Sensor",
-          "pf_sensor": "Power Factor Sensor",
-          "priority_devices": "Priority Devices",
-          "master_battery": "Master Battery"
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "auto_pilot_interval": "Control Update Interval (seconds)",
+                    "battery_count": "Number of Batteries",
+                    "enable_solar_charging": "Enable Solar Charging",
+                    "limit_power": "Enable power limitations",
+                    "master_battery": "Master Battery",
+                    "min_soc": "Minimum State of Charge (%)",
+                    "pf_sensor": "Power Factor Sensor",
+                    "pilot_from_ha": "Control battery from Home Assistant",
+                    "power_sensor": "Power Consumption Sensor",
+                    "priority_devices": "Priority Devices"
+                },
+                "description": "Update your SAX Battery configuration settings.",
+                "title": "SAX Battery Options"
+            }
         }
-      }
-    }
-  },
+    },
     "device": {
-      "dev_bms": {
-        "name": "Battery Management System"
-      },
-      "dev_bess": {
-        "name": "Battery Energy Storage System {battery_id}"
-      },
-      "dev_sm": {
-        "name": "Smart Meter"
-      }
-    },
-  "entity": {
-    "sensor": {
-      "soc": {
-        "name": "State of Charge"
-      },
-      "power_status": {
-        "name": "Power Status",
-        "state": {
-          "charging": "Charging",
-          "discharging": "Discharging",
-          "idle": "Idle"
+        "dev_bess": {
+            "name": "Battery Energy Storage System {battery_id}"
+        },
+        "dev_bms": {
+            "name": "Battery Management System"
+        },
+        "dev_sm": {
+            "name": "Smart Meter"
         }
-      },
-      "power_flow": {
-        "name": "Power Flow"
-      },
-      "estimated_runtime": {
-        "name": "Estimated Runtime"
-      }
     },
-    "number": {
-      "max_charge": {
-        "name": "Maximum Charge Power"
-      },
-      "max_discharge": {
-        "name": "Maximum Discharge Power"
-      }
-    },
-    "switch": {
-      "charge_enabled": {
-        "name": "Charging Enabled"
-      },
-      "discharge_enabled": {
-        "name": "Discharging Enabled"
-      },
-      "auto_pilot": {
-        "name": "Automatic Pilot Mode"
-      }
+    "entity": {
+        "number": {
+            "bms_max_charge": {
+                "name": "Max Charge"
+            },
+            "bms_max_discharge": {
+                "name": "Max Discharge"
+            },
+            "bms_min_soc": {
+                "name": "Minimum SOC"
+            },
+            "bms_nominal_factor": {
+                "name": "Power Factor (cos \u03c6)"
+            },
+            "bms_nominal_power": {
+                "name": "Nominal Power"
+            },
+            "bms_pilot_power": {
+                "name": "Pilot Power"
+            }
+        },
+        "sensor": {
+            "bess_capacity": {
+                "name": "Capacity"
+            },
+            "bess_cycles": {
+                "name": "Cycles"
+            },
+            "bess_power": {
+                "name": "Power"
+            },
+            "bess_power_sm": {
+                "name": "Power Smartmeter"
+            },
+            "bess_soc": {
+                "name": "SOC"
+            },
+            "bess_temperature": {
+                "name": "Temperature"
+            },
+            "bms_ac_power_total": {
+                "name": "AC Power Total"
+            },
+            "bms_apparent_power": {
+                "name": "Apparent Power"
+            },
+            "bms_combined_soc": {
+                "name": "Combined SOC"
+            },
+            "bms_cumulative_energy_consumed": {
+                "name": "Cumulative Energy Consumed"
+            },
+            "bms_cumulative_energy_produced": {
+                "name": "Cumulative Energy Produced"
+            },
+            "bms_current_l1": {
+                "name": "Current L1"
+            },
+            "bms_current_l2": {
+                "name": "Current L2"
+            },
+            "bms_current_l3": {
+                "name": "Current L3"
+            },
+            "bms_grid_frequency": {
+                "name": "Grid Frequency"
+            },
+            "bms_phase_currents_sum": {
+                "name": "Phase Currents Sum"
+            },
+            "bms_power_factor": {
+                "name": "Power Factor"
+            },
+            "bms_reactive_power": {
+                "name": "Reactive Power"
+            },
+            "bms_voltage_l1": {
+                "name": "Voltage L1"
+            },
+            "bms_voltage_l2": {
+                "name": "Voltage L2"
+            },
+            "bms_voltage_l3": {
+                "name": "Voltage L3"
+            },
+            "sm_current_l1": {
+                "name": "Current L1"
+            },
+            "sm_current_l2": {
+                "name": "Current L2"
+            },
+            "sm_current_l3": {
+                "name": "Current L3"
+            },
+            "sm_energy_consumed": {
+                "name": "Energy Consumed"
+            },
+            "sm_energy_produced": {
+                "name": "Energy Produced"
+            },
+            "sm_power_l1": {
+                "name": "Active Power L1"
+            },
+            "sm_power_l2": {
+                "name": "Active Power L2"
+            },
+            "sm_power_l3": {
+                "name": "Active Power L3"
+            },
+            "sm_switching_state": {
+                "name": "Switching State"
+            },
+            "sm_total_power": {
+                "name": "Total Power"
+            },
+            "sm_voltage_l1": {
+                "name": "Voltage L1"
+            },
+            "sm_voltage_l2": {
+                "name": "Voltage L2"
+            },
+            "sm_voltage_l3": {
+                "name": "Voltage L3"
+            }
+        },
+        "switch": {
+            "bess_status": {
+                "name": "Battery Status",
+                "state": {
+                    "off": "Off",
+                    "on": "On"
+                },
+                "state_attributes": {
+                    "detailed_state": {
+                        "state": {
+                            "connected": "Connected",
+                            "off": "Off",
+                            "on": "On",
+                            "standby": "Standby",
+                            "unknown": "Unknown"
+                        }
+                    }
+                }
+            },
+            "bms_manual_control": {
+                "name": "Manual Control",
+                "state": {
+                    "off": "Disabled",
+                    "on": "Enabled"
+                },
+                "state_attributes": {
+                    "mode_conflict": {
+                        "name": "Mode Conflict",
+                        "state": {
+                            "manual_disabled": "Manual control was disabled",
+                            "none": "No conflict",
+                            "solar_disabled": "Solar charging was disabled"
+                        }
+                    }
+                }
+            },
+            "bms_solar_charging": {
+                "name": "Solar Charging",
+                "state": {
+                    "off": "Disabled",
+                    "on": "Enabled"
+                },
+                "state_attributes": {
+                    "mode_conflict": {
+                        "name": "Mode Conflict",
+                        "state": {
+                            "manual_disabled": "Manual control was disabled",
+                            "none": "No conflict",
+                            "solar_disabled": "Solar charging was disabled"
+                        }
+                    }
+                }
+            }
+        }
     }
-  },
-  "selector": {
-    "battery_options": {
-      "options": {
-        "battery_a": "Battery A",
-        "battery_b": "Battery B",
-        "battery_c": "Battery C"
-      }
-    }
-  }
 }
