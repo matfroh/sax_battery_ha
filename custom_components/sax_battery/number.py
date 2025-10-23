@@ -7,7 +7,7 @@ from datetime import timedelta
 import logging
 from typing import Any
 
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberEntity, RestoreNumber
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -185,7 +185,7 @@ async def async_setup_entry(
                 )
 
 
-class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEntity):
+class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNumber):
     """Implementation of a SAX Battery number entity backed by ModbusItem.
 
     This class handles ONLY hardware-backed number entities that directly interact
@@ -652,21 +652,20 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
     async def async_added_to_hass(self) -> None:
         """Call entity after it is added to hass."""
         await super().async_added_to_hass()
-
-        # For write-only registers, restore value from config if available
-        if self._is_write_only and self._local_value is None:
-            if self.coordinator.config_entry:
-                config_data = self.coordinator.config_entry.data
-                if self._modbus_item.name in config_data:
-                    self._local_value = float(config_data[self._modbus_item.name])
-                    _LOGGER.debug(
-                        "Restored %s from config: %s",
-                        self._modbus_item.name,
-                        self._local_value,
-                    )
-
         # Set up periodic writes for max_charge and max_discharge
-        if self._modbus_item.name in [SAX_MAX_CHARGE, SAX_MAX_DISCHARGE]:
+        if self._modbus_item.address in REFRESH_REGISTERS:
+            last_number_data = await self.async_get_last_number_data()
+            if last_number_data:
+                # set the state to the last value
+                self._local_value = last_number_data.native_value
+                self._attr_native_value = last_number_data.native_value
+                _LOGGER.debug(
+                    "Restored %s from last state: %s",
+                    self._modbus_item.name,
+                    self._attr_native_value,
+                )
+            self.async_schedule_update_ha_state()
+
             self._track_time_remove = async_track_time_interval(
                 self.hass,
                 self._periodic_write,
