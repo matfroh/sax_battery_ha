@@ -119,7 +119,7 @@
             "name": "Battery Management System"
         },
         "dev_bess": {
-            "name": "Battery Energy Storage System"
+            "name": "Battery Energy Storage System ({battery_id})"
         },
         "dev_sm": {
             "name": "Smart Meter"
