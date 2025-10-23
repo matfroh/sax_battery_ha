@@ -400,13 +400,13 @@ DESCRIPTION_SAX_SMARTMETER_ENERGY_CONSUMED = SensorEntityDescription(
 
 DESCRIPTION_SAX_SMARTMETER_SWITCHING_STATE = SensorEntityDescription(
     key=SAX_SMARTMETER_SWITCHING_STATE,
-    name="Sax Smartmeter Switching State",
+    name="Sax Switching State",
     state_class=SensorStateClass.MEASUREMENT,
 )
 
 DESCRIPTION_SAX_SMARTMETER_CURRENT_L1 = SensorEntityDescription(
     key=SAX_SMARTMETER_CURRENT_L1,
-    name="Sax Smartmeter Current L1",
+    name="Sax Current L1",
     device_class=SensorDeviceClass.CURRENT,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
@@ -414,7 +414,7 @@ DESCRIPTION_SAX_SMARTMETER_CURRENT_L1 = SensorEntityDescription(
 
 DESCRIPTION_SAX_SMARTMETER_CURRENT_L2 = SensorEntityDescription(
     key=SAX_SMARTMETER_CURRENT_L2,
-    name="Sax Smartmeter Current L2",
+    name="Sax Current L2",
     device_class=SensorDeviceClass.CURRENT,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
@@ -422,7 +422,7 @@ DESCRIPTION_SAX_SMARTMETER_CURRENT_L2 = SensorEntityDescription(
 
 DESCRIPTION_SAX_SMARTMETER_CURRENT_L3 = SensorEntityDescription(
     key=SAX_SMARTMETER_CURRENT_L3,
-    name="Sax Smartmeter Current L3",
+    name="Sax Current L3",
     device_class=SensorDeviceClass.CURRENT,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
@@ -430,7 +430,7 @@ DESCRIPTION_SAX_SMARTMETER_CURRENT_L3 = SensorEntityDescription(
 
 DESCRIPTION_SAX_SMARTMETER_POWER_L1 = SensorEntityDescription(
     key=SAX_SMARTMETER_POWER_L1,
-    name="Sax Smartmeter Active Power L1",
+    name="Sax Active Power L1",
     device_class=SensorDeviceClass.POWER,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfPower.WATT,
@@ -438,7 +438,7 @@ DESCRIPTION_SAX_SMARTMETER_POWER_L1 = SensorEntityDescription(
 
 DESCRIPTION_SAX_SMARTMETER_POWER_L2 = SensorEntityDescription(
     key=SAX_SMARTMETER_POWER_L2,
-    name="Sax Smartmeter Active Power L2",
+    name="Sax Active Power L2",
     device_class=SensorDeviceClass.POWER,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfPower.WATT,
@@ -446,21 +446,21 @@ DESCRIPTION_SAX_SMARTMETER_POWER_L2 = SensorEntityDescription(
 
 DESCRIPTION_SAX_SMARTMETER_POWER_L3 = SensorEntityDescription(
     key=SAX_SMARTMETER_POWER_L3,
-    name="Sax Smartmeter Active Power L3",
+    name="Sax Active Power L3",
     device_class=SensorDeviceClass.POWER,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfPower.WATT,
 )
 DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L1 = SensorEntityDescription(
     key=SAX_SMARTMETER_VOLTAGE_L1,
-    name="Sax Smartmeter Voltage L1",
+    name="Sax Voltage L1",
     device_class=SensorDeviceClass.VOLTAGE,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricPotential.VOLT,
 )
 DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L2 = SensorEntityDescription(
     key=SAX_SMARTMETER_VOLTAGE_L2,
-    name="Sax Smartmeter Voltage L2",
+    name="Sax Voltage L2",
     device_class=SensorDeviceClass.VOLTAGE,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricPotential.VOLT,
@@ -468,7 +468,7 @@ DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L2 = SensorEntityDescription(
 
 DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L3 = SensorEntityDescription(
     key=SAX_SMARTMETER_VOLTAGE_L3,
-    name="Sax Smartmeter Voltage L3",
+    name="Sax Voltage L3",
     device_class=SensorDeviceClass.VOLTAGE,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfElectricPotential.VOLT,
@@ -476,7 +476,7 @@ DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L3 = SensorEntityDescription(
 
 DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER = SensorEntityDescription(
     key=SAX_SMARTMETER_TOTAL_POWER,
-    name="Sax Smartmeter Total Power",
+    name="Sax Total Power",
     device_class=SensorDeviceClass.POWER,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfPower.WATT,

@@ -125,11 +125,9 @@ class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEnt
         self._battery_id = battery_id
 
         # Generate unique ID using class name pattern
-        item_name: str = self._modbus_item.name.removeprefix("sax_").removeprefix(
-            "smartmeter_"
-        )
+        item_name: str = self._modbus_item.name.removeprefix("sax_")
 
-        if "smartmeter" in item_name:
+        if item_name.endswith("_sm"):
             self._attr_unique_id = f"sax_{item_name}"
         else:
             self._attr_unique_id = f"sax_{self._battery_id}_{item_name}"
@@ -150,8 +148,9 @@ class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEnt
             and isinstance(self.entity_description.name, str)
         ):
             # Remove "Sax " prefix from entity description name
+            self.entity_description.key.removeprefix("Smartmeter ")  # beautify the key
             entity_name = str(self.entity_description.name)
-            entity_name = entity_name.removeprefix("Sax ")  # Remove "Sax " prefix
+            entity_name = entity_name.removeprefix("Sax ")
             self._attr_name = entity_name
         else:
             # Fallback: use clean item name without prefixes

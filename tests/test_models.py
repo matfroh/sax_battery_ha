@@ -678,6 +678,11 @@ class TestSAXBatteryDataGetUniqueId:
         sax_data = SAXBatteryData(mock_hass, mock_config_entry_dual_battery)
 
         expected_results: dict[str, dict[str, str | None]] = {
+            # Smartmeter sensor (SM device)
+            SAX_SMARTMETER_ENERGY_PRODUCED: {
+                "battery_id": "battery_a",
+                "unique_id": "sax_smart_meter_energy_produced_sm",
+            },
             # WO registers (cluster device)
             SAX_MAX_DISCHARGE: {
                 "battery_id": "battery_a",
@@ -686,11 +691,6 @@ class TestSAXBatteryDataGetUniqueId:
             SAX_MAX_CHARGE: {
                 "battery_id": "battery_a",
                 "unique_id": "sax_cluster_max_charge",
-            },
-            # Per-battery sensor (BESS device)
-            SAX_SMARTMETER_ENERGY_PRODUCED: {
-                "battery_id": "battery_a",
-                "unique_id": "sax_smart_meter_smartmeter_energy_produced",
             },
             # Virtual entity (cluster device, battery_id=None)
             SAX_COMBINED_SOC: {
