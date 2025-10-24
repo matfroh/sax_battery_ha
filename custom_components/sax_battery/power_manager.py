@@ -14,6 +14,7 @@ Performance:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -98,6 +99,9 @@ class PowerManager:
             target_power=0.0,
             last_update=datetime.now(),
         )
+
+        # self._solar_callback_running = False
+        # self._grid_power_sensor = None
 
         # Tracking for event listeners
         self._remove_interval_update: Callable[[], None] | None = None
@@ -354,7 +358,7 @@ class PowerManager:
             )
             return
 
-        # ✅ Get current battery power from coordinator data using correct constant
+        #  Get current battery power from coordinator data using correct constant
         current_battery_power = 0.0
         if self.coordinator.data:
             # Try SAX_AC_POWER_TOTAL first (address 40085)
@@ -386,7 +390,7 @@ class PowerManager:
             _LOGGER.warning("Coordinator data not available")
             return
 
-        # ✅ CORRECT CALCULATION:
+        #  CORRECT CALCULATION:
         # New Battery Power = Current Battery Power - Grid Power
         #
         # Convention:
@@ -473,50 +477,55 @@ class PowerManager:
         if clamped_power != power:
             _LOGGER.warning("Power value %sW clamped to %sW", power, clamped_power)
 
-        # Update state
+        # Update state immediately
         self._state.target_power = clamped_power
         self._state.last_update = datetime.now()
 
-        # Since we know the entity is number.sax_cluster_pilot_power, just use it
         power_entity_id = "number.sax_cluster_pilot_power"
 
         # Verify entity exists
         if not self.hass.states.get(power_entity_id):
             _LOGGER.error(
-                "Power entity %s not found in Home Assistant. Available number entities:",
+                "Power entity %s not found in Home Assistant",
                 power_entity_id,
             )
-            for state in self.hass.states.async_all("number"):
-                if (
-                    "pilot" in state.entity_id.lower()
-                    or "power" in state.entity_id.lower()
-                ):
-                    _LOGGER.error("  - %s", state.entity_id)
             return
 
-        # Call service
-        try:
-            await self.hass.services.async_call(
-                "number",
-                "set_value",
-                {
-                    "entity_id": power_entity_id,
-                    "value": clamped_power,
-                },
-                blocking=False,
-            )
+        # Fire-and-forget with timeout
+        async def _set_power_value() -> None:
+            """Set power value with timeout protection."""
+            try:
+                async with asyncio.timeout(5.0):  # 5 second timeout
+                    await self.hass.services.async_call(
+                        "number",
+                        "set_value",
+                        {
+                            "entity_id": power_entity_id,
+                            "value": clamped_power,
+                        },
+                        blocking=False,
+                    )
 
-            _LOGGER.info(
-                "✓ Power setpoint updated to %sW via %s",
-                clamped_power,
-                power_entity_id,
-            )
-        except Exception as err:
-            _LOGGER.error(  # noqa: G201
-                "Failed to update power setpoint: %s",
-                err,
-                exc_info=True,
-            )
+                _LOGGER.info(
+                    "✓ Power setpoint updated to %sW via %s",
+                    clamped_power,
+                    power_entity_id,
+                )
+            except TimeoutError:
+                _LOGGER.error(
+                    "Timeout setting power value to %sW (entity: %s)",
+                    clamped_power,
+                    power_entity_id,
+                )
+            except Exception as err:
+                _LOGGER.error(  # noqa: G201
+                    "Failed to update power setpoint: %s",
+                    err,
+                    exc_info=True,
+                )
+
+        #  Create task but don't await (fire-and-forget)
+        self.hass.async_create_task(_set_power_value())
 
     async def set_solar_charging_mode(self, enabled: bool) -> None:
         """Enable or disable solar charging mode.
