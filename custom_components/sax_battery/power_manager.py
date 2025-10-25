@@ -328,7 +328,10 @@ class PowerManager:
         This ensures grid power goes to zero by adjusting battery charge/discharge.
 
         Security:
-            OWASP A05: Validates grid sensor state
+            OWASP A05: Validates grid sensor state and battery power availability
+
+        Performance:
+            Direct state machine access with entity registry lookup
         """
         if not self.grid_power_sensor:
             _LOGGER.warning("Grid power sensor not configured")
@@ -358,55 +361,17 @@ class PowerManager:
             )
             return
 
-        #  Get current battery power from coordinator data using correct constant
-        current_battery_power = 0.0
-        if self.coordinator.data:
-            # Try SAX_AC_POWER_TOTAL first (address 40085)
-            battery_power_value = self.coordinator.data.get(SAX_AC_POWER_TOTAL)
+        # FIX: Get current battery power from Home Assistant state machine
+        current_battery_power = await self._get_battery_power()
 
-            if battery_power_value is not None:
-                try:
-                    current_battery_power = float(battery_power_value)
-                    _LOGGER.debug(
-                        "Current battery power: %sW (from %s)",
-                        current_battery_power,
-                        SAX_AC_POWER_TOTAL,
-                    )
-                except (ValueError, TypeError) as err:
-                    _LOGGER.error(
-                        "Could not convert battery power '%s' to float: %s",
-                        battery_power_value,
-                        err,
-                    )
-                    return
-            else:
-                _LOGGER.warning(
-                    "Battery power sensor %s not found in coordinator data. Available keys: %s",
-                    SAX_AC_POWER_TOTAL,
-                    list(self.coordinator.data.keys()) if self.coordinator.data else [],
-                )
-                # Don't return - use 0.0 as fallback for first calculation
-        else:
-            _LOGGER.warning("Coordinator data not available")
+        if current_battery_power is None:
+            _LOGGER.warning(
+                "Battery power not available, skipping solar charging update"
+            )
             return
 
-        #  CORRECT CALCULATION:
+        # CORRECT CALCULATION:
         # New Battery Power = Current Battery Power - Grid Power
-        #
-        # Convention:
-        # - Grid: negative = export to grid, positive = import from grid
-        # - Battery: negative = charging, positive = discharging
-        #
-        # Examples:
-        # 1. Grid exporting 1000W (grid=-1000), Battery charging 3000W (battery=-3000)
-        #    → Target: -3000 - (-1000) = -4000W (charge more to eliminate export)
-        #
-        # 2. Grid importing 500W (grid=+500), Battery charging 3000W (battery=-3000)
-        #    → Target: -3000 - (+500) = -3500W (charge less to eliminate import)
-        #
-        # 3. Grid importing 2000W (grid=+2000), Battery charging 1000W (battery=-1000)
-        #    → Target: -1000 - (+2000) = +1000W (discharge to eliminate import)
-
         target_power = current_battery_power - grid_power
 
         _LOGGER.debug(
@@ -419,9 +384,7 @@ class PowerManager:
         # Apply power limits (Note: charging is negative, discharging is positive)
         target_power = max(
             -self.max_charge_power,  # Maximum charge (negative value)
-            min(
-                self.max_discharge_power, target_power
-            ),  # Maximum discharge (positive value)
+            min(self.max_discharge_power, target_power),  # Maximum discharge
         )
 
         _LOGGER.debug("After power limits: target=%sW", target_power)
@@ -451,6 +414,99 @@ class PowerManager:
 
         # Update power setpoint via number entity
         await self.update_power_setpoint(final_target)
+
+    async def _get_battery_power(self) -> float | None:
+        """Get current battery power from Home Assistant state machine.
+
+        Returns:
+            float | None: Current battery power in watts or None if unavailable
+
+        Security:
+            OWASP A05: Validates entity availability before access
+
+        Performance:
+            Direct state machine access with entity registry lookup
+        """
+        try:
+            # Validate coordinator has required dependencies
+            if not hasattr(self.coordinator, "sax_data"):
+                _LOGGER.error("Coordinator missing sax_data attribute")
+                return None
+
+            if not self.coordinator.config_entry:
+                _LOGGER.error("Coordinator missing config_entry")
+                return None
+
+            # Get ModbusItem for SAX_AC_POWER_TOTAL from coordinator data
+            battery_power_item = None
+            for item_key, item_value in self.coordinator.data.items():
+                if item_key == SAX_AC_POWER_TOTAL and hasattr(item_value, "item"):
+                    battery_power_item = item_value.item
+                    break
+
+            if battery_power_item is None:
+                _LOGGER.debug(
+                    "Could not find ModbusItem for %s in coordinator data",
+                    SAX_AC_POWER_TOTAL,
+                )
+                return None
+
+            # Generate unique_id using SAXBatteryData.get_unique_id_for_item
+            # SAX_AC_POWER_TOTAL is per-battery (use master battery_id)
+            unique_id = self.coordinator.sax_data.get_unique_id_for_item(
+                battery_power_item,
+                battery_id=self.coordinator.battery_id,
+            )
+
+            # Type guard: Validate unique_id exists before entity lookup
+            if not unique_id:
+                _LOGGER.warning(
+                    "Could not generate unique_id for %s",
+                    SAX_AC_POWER_TOTAL,
+                )
+                return None
+
+            # Get entity_id from registry
+            ent_reg = er.async_get(self.hass)
+            entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, unique_id)
+
+            if not entity_id:
+                _LOGGER.debug(
+                    "%s entity not found in registry (unique_id=%s)",
+                    SAX_AC_POWER_TOTAL,
+                    unique_id,
+                )
+                return None
+
+            # Get state from Home Assistant
+            state = self.hass.states.get(entity_id)
+            if not state or state.state in ("unknown", "unavailable"):
+                _LOGGER.debug(
+                    "%s state unavailable (entity_id=%s, state=%s)",
+                    SAX_AC_POWER_TOTAL,
+                    entity_id,
+                    state.state if state else "None",
+                )
+                return None
+
+            # Convert state to float
+            try:
+                return float(state.state)
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Invalid battery power value: %s (%s)",
+                    state.state,
+                    err,
+                )
+                return None
+
+        except Exception as err:
+            _LOGGER.error(  # noqa: G201
+                "Unexpected error getting battery power: %s",
+                err,
+                exc_info=True,
+            )
+            return None
 
     async def update_power_setpoint(self, power: float) -> None:
         """Update power setpoint via number entity service call.

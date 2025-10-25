@@ -29,6 +29,7 @@ from custom_components.sax_battery.const import (
     PILOT_ITEMS,
     SAX_COMBINED_SOC,
     SAX_MAX_CHARGE,
+    SAX_MAX_DISCHARGE,
     SAX_MIN_SOC,
     SAX_NOMINAL_FACTOR,
     SAX_NOMINAL_POWER,
@@ -218,29 +219,63 @@ def modbus_item_pilot_power_base():
 
 @pytest.fixture
 def soc_manager(mock_coordinator) -> SOCManager:
-    """Create real SOCManager instance for integration testing.
-
-    This fixture provides a real SOCManager with mocked coordinator for tests
-    that need to verify actual SOCManager behavior (not just interface compliance).
-
-    Performance:
-        Reusable fixture reduces test setup overhead
+    """Create a properly configured SOCManager for testing.
 
     Security:
-        OWASP A05: Validates actual constraint enforcement logic
+        OWASP A05: Validates manager has required attributes for testing
 
-    Returns:
-        Real SOCManager instance with mocked dependencies
+    Performance:
+        Provides realistic entity registry and state machine mocks
     """
-    # Ensure hass.services.async_call is AsyncMock (awaitable)
-    mock_coordinator.hass.services.async_call = AsyncMock(return_value=None)
+    # Create mock Home Assistant instance with state machine
+    mock_hass = MagicMock()
+    mock_hass.services.async_call = AsyncMock(return_value=None)
 
-    # Ensure config_entry exists
-    if not hasattr(mock_coordinator, "config_entry"):
-        mock_coordinator.config_entry = MagicMock()
-        mock_coordinator.config_entry.entry_id = "test_entry_123"
+    # Mock state machine for sensor.sax_cluster_combined_soc
+    def mock_states_get(entity_id: str):
+        """Mock hass.states.get for combined SOC sensor."""
+        if entity_id == "sensor.sax_cluster_combined_soc":
+            mock_state = MagicMock()
+            mock_state.state = "0.0"  # Default SOC value
+            return mock_state
+        return None
 
-    # Create real SOCManager instance (not a mock)
+    mock_hass.states.get = MagicMock(side_effect=mock_states_get)
+
+    # Mock entity registry
+    mock_entity_registry = MagicMock()
+    mock_entity_registry.async_get_entity_id = MagicMock(
+        return_value="sensor.sax_cluster_combined_soc"
+    )
+    mock_hass.data = {"entity_registry": mock_entity_registry}
+
+    mock_coordinator.hass = mock_hass
+
+    # Create mock config_entry
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "test_entry_123"
+    mock_coordinator.config_entry = mock_entry
+
+    # Create mock SAXBatteryData with get_unique_id_for_item
+    mock_sax_data = MagicMock()
+    mock_sax_data.get_unique_id_for_item = MagicMock(
+        return_value="sax_cluster_combined_soc"
+    )
+    mock_coordinator.sax_data = mock_sax_data
+
+    # Initialize coordinator.data with BOTH ModbusItem structures
+    mock_soc_modbus_item = MagicMock()
+    mock_soc_modbus_item.item = MagicMock()
+
+    mock_discharge_modbus_item = MagicMock()
+    mock_discharge_modbus_item.item = MagicMock()
+
+    mock_coordinator.data = {
+        SAX_COMBINED_SOC: mock_soc_modbus_item,
+        SAX_MAX_DISCHARGE: mock_discharge_modbus_item,
+    }
+
+    # Create REAL SOCManager instance with mocked dependencies
     manager = SOCManager(
         coordinator=mock_coordinator,
         min_soc=20.0,

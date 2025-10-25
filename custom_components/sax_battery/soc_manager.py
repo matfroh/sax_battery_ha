@@ -50,26 +50,90 @@ class SOCManager:
         self._last_enforced_soc: float | None = None
 
     def _get_combined_soc(self) -> float | None:
-        """Get combined SOC from coordinator data.
+        """Get combined SOC from Home Assistant state machine.
 
         Returns:
             float | None: Combined SOC percentage or None if unavailable
 
+        Security:
+            OWASP A05: Validates entity availability before access
+
         Performance:
-            Direct access to coordinator data cache
+            Direct state machine access with entity registry lookup
         """
-        if not self.coordinator.data:
-            return None
-
-        soc_value = self.coordinator.data.get(SAX_COMBINED_SOC)
-        if soc_value is None:
-            _LOGGER.debug("Combined SOC not available in coordinator data")
-            return None
-
         try:
-            return float(soc_value)
-        except (ValueError, TypeError) as err:
-            _LOGGER.warning("Invalid combined SOC value: %s (%s)", soc_value, err)
+            # Validate coordinator has required dependencies
+            if not hasattr(self.coordinator, "sax_data"):
+                _LOGGER.error("Coordinator missing sax_data attribute")
+                return None
+
+            if not self.coordinator.config_entry:
+                _LOGGER.error("Coordinator missing config_entry")
+                return None
+
+            # Get ModbusItem for SAX_COMBINED_SOC from coordinator data
+            combined_soc_item = None
+            for item_key, item_value in self.coordinator.data.items():
+                if item_key == SAX_COMBINED_SOC and hasattr(item_value, "item"):
+                    combined_soc_item = item_value.item
+                    break
+
+            if combined_soc_item is None:
+                _LOGGER.debug(
+                    "Could not find ModbusItem for SAX_COMBINED_SOC in coordinator data"
+                )
+                return None
+
+            # Generate unique_id using SAXBatteryData.get_unique_id_for_item
+            # SAX_COMBINED_SOC is a cluster-wide entity (battery_id=None)
+            unique_id = self.coordinator.sax_data.get_unique_id_for_item(
+                combined_soc_item,
+                battery_id=None,  # Cluster-wide entity
+            )
+
+            # Type guard: Validate unique_id exists before entity lookup
+            if not unique_id:
+                _LOGGER.warning("Could not generate unique_id for SAX_COMBINED_SOC")
+                return None
+
+            # Get entity_id from registry
+            ent_reg = er.async_get(self.hass)
+            entity_id = ent_reg.async_get_entity_id("sensor", "sax_battery", unique_id)
+
+            if not entity_id:
+                _LOGGER.debug(
+                    "SAX_COMBINED_SOC entity not found in registry (unique_id=%s)",
+                    unique_id,
+                )
+                return None
+
+            # Get state from Home Assistant
+            state = self.hass.states.get(entity_id)
+            if not state or state.state in ("unknown", "unavailable"):
+                _LOGGER.debug(
+                    "SAX_COMBINED_SOC state unavailable (entity_id=%s, state=%s)",
+                    entity_id,
+                    state.state if state else "None",
+                )
+                return None
+
+            # Convert state to float
+            try:
+                return float(state.state)
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Invalid combined SOC value: %s (%s)",
+                    state.state,
+                    err,
+                )
+                return None
+
+        except Exception as err:
+            _LOGGER.error(  # noqa: G201
+                "Unexpected error getting combined SOC: %s",
+                err,
+                exc_info=True,
+            )
             return None
 
     @property

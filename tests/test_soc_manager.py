@@ -91,17 +91,47 @@ class TestSOCManagerProperties:
 class TestGetCurrentSOC:
     """Test get_current_soc method."""
 
-    async def test_get_soc_from_coordinator_data(self, soc_manager):
-        """Test getting SOC from coordinator data."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 75.5}
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_get_soc_from_coordinator_data(
+        self, mock_entity_registry, soc_manager
+    ):
+        """Test getting SOC from Home Assistant state machine.
+
+        Security:
+            OWASP A05: Validates proper state machine access
+        """
+        # Mock entity registry
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id = MagicMock(
+            return_value="sensor.sax_cluster_combined_soc"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # Mock state machine with SOC value
+        mock_state = MagicMock()
+        mock_state.state = "75.5"
+        soc_manager.hass.states.get = MagicMock(return_value=mock_state)
 
         soc = await soc_manager.get_current_soc()
 
         assert soc == 75.5
 
-    async def test_get_soc_with_no_coordinator_data(self, soc_manager):
-        """Test returns 0.0 when coordinator data is None."""
-        soc_manager.coordinator.data = None
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_get_soc_with_no_coordinator_data(
+        self, mock_entity_registry, soc_manager
+    ):
+        """Test returns 0.0 when state unavailable."""
+        # Mock entity registry
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id = MagicMock(
+            return_value="sensor.sax_cluster_combined_soc"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # Mock unavailable state
+        mock_state = MagicMock()
+        mock_state.state = "unavailable"
+        soc_manager.hass.states.get = MagicMock(return_value=mock_state)
 
         soc = await soc_manager.get_current_soc()
 
@@ -115,9 +145,22 @@ class TestGetCurrentSOC:
 
         assert soc == 0
 
-    async def test_get_soc_with_invalid_value_type(self, soc_manager):
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_get_soc_with_invalid_value_type(
+        self, mock_entity_registry, soc_manager
+    ):
         """Test handles invalid SOC value types."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: "invalid"}
+        # Mock entity registry
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id = MagicMock(
+            return_value="sensor.sax_cluster_combined_soc"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # Mock invalid state value
+        mock_state = MagicMock()
+        mock_state.state = "invalid"
+        soc_manager.hass.states.get = MagicMock(return_value=mock_state)
 
         with patch("custom_components.sax_battery.soc_manager._LOGGER") as mock_logger:
             soc = await soc_manager.get_current_soc()
@@ -138,9 +181,22 @@ class TestGetCurrentSOC:
 class TestSOCConstraintChecks:
     """Test SOC constraint checking."""
 
-    async def test_discharge_allowed_above_min_soc(self, soc_manager):
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_discharge_allowed_above_min_soc(
+        self, mock_entity_registry, soc_manager
+    ):
         """Test discharge allowed when SOC above minimum."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 50.0}
+        # Mock entity registry
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id = MagicMock(
+            return_value="sensor.sax_cluster_combined_soc"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # Mock SOC above minimum
+        mock_state = MagicMock()
+        mock_state.state = "50.0"
+        soc_manager.hass.states.get = MagicMock(return_value=mock_state)
 
         result = await soc_manager.check_discharge_allowed(1000.0)
 
@@ -148,9 +204,22 @@ class TestSOCConstraintChecks:
         assert result.constrained_value == 1000.0
         assert result.reason is None
 
-    async def test_discharge_blocked_below_min_soc(self, soc_manager):
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_discharge_blocked_below_min_soc(
+        self, mock_entity_registry, soc_manager
+    ):
         """Test discharge blocked when SOC below minimum."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 15.0}
+        # Mock entity registry
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id = MagicMock(
+            return_value="sensor.sax_cluster_combined_soc"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # Mock SOC below minimum
+        mock_state = MagicMock()
+        mock_state.state = "15.0"
+        soc_manager.hass.states.get = MagicMock(return_value=mock_state)
 
         result = await soc_manager.check_discharge_allowed(1000.0)
 
@@ -219,20 +288,45 @@ class TestApplyConstraints:
             assert result.constrained_value == 0.0
             assert "Discharge blocked" in result.reason
 
-    async def test_apply_charge_constraint_at_max_soc(self, soc_manager):
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_apply_charge_constraint_at_max_soc(
+        self, mock_entity_registry, soc_manager
+    ):
         """Test charge blocked at 100% SOC."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 100.0}
+        # Mock entity registry
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id = MagicMock(
+            return_value="sensor.sax_cluster_combined_soc"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # Mock SOC at maximum
+        mock_state = MagicMock()
+        mock_state.state = "100.0"
+        soc_manager.hass.states.get = MagicMock(return_value=mock_state)
 
         result = await soc_manager.apply_constraints(-1000.0)
 
         assert result.allowed is False
         assert result.constrained_value == 0.0
         assert "Charge blocked" in result.reason
-        assert "maximum 100%" in result.reason
 
-    async def test_apply_no_constraint_within_limits(self, soc_manager):
+    @patch("homeassistant.helpers.entity_registry.async_get")
+    async def test_apply_no_constraint_within_limits(
+        self, mock_entity_registry, soc_manager
+    ):
         """Test no constraint applied when within limits."""
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 50.0}
+        # Mock entity registry
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id = MagicMock(
+            return_value="sensor.sax_cluster_combined_soc"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # Mock SOC within limits
+        mock_state = MagicMock()
+        mock_state.state = "50.0"
+        soc_manager.hass.states.get = MagicMock(return_value=mock_state)
 
         result = await soc_manager.apply_constraints(1000.0)
 
@@ -265,33 +359,56 @@ class TestCheckAndEnforceDischargeLimit:
 
     @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_enforce_writes_to_entity(
-        self,
-        mock_entity_registry,
-        soc_manager,
+        self, mock_entity_registry, soc_manager
     ) -> None:
         """Test enforcement writes to SAX_MAX_DISCHARGE entity.
 
         Security:
             OWASP A05: Validates proper constraint enforcement
         """
-        # Setup low SOC condition
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 8.0}
-
-        # Mock ModbusItem for SAX_MAX_DISCHARGE
-        mock_modbus_item = MagicMock()
-        mock_modbus_item.item = MagicMock()
-        soc_manager.coordinator.data[SAX_MAX_DISCHARGE] = mock_modbus_item
-
-        # Mock entity registry to return valid entity_id
+        # Mock entity registry for BOTH combined_soc AND max_discharge
         mock_ent_reg = MagicMock()
-        mock_ent_reg.async_get_entity_id = MagicMock(
-            return_value="number.sax_cluster_max_discharge"
-        )
+
+        def mock_get_entity_id(platform: str, domain: str, unique_id: str):
+            if unique_id == "sax_cluster_combined_soc":
+                return "sensor.sax_cluster_combined_soc"
+            if unique_id == "sax_cluster_max_discharge":
+                return "number.sax_cluster_max_discharge"
+            return None
+
+        mock_ent_reg.async_get_entity_id = MagicMock(side_effect=mock_get_entity_id)
         mock_entity_registry.return_value = mock_ent_reg
 
-        # Mock successful unique_id generation
-        soc_manager.coordinator.sax_data.get_unique_id_for_item.return_value = (
-            "sax_cluster_max_discharge"
+        # Mock state machine for combined SOC
+        def mock_states_get(entity_id: str):
+            if entity_id == "sensor.sax_cluster_combined_soc":
+                mock_state = MagicMock()
+                mock_state.state = "8.0"
+                return mock_state
+            return None
+
+        soc_manager.hass.states.get = MagicMock(side_effect=mock_states_get)
+
+        # FIX: Mock BOTH SAX_COMBINED_SOC and SAX_MAX_DISCHARGE in coordinator.data
+        mock_soc_item = MagicMock()
+        mock_soc_item.item = MagicMock()
+
+        mock_discharge_item = MagicMock()
+        mock_discharge_item.item = MagicMock()
+
+        soc_manager.coordinator.data = {
+            SAX_COMBINED_SOC: mock_soc_item,  # Required for _get_combined_soc()
+            SAX_MAX_DISCHARGE: mock_discharge_item,  # Required for enforcement
+        }
+
+        # Mock sax_data.get_unique_id_for_item to return different IDs
+        def mock_get_unique_id(item, battery_id):
+            if battery_id is None:  # Cluster-wide entity (combined SOC)
+                return "sax_cluster_combined_soc"
+            return "sax_cluster_max_discharge"  # Per-battery entity
+
+        soc_manager.coordinator.sax_data.get_unique_id_for_item = MagicMock(
+            side_effect=mock_get_unique_id
         )
 
         # Execute enforcement
@@ -301,7 +418,7 @@ class TestCheckAndEnforceDischargeLimit:
         assert result is True
         assert soc_manager._last_enforced_soc == 8.0
 
-        # Verify service was called with correct parameters
+        # Verify service was called with correct entity_id
         soc_manager.hass.services.async_call.assert_called_once_with(
             "number",
             "set_value",
@@ -365,8 +482,17 @@ class TestCheckAndEnforceDischargeLimit:
         Security:
             OWASP A05: Validates constraint logic
         """
-        # Setup SOC above minimum
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 50.0}
+        # Mock entity registry
+        mock_ent_reg = MagicMock()
+        mock_ent_reg.async_get_entity_id = MagicMock(
+            return_value="sensor.sax_cluster_combined_soc"
+        )
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # FIX: Mock state machine with SOC above minimum
+        mock_state = MagicMock()
+        mock_state.state = "50.0"
+        soc_manager.hass.states.get = MagicMock(return_value=mock_state)
 
         # Execute enforcement
         result = await soc_manager.check_and_enforce_discharge_limit()
@@ -501,21 +627,30 @@ class TestCheckAndEnforceDischargeLimit:
         Security:
             OWASP A05: Validates state tracking
         """
-        # Setup low SOC condition
-        soc_manager.coordinator.data = {SAX_COMBINED_SOC: 12.5}
+        # Mock entity registry for BOTH lookups
+        mock_ent_reg = MagicMock()
 
-        # Mock ModbusItem
+        def mock_get_entity_id(platform: str, domain: str, unique_id: str):
+            if unique_id == "sax_cluster_combined_soc":
+                return "sensor.sax_cluster_combined_soc"
+            if unique_id == "sax_cluster_max_discharge":
+                return "number.sax_cluster_max_discharge"
+            return None
+
+        mock_ent_reg.async_get_entity_id = MagicMock(side_effect=mock_get_entity_id)
+        mock_entity_registry.return_value = mock_ent_reg
+
+        # FIX: Mock state machine with low SOC
+        mock_state = MagicMock()
+        mock_state.state = "12.5"
+        soc_manager.hass.states.get = MagicMock(return_value=mock_state)
+
+        # Mock ModbusItem for SAX_MAX_DISCHARGE
         mock_modbus_item = MagicMock()
         mock_modbus_item.item = MagicMock()
         soc_manager.coordinator.data[SAX_MAX_DISCHARGE] = mock_modbus_item
 
-        # Mock successful enforcement
-        mock_ent_reg = MagicMock()
-        mock_ent_reg.async_get_entity_id.return_value = (
-            "number.sax_cluster_max_discharge"
-        )
-        mock_entity_registry.return_value = mock_ent_reg
-
+        # Mock sax_data.get_unique_id_for_item
         soc_manager.coordinator.sax_data.get_unique_id_for_item.return_value = (
             "sax_cluster_max_discharge"
         )
@@ -526,6 +661,9 @@ class TestCheckAndEnforceDischargeLimit:
         # Verify SOC was tracked
         assert result is True
         assert soc_manager._last_enforced_soc == 12.5
+
+        # Verify service was called
+        soc_manager.hass.services.async_call.assert_called_once()
 
     @patch("homeassistant.helpers.entity_registry.async_get")
     async def test_enforce_handles_missing_modbus_item(

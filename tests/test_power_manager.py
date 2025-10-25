@@ -19,6 +19,7 @@ from custom_components.sax_battery.const import (
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
     MANUAL_CONTROL_MODE,
+    SAX_AC_POWER_TOTAL,
     SAX_NOMINAL_FACTOR,
     SAX_NOMINAL_POWER,
     SOLAR_CHARGING_MODE,
@@ -278,7 +279,11 @@ class TestSolarChargingMode:
         hass: HomeAssistant,
         mock_coordinator_master: SAXBatteryCoordinator,
     ) -> None:
-        """Test solar charging update with valid grid sensor."""
+        """Test solar charging update with valid grid sensor.
+
+        Security:
+            OWASP A05: Validates proper state machine access and SOC constraints
+        """
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
@@ -291,7 +296,7 @@ class TestSolarChargingMode:
         hass.states.async_set("sensor.grid_power", "-1000")  # 1kW export
 
         # Mock SOC manager
-        mock_coordinator_master.soc_manager.apply_constraints = AsyncMock(  # type:ignore[method-assign]
+        mock_coordinator_master.soc_manager.apply_constraints = AsyncMock(  # type: ignore[method-assign]
             return_value=SOCConstraintResult(
                 allowed=True,
                 constrained_value=1000,
@@ -299,22 +304,49 @@ class TestSolarChargingMode:
             )
         )
 
-        power_manager = PowerManager(
-            hass=hass,
-            coordinator=mock_coordinator_master,
-            config_entry=entry,
-        )
-        power_manager._state.solar_charging_enabled = True
+        # Mock coordinator.data for SAX_AC_POWER_TOTAL
+        mock_battery_item = MagicMock()
+        mock_battery_item.item = MagicMock()
+        mock_coordinator_master.data = {
+            SAX_AC_POWER_TOTAL: mock_battery_item,
+        }
 
-        with patch.object(
-            power_manager, "update_power_setpoint", new=AsyncMock()
-        ) as mock_update:
-            await power_manager._update_solar_charging_power()
+        # Mock entity registry for battery power lookup
+        with patch("homeassistant.helpers.entity_registry.async_get") as mock_ent_reg:
+            mock_reg = MagicMock()
+            mock_reg.async_get_entity_id = MagicMock(
+                return_value="sensor.battery_a_ac_power_total"
+            )
+            mock_ent_reg.return_value = mock_reg
 
-            mock_update.assert_called_once()
-            # Grid power -1000W -> target power 1000W (charge)
-            call_args = mock_update.call_args[0]
-            assert call_args[0] == 1000
+            # Mock sax_data.get_unique_id_for_item
+            mock_coordinator_master.sax_data.get_unique_id_for_item.return_value = (  # type: ignore[attr-defined]
+                "battery_a_ac_power_total"
+            )
+
+            # Mock battery power state in state machine
+            hass.states.async_set(
+                "sensor.battery_a_ac_power_total", "500"
+            )  # 500W discharging
+
+            power_manager = PowerManager(
+                hass=hass,
+                coordinator=mock_coordinator_master,
+                config_entry=entry,
+            )
+            power_manager._state.solar_charging_enabled = True
+
+            with patch.object(
+                power_manager, "update_power_setpoint", new=AsyncMock()
+            ) as mock_update:
+                await power_manager._update_solar_charging_power()
+
+                mock_update.assert_called_once()
+
+                # Verify calculation: current_battery (500W) - grid_power (-1000W) = 1500W
+                # Then constrained to 1000W by SOC manager
+                call_args = mock_update.call_args[0]
+                assert call_args[0] == 1000
 
     async def test_solar_charging_with_unavailable_sensor(
         self,
@@ -411,7 +443,11 @@ class TestSolarChargingMode:
         hass: HomeAssistant,
         mock_coordinator_master: SAXBatteryCoordinator,
     ) -> None:
-        """Test solar charging applies SOC constraints."""
+        """Test solar charging applies SOC constraints.
+
+        Security:
+            OWASP A05: Validates SOC constraint enforcement in solar charging
+        """
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
@@ -420,6 +456,7 @@ class TestSolarChargingMode:
         )
         entry.add_to_hass(hass)
 
+        # Mock grid sensor state
         hass.states.async_set("sensor.grid_power", "-5000")  # 5kW export
 
         # Mock SOC manager to constrain power
@@ -431,20 +468,49 @@ class TestSolarChargingMode:
             )
         )
 
-        power_manager = PowerManager(
-            hass=hass,
-            coordinator=mock_coordinator_master,
-            config_entry=entry,
-        )
-        power_manager._state.solar_charging_enabled = True
+        # Mock coordinator.data for SAX_AC_POWER_TOTAL
+        mock_battery_item = MagicMock()
+        mock_battery_item.item = MagicMock()
+        mock_coordinator_master.data = {
+            SAX_AC_POWER_TOTAL: mock_battery_item,
+        }
 
-        with patch.object(
-            power_manager, "update_power_setpoint", new=AsyncMock()
-        ) as mock_update:
-            await power_manager._update_solar_charging_power()
+        # Mock entity registry for battery power lookup
+        with patch("homeassistant.helpers.entity_registry.async_get") as mock_ent_reg:
+            mock_reg = MagicMock()
+            mock_reg.async_get_entity_id = MagicMock(
+                return_value="sensor.battery_a_ac_power_total"
+            )
+            mock_ent_reg.return_value = mock_reg
 
-            # Should use constrained value
-            mock_update.assert_called_once_with(2000)
+            # Mock sax_data.get_unique_id_for_item
+            mock_coordinator_master.sax_data.get_unique_id_for_item.return_value = (  # type: ignore[attr-defined]
+                "battery_a_ac_power_total"
+            )
+
+            # Mock battery power state in state machine
+            hass.states.async_set(
+                "sensor.battery_a_ac_power_total", "1000"
+            )  # 1kW discharging
+
+            power_manager = PowerManager(
+                hass=hass,
+                coordinator=mock_coordinator_master,
+                config_entry=entry,
+            )
+            power_manager._state.solar_charging_enabled = True
+
+            with patch.object(
+                power_manager, "update_power_setpoint", new=AsyncMock()
+            ) as mock_update:
+                await power_manager._update_solar_charging_power()
+
+                # Should use constrained value
+                mock_update.assert_called_once_with(2000)
+
+                # Verify SOC manager was called with calculated power
+                # current_battery (1000W) - grid_power (-5000W) = 6000W (before constraint)
+                mock_coordinator_master.soc_manager.apply_constraints.assert_called_once()
 
 
 class TestModeTransitions:
