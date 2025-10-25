@@ -197,9 +197,11 @@ class ModbusAPI:
             _LOGGER.error("Count too large: %s (max 125)", count)
             return None
 
+        # Attempt reconnection if not connected
         if not self.is_connected():
             _LOGGER.warning("Not connected to %s", self.battery_id)
-            return None
+            if not await self._attempt_reconnection():
+                return None
 
         for attempt in range(max_retries + 1):
             try:
@@ -211,11 +213,21 @@ class ModbusAPI:
 
                 if result.isError():
                     _LOGGER.warning(
-                        "Modbus read error for %s: %s", self.battery_id, result
+                        "Modbus read error for %s at address %d (attempt %d/%d): %s",
+                        self.battery_id,
+                        modbus_item.address,
+                        attempt + 1,
+                        max_retries + 1,
+                        result,
                     )
+
+                    # On error, attempt reconnection for next retry
                     if attempt < max_retries:
-                        await asyncio.sleep(0.1)
-                        continue
+                        if await self._attempt_reconnection():
+                            # Wait briefly before retry
+                            await asyncio.sleep(0.1)
+                            continue
+
                     return None
 
                 if not result.registers:
@@ -234,15 +246,61 @@ class ModbusAPI:
                     if hasattr(modbus_item, "offset") and modbus_item.offset != 0:
                         converted_result -= modbus_item.offset
 
+                    # Reset failure counter on successful read
+                    self.consecutive_failures = 0
                     return converted_result
                 else:  # noqa: RET505
                     return None
 
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.error("Read error for %s: %s", self.battery_id, exc)
+            except (ConnectionException, ModbusIOException) as exc:
+                _LOGGER.error(
+                    "Connection error reading from %s at address %d (attempt %d/%d): %s",
+                    self.battery_id,
+                    modbus_item.address,
+                    attempt + 1,
+                    max_retries + 1,
+                    exc,
+                )
+
+                #  Attempt reconnection on connection errors
                 if attempt < max_retries:
-                    await asyncio.sleep(0.1)
-                    continue
+                    if await self._attempt_reconnection():
+                        await asyncio.sleep(0.1)
+                        continue
+
+                return None
+
+            except ModbusException as exc:
+                _LOGGER.error(
+                    "Modbus exception reading from %s at address %d: %s",
+                    self.battery_id,
+                    modbus_item.address,
+                    exc,
+                )
+
+                #  Attempt reconnection on Modbus exceptions
+                if attempt < max_retries:
+                    if await self._attempt_reconnection():
+                        await asyncio.sleep(0.1)
+                        continue
+
+                return None
+
+            except (OSError, TimeoutError) as exc:
+                _LOGGER.error(
+                    "Network error reading from %s at address %d: %s",
+                    self.battery_id,
+                    modbus_item.address,
+                    exc,
+                )
+
+                #  Attempt reconnection on network errors
+                if attempt < max_retries:
+                    if await self._attempt_reconnection():
+                        await asyncio.sleep(0.1)
+                        continue
+
+                return None
 
         return None
 
@@ -261,9 +319,11 @@ class ModbusAPI:
         Performance: Uses pymodbus optimized methods
         Security: Input validation and safe conversion
         """
+        # Attempt reconnection if not connected
         if not self.is_connected():
             _LOGGER.warning("Not connected to %s", self.battery_id)
-            return False
+            if not await self._attempt_reconnection():
+                return False
 
         try:
             # Convert value to registers using pymodbus built-in method
@@ -294,24 +354,71 @@ class ModbusAPI:
                             "SAX function code 255 - assuming success for %s",
                             self.battery_id,
                         )
+                        # Reset failure counter on successful write
+                        self.consecutive_failures = 0
                         return True
+
+                    #  On error, attempt reconnection and retry once
+                    _LOGGER.warning(
+                        "Write error for %s, attempting reconnection", self.battery_id
+                    )
+                    if await self._attempt_reconnection():
+                        # Retry write once after reconnection
+                        _LOGGER.debug("Retrying write after reconnection")
+                        return await self.write_registers(value, modbus_item)
+
                     return False
+
+                # Reset failure counter on successful write
+                self.consecutive_failures = 0
                 return True
             else:  # noqa: RET505
                 # No isError method - assume success (SAX workaround)
                 _LOGGER.debug(
                     "No isError method - assuming success for %s", self.battery_id
                 )
+                # Reset failure counter on assumed success
+                self.consecutive_failures = 0
                 return True
 
-        except (ModbusException, ValueError, TypeError) as exc:
-            _LOGGER.error("Write error for %s: %s", self.battery_id, exc)
+        except (ConnectionException, ModbusIOException) as exc:
+            _LOGGER.error("Connection error writing to %s: %s", self.battery_id, exc)
+
+            # Attempt reconnection and retry once
+            if await self._attempt_reconnection():
+                _LOGGER.debug("Retrying write after reconnection")
+                return await self.write_registers(value, modbus_item)
+
+            return False
+
+        except ModbusException as exc:
+            _LOGGER.error("Modbus exception writing to %s: %s", self.battery_id, exc)
+
+            # Attempt reconnection and retry once
+            if await self._attempt_reconnection():
+                _LOGGER.debug("Retrying write after reconnection")
+                return await self.write_registers(value, modbus_item)
+
+            return False
+
+        except (OSError, TimeoutError) as exc:
+            _LOGGER.error("Network error writing to %s: %s", self.battery_id, exc)
+
+            # Attempt reconnection and retry once
+            if await self._attempt_reconnection():
+                _LOGGER.debug("Retrying write after reconnection")
+                return await self.write_registers(value, modbus_item)
+
+            return False
+
+        except (ValueError, TypeError) as exc:
+            _LOGGER.error("Value conversion error for %s: %s", self.battery_id, exc)
             return False
 
     async def write_nominal_power(
         self, value: float, power_factor: int, modbus_item: ModbusItem | None = None
     ) -> bool:
-        """Write nominal power value with specific power factor using single write_registers call.
+        """Write nominal power value with retry logic using loop-based backoff.
 
         Handles SAX battery transaction ID bug by using write_registers with both values
         in a single transaction and not strictly validating the response.
@@ -324,66 +431,60 @@ class ModbusAPI:
         Returns:
             bool: True if write was successful, False otherwise
 
-        Security: Validates all inputs and addresses
-        Performance: Single write_registers call for both values
+        Security:
+            OWASP A05: Validates proper retry limits and connection state
+
+        Performance:
+            Uses exponential backoff to avoid overwhelming network/device
         """
-        if not await self.ensure_connection():
-            return False
-
-        if not (0 <= power_factor <= 10000):
-            raise ValueError(
-                f"Power factor {power_factor} outside valid range [0, 10000]"
-            )
-
         if not modbus_item:
             _LOGGER.warning("No Modbus item provided for nominal power write")
             return False
 
-        try:
-            # Convert power value to signed 16-bit integer, then to unsigned representation
-            # This handles negative values correctly using two's complement
-            power_int_signed = int(value)
+        max_retries = 3
+        retry_count = 0
 
-            # Clamp to signed 16-bit range: -32768 to 32767
-            power_int_signed = max(-32768, min(32767, power_int_signed))
+        while retry_count <= max_retries:
+            # Check for forced reconnection from coordinator (preserves existing functionality)
+            if self.should_force_reconnect():
+                _LOGGER.info("Forced reconnection requested by coordinator")
+                await self._attempt_reconnection()
 
-            # Convert to unsigned 16-bit using two's complement for negative values
-            # Python's & operation handles this automatically
-            power_int = power_int_signed & 0xFFFF
+            # Ensure connection (non-recursive)
+            if not await self.ensure_connection():
+                retry_count += 1
+                if retry_count > max_retries:
+                    _LOGGER.error("Max reconnection attempts reached")
+                    return False
 
-            # Power factor is always positive
-            pf_int = max(0, min(65535, power_factor)) & 0xFFFF
+                # Exponential backoff: 2s, 4s, 8s
+                delay = min(2**retry_count, 10)
+                _LOGGER.warning(
+                    "Connection failed, retrying in %ds (attempt %d/%d)",
+                    delay,
+                    retry_count,
+                    max_retries,
+                )
+                await asyncio.sleep(delay)
+                continue
 
-            _LOGGER.debug(
-                "Converting power value: raw=%s, signed=%s, unsigned=0x%04X (%d)",
-                value,
-                power_int_signed,
-                power_int,
-                power_int,
-            )
+            try:
+                # Validate and convert power values
+                power_int_signed = int(value)
+                power_int_signed = max(-32768, min(32767, power_int_signed))
+                power_int = power_int_signed & 0xFFFF
+                pf_int = max(0, min(65535, power_factor)) & 0xFFFF
 
-            # Atomic write for registers power and power factor
-            result = await self._modbus_client.write_registers(
-                address=modbus_item.address,
-                values=[power_int, pf_int],
-                device_id=modbus_item.battery_device_id,
-                no_response_expected=True,
-            )
+                # Atomic write
+                result = await self._modbus_client.write_registers(
+                    address=modbus_item.address,
+                    values=[power_int, pf_int],
+                    device_id=modbus_item.battery_device_id,
+                    no_response_expected=True,
+                )
 
-            _LOGGER.debug(
-                "Wrote nominal power registers at address %d: power=%s (0x%04X), power_factor=%s",
-                modbus_item.address,
-                power_int,
-                power_int,
-                pf_int,
-            )
-
-            # SAX battery bug workaround: Don't strictly validate transaction ID
-            if hasattr(result, "isError"):
-                if result.isError():
-                    _LOGGER.debug("Write registers returned error status: %s", result)
-
-                    # Check if this is a known SAX battery quirk
+                # SAX battery bug workaround (preserve existing logic)
+                if hasattr(result, "isError") and result.isError():
                     error_str = str(result).lower()
                     real_errors = [
                         "connection",
@@ -396,73 +497,124 @@ class ModbusAPI:
                     ]
 
                     if any(error in error_str for error in real_errors):
-                        _LOGGER.error(
-                            "Real failure detected in write response: %s",
-                            result,
-                        )
-                        return False
+                        _LOGGER.warning("Real Modbus error detected: %s", result)
+                        retry_count += 1
+                        if retry_count > max_retries:
+                            return False
 
-                    # SAX battery specific: Exception with function_code=255 might be OK
+                        delay = min(2**retry_count, 10)
+                        await asyncio.sleep(delay)
+                        continue  # Loop retry instead of recursion
+
+                    # SAX battery quirk handling
                     if hasattr(result, "function_code") and result.function_code == 255:
                         _LOGGER.debug(
-                            "SAX battery returned function_code=255 - treating as success"
+                            "SAX battery function_code=255 - treating as success"
                         )
-                        return True
-                return True
 
-            # Can't determine error status - assume success
-            _LOGGER.debug("Cannot determine error status, assuming success")
-            return True  # noqa: TRY300
+                # Success path
+                self.consecutive_failures = 0
+                self.last_successful_connection = asyncio.get_event_loop().time()
+                return True  # noqa: TRY300
 
-        except (ConnectionException, ModbusIOException, ModbusException) as exc:
-            _LOGGER.error("Modbus error writing nominal power: %s", exc)
-            return False
-        except (ValueError, TypeError) as exc:
-            _LOGGER.error("Value error writing nominal power: %s", exc)
-            return False
+            except (
+                ConnectionException,
+                ModbusIOException,
+                OSError,
+                TimeoutError,
+            ) as exc:
+                _LOGGER.warning(
+                    "Network error writing nominal power: %s (attempt %d/%d)",
+                    exc,
+                    retry_count,
+                    max_retries,
+                )
+                retry_count += 1
+                if retry_count > max_retries:
+                    _LOGGER.error("Max write attempts reached after network errors")
+                    return False
 
-    async def reconnect_on_error(self) -> bool:
-        """Attempt to reconnect after an error with enhanced backoff.
+                # Exponential backoff before retry
+                delay = min(2**retry_count, 10)
+                await asyncio.sleep(delay)
+                continue  # Loop retry
+
+            except ModbusException as exc:
+                _LOGGER.error("Modbus exception writing nominal power: %s", exc)
+                retry_count += 1
+                if retry_count > max_retries:
+                    return False
+
+                delay = min(2**retry_count, 10)
+                await asyncio.sleep(delay)
+                continue  # Loop retry
+
+            except (ValueError, TypeError) as exc:
+                _LOGGER.error("Value error writing nominal power: %s", exc)
+                return False  # No retry for validation errors
+
+        # Exhausted retries
+        return False
+
+    async def _attempt_reconnection(self) -> bool:
+        """Attempt to reconnect after connection failure.
+
+        This method provides automatic reconnection with progressive backoff
+        to handle SAX battery reboots and network issues gracefully.
 
         Returns:
-            bool: True if reconnection successful, False otherwise
+            True if reconnection successful, False otherwise
 
-        Performance: Progressive delay based on failure history
-        Security: Limited retry attempts to prevent resource exhaustion
+        Security:
+            OWASP A05: Limited retry attempts prevent resource exhaustion
+
+        Performance:
+            Progressive backoff based on consecutive failures
         """
-        _LOGGER.debug(
-            "Connection lost for %s, attempting to reconnect", self.battery_id
+        # Prevent infinite reconnection attempts
+        if self.consecutive_failures >= 3:
+            _LOGGER.error(
+                "Max reconnection attempts (3) reached for %s, giving up until next update cycle",
+                self.battery_id,
+            )
+            return False
+
+        self.consecutive_failures += 1
+
+        _LOGGER.info(
+            "Connection lost for %s, attempting reconnection (attempt %d/3)",
+            self.battery_id,
+            self.consecutive_failures,
         )
 
         # Close the broken connection
         if self._modbus_client:
-            try:  # noqa: SIM105
+            try:
                 await self._modbus_client.close()  # type: ignore[func-returns-value]
-            except Exception:  # noqa: BLE001
-                pass  # Ignore errors when closing broken connection
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("Error closing connection: %s", exc)
 
-        # Progressive delay based on consecutive failures
-        base_delay = min(self.consecutive_failures * 0.5, 30.0)
-        await asyncio.sleep(base_delay)
+        # Progressive backoff: 2s, 4s, 8s (max 10s)
+        delay = min(self.consecutive_failures * 2.0, 10.0)
+        _LOGGER.debug("Waiting %ds before reconnection attempt", delay)
+        await asyncio.sleep(delay)
 
-        # Attempt reconnection with fewer retries as failures accumulate
-        max_attempts = max(1, 4 - self.consecutive_failures)
-
-        for attempt in range(max_attempts):
-            if await self._connect_internal():
+        # Actually check if reconnection succeeded
+        try:
+            if await self.connect():
+                self.consecutive_failures = 0  # Reset on success
+                self.last_successful_connection = asyncio.get_event_loop().time()
                 _LOGGER.info("Reconnection successful for %s", self.battery_id)
                 return True
 
-            if attempt < max_attempts - 1:  # Don't sleep after last attempt
-                await asyncio.sleep(1.0)
+            _LOGGER.warning(
+                "Reconnection attempt %d/3 failed", self.consecutive_failures
+            )
+            return False  # noqa: TRY300
 
-        _LOGGER.warning(
-            "Failed to reconnect to %s after %d attempts",
-            self.battery_id,
-            max_attempts,
-        )
-        self.consecutive_failures += 1
-        return False
+        except (OSError, TimeoutError, ConnectionException) as exc:
+            _LOGGER.error("Reconnection error: %s", exc)
+            return False
 
     def should_force_reconnect(self) -> bool:
         """Check if connection should be forced to reconnect."""

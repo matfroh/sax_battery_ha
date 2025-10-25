@@ -592,3 +592,13 @@ class PowerManager:
     def current_power(self) -> float:
         """Get current power setpoint."""
         return self._state.target_power
+
+    @property
+    def get_solar_charging_enabled(self) -> bool:
+        """Check if solar charging mode is enabled."""
+        return self._state.solar_charging_enabled
+
+    @property
+    def get_manual_control_enabled(self) -> bool:
+        """Check if manual control mode is enabled."""
+        return self._state.manual_control_enabled

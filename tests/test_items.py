@@ -11,13 +11,8 @@ import pytest
 
 from custom_components.sax_battery.entity_keys import (
     SAX_COMBINED_SOC,
-    SAX_CUMULATIVE_ENERGY_CONSUMED,
-    SAX_CUMULATIVE_ENERGY_PRODUCED,
     SAX_MIN_SOC,
     SAX_PILOT_POWER,
-    SAX_SMARTMETER_ENERGY_CONSUMED,
-    SAX_SMARTMETER_ENERGY_PRODUCED,
-    SAX_SOC,
 )
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem, WebAPIItem
@@ -352,90 +347,11 @@ class TestModbusItemSwitchMethods:
 class TestSAXItemRead:
     """Test SAXItem read operations."""
 
-    async def test_read_combined_soc(self, sax_item_fixture):
-        """Test read combined SOC calculation."""
-        coordinators = {
-            "battery_a": Mock(data={SAX_SOC: 80.0}),
-            "battery_b": Mock(data={SAX_SOC: 90.0}),
-        }
-        sax_item_fixture.set_coordinators(coordinators)
-        result = await sax_item_fixture.async_read_value()
-        assert result == 85.0
-
     async def test_read_combined_soc_empty(self, sax_item_fixture):
         """Test read combined SOC with no data."""
         sax_item_fixture.set_coordinators({})
         result = await sax_item_fixture.async_read_value()
         assert result is None
-
-    async def test_read_cumulative_energy_produced(self):
-        """Test read cumulative energy produced."""
-        item = SAXItem(
-            name=SAX_CUMULATIVE_ENERGY_PRODUCED,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
-        )
-        coordinators = {
-            "battery_a": Mock(data={SAX_SMARTMETER_ENERGY_PRODUCED: 100.0}),
-            "battery_b": Mock(data={SAX_SMARTMETER_ENERGY_PRODUCED: 150.0}),
-        }
-        item.set_coordinators(coordinators)
-        result = await item.async_read_value()
-        assert result == 250.0
-
-    async def test_read_cumulative_energy_consumed(self):
-        """Test read cumulative energy consumed."""
-        item = SAXItem(
-            name=SAX_CUMULATIVE_ENERGY_CONSUMED,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
-        )
-        coordinators = {
-            "battery_a": Mock(data={SAX_SMARTMETER_ENERGY_CONSUMED: 80.0}),
-            "battery_b": Mock(data={SAX_SMARTMETER_ENERGY_CONSUMED: 120.0}),
-        }
-        item.set_coordinators(coordinators)
-        result = await item.async_read_value()
-        assert result == 200.0
-
-    async def test_read_pilot_power(self):
-        """Test read pilot power value."""
-        item = SAXItem(
-            name=SAX_PILOT_POWER,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
-        )
-        mock_pilot = Mock()
-        mock_pilot.calculated_power = 500.0
-        mock_sax_data = Mock(pilot=mock_pilot)
-        coordinators = {"battery_a": Mock(sax_data=mock_sax_data)}
-        item.set_coordinators(coordinators)
-        result = await item.async_read_value()
-        assert result == 500.0
-
-    async def test_read_pilot_power_no_pilot(self):
-        """Test read pilot power when no pilot service."""
-        item = SAXItem(
-            name=SAX_PILOT_POWER,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
-        )
-        item.set_coordinators({})
-        result = await item.async_read_value()
-        assert result == 0.0
-
-    async def test_read_unknown_calculation(self, caplog):
-        """Test read with unknown calculation type."""
-        item = SAXItem(
-            name="unknown_calc",
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.SYS,
-        )
-        item.set_coordinators({})
-        with caplog.at_level(logging.WARNING):
-            result = await item.async_read_value()
-            assert result is None
-            assert "Unknown calculation type" in caplog.text
 
     async def test_read_min_soc_no_warning(self):
         """Test SAX_MIN_SOC doesn't log warning."""

@@ -60,9 +60,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
 
         # Initialize coordinators for each battery
         coordinators: dict[str, SAXBatteryCoordinator] = {}
-        master_coordinator: SAXBatteryCoordinator | None = (
-            None  # ✅ Define outside block
-        )
+        master_coordinator: SAXBatteryCoordinator | None = None  # Define outside block
 
         for battery_id, battery_config in batteries_config.items():
             if not battery_config.get(CONF_BATTERY_ENABLED, True):
@@ -73,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
             )
             coordinators[battery_id] = coordinator
 
-            # ✅ Track master coordinator
+            # Track master coordinator
             if battery_config.get(CONF_BATTERY_IS_MASTER, False):
                 master_coordinator = coordinator
 
@@ -130,7 +128,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
         for coordinator in coordinators.values():
             await coordinator.async_config_entry_first_refresh()
 
-        # ✅ Check SOC constraints after entities exist and data is available
+        # Check SOC constraints after entities exist and data is available
         if master_coordinator and master_coordinator.soc_manager:
             _LOGGER.debug("Checking SOC constraints after initial setup")
             try:

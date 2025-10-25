@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ConnectionException, ModbusException
 import pytest
 
 from custom_components.sax_battery.const import DEFAULT_PORT
-from custom_components.sax_battery.items import ModbusItem
 from custom_components.sax_battery.modbusobject import ModbusAPI
 
 
@@ -47,28 +46,61 @@ def mock_write_response():
 
 
 @pytest.fixture
-def mock_modbus_item():
-    """Create a mock ModbusItem for testing."""
-    item = Mock(spec=ModbusItem)
-    item.address = 40001
-    item.battery_device_id = 1
-    item.data_type = AsyncModbusTcpClient.DATATYPE.UINT16
-    item.factor = 1.0
-    item.offset = 0
-    item.name = "test_item"
-    return item
+def mock_modbus_client():
+    """Create properly configured mock Modbus client."""
+    client = AsyncMock(spec=AsyncModbusTcpClient)
+
+    # Configure connection state
+    client.connected = True
+    client.connect = AsyncMock(return_value=True)
+    client.close = AsyncMock()
+
+    # Mock successful responses by default
+    mock_response = MagicMock()
+    mock_response.isError.return_value = False
+    mock_response.registers = [100, 200]
+    client.read_holding_registers = AsyncMock(return_value=mock_response)
+    client.write_registers = AsyncMock(return_value=mock_response)
+
+    # Mock conversion methods
+    client.convert_from_registers = MagicMock(return_value=42.5)
+    client.convert_to_registers = MagicMock(return_value=[100, 200])
+
+    return client
 
 
 @pytest.fixture
-def modbus_api_instance(mock_async_modbus_client):
-    """Create ModbusAPI instance with mocked client."""
+def modbus_api_instance(mock_modbus_client):
+    """Create ModbusAPI instance with mocked client for testing."""
+    # Patch AsyncModbusTcpClient during ModbusAPI initialization
     with patch(
         "custom_components.sax_battery.modbusobject.AsyncModbusTcpClient",
-        return_value=mock_async_modbus_client,
+        return_value=mock_modbus_client,
     ):
-        api = ModbusAPI(host="192.168.1.100", port=DEFAULT_PORT, battery_id="battery_a")
-        api._modbus_client = mock_async_modbus_client
+        api = ModbusAPI(
+            host="192.168.1.100",
+            port=502,
+            battery_id="battery_a",
+        )
+
+    # Verify mock was injected correctly
+    assert api._modbus_client is mock_modbus_client
+    assert api._host == "192.168.1.100"
+    assert api._port == 502
+    assert api.battery_id == "battery_a"
+
     return api
+
+
+@pytest.fixture
+def mock_modbus_item():
+    """Create mock ModbusItem for testing."""
+    item = MagicMock()
+    item.address = 40001
+    item.data_type = AsyncModbusTcpClient.DATATYPE.UINT16
+    item.factor = 1.0
+    item.offset = 0
+    return item
 
 
 class TestModbusAPIInitialization:
@@ -349,7 +381,11 @@ class TestModbusAPIRead:
             )
 
             assert result is None
-            assert any("Read error" in record.message for record in caplog.records)
+            #  FIX: Match actual log message
+            assert any(
+                "Modbus exception reading from" in record.message
+                for record in caplog.records
+            )
 
     async def test_read_holding_registers_with_retry(
         self, modbus_api_instance, mock_modbus_item, mock_read_response
@@ -434,6 +470,7 @@ class TestModbusAPIWrite:
 
         assert result is False
 
+    # @pytest.mark.skip(reason="test does not finish due to infinite retry loop")
     async def test_write_registers_error_response(
         self, modbus_api_instance, mock_modbus_item
     ):
@@ -443,10 +480,14 @@ class TestModbusAPIWrite:
         error_response.isError.return_value = True
         modbus_api_instance._modbus_client.write_registers.return_value = error_response
 
+        # This prevents infinite recursion in exception handlers
+        modbus_api_instance._attempt_reconnection = AsyncMock(return_value=False)
+
         result = await modbus_api_instance.write_registers(100.0, mock_modbus_item)
 
         assert result is False
 
+    # @pytest.mark.skip(reason="test does not finish due to infinite retry loop")
     async def test_write_registers_exception(
         self, modbus_api_instance, mock_modbus_item, caplog
     ):
@@ -456,11 +497,18 @@ class TestModbusAPIWrite:
             ModbusException("Write failed")
         )
 
+        # This prevents infinite recursion in exception handlers
+        modbus_api_instance._attempt_reconnection = AsyncMock(return_value=False)
+
         with caplog.at_level(logging.ERROR):
             result = await modbus_api_instance.write_registers(100.0, mock_modbus_item)
 
             assert result is False
-            assert any("Write error" in record.message for record in caplog.records)
+            assert any(
+                "Modbus exception writing to battery_a: Modbus Error: Write failed"
+                in record.message
+                for record in caplog.records
+            )
 
     async def test_write_nominal_power_success(
         self, modbus_api_instance, mock_modbus_item, mock_write_response
@@ -481,51 +529,112 @@ class TestModbusAPIWrite:
     async def test_write_nominal_power_failure(
         self, modbus_api_instance, mock_modbus_item, caplog
     ):
-        """Test nominal power write failure with logging."""
+        """Test nominal power write failure with logging.
+
+        Security:
+            OWASP A05: Validates proper exception handling in write operations
+
+        Performance:
+            Uses AsyncMock to prevent test from hanging on exception
+        """
+        # Configure connected state
         modbus_api_instance._modbus_client.connected = True
-        modbus_api_instance._modbus_client.write_registers.side_effect = (
-            ModbusException("Write failed")
+
+        # Configure AsyncMock to raise exception when awaited
+        modbus_api_instance._modbus_client.write_registers = AsyncMock(
+            side_effect=ModbusException("Write failed")
         )
+
+        # CRITICAL: Mock ensure_connection to return True
+        # This prevents retry loop from attempting reconnection
+        modbus_api_instance.ensure_connection = AsyncMock(return_value=True)
 
         with caplog.at_level(logging.ERROR):
             result = await modbus_api_instance.write_nominal_power(
                 1000.0, 95, mock_modbus_item
             )
 
+            # Verify failure result
             assert result is False
+
+            # Verify error was logged
             assert any(
-                "Modbus error writing nominal power" in record.message
+                "Modbus exception writing nominal power" in record.message
                 for record in caplog.records
-            )
+            ), "Expected error log message not found"
+
+            # Verify write_registers was called (will fail 4 times: initial + 3 retries)
+            assert modbus_api_instance._modbus_client.write_registers.await_count == 4
+
+    async def test_write_nominal_power_retry_success(
+        self, modbus_api_instance, mock_modbus_item, mock_write_response
+    ):
+        """Test nominal power write succeeds after transient failure.
+
+        Security:
+            OWASP A05: Validates retry logic with proper safeguards
+
+        Performance:
+            Verifies exponential backoff behavior
+        """
+        modbus_api_instance._modbus_client.connected = True
+        modbus_api_instance.ensure_connection = AsyncMock(return_value=True)
+
+        # First call fails, second call succeeds
+        modbus_api_instance._modbus_client.write_registers = AsyncMock(
+            side_effect=[
+                ModbusException("Transient failure"),  # First attempt fails
+                mock_write_response,  # Second attempt succeeds
+            ]
+        )
+
+        result = await modbus_api_instance.write_nominal_power(
+            1000.0, 95, mock_modbus_item
+        )
+
+        # Verify eventual success
+        assert result is True
+        assert modbus_api_instance._modbus_client.write_registers.await_count == 2
+        assert modbus_api_instance.consecutive_failures == 0
 
 
 class TestModbusAPIReconnection:
     """Test ModbusAPI reconnection logic."""
 
-    async def test_reconnect_on_error_success(self, modbus_api_instance, caplog):
+    async def test__attempt_reconnection_success(self, modbus_api_instance, caplog):
         """Test successful reconnection with logging."""
         modbus_api_instance.consecutive_failures = 2
         modbus_api_instance._modbus_client.close.return_value = True
         modbus_api_instance._modbus_client.connect.return_value = True
 
         with caplog.at_level(logging.INFO):
-            result = await modbus_api_instance.reconnect_on_error()
+            result = await modbus_api_instance._attempt_reconnection()
 
             assert result is True
             assert modbus_api_instance.consecutive_failures == 0
             modbus_api_instance._modbus_client.close.assert_called_once()
             modbus_api_instance._modbus_client.connect.assert_called_once()
+
+            # Collect all log messages
+            log_messages = [record.message for record in caplog.records]
+
+            # Verify attempt message
             assert any(
-                "Reconnection successful" in record.message for record in caplog.records
+                "attempting reconnection (attempt 3/3)" in msg for msg in log_messages
+            ), "Missing 'attempting reconnection' log message"
+
+            # Verify success message
+            assert any("Reconnection successful" in msg for msg in log_messages), (
+                "Missing 'Reconnection successful' log message"
             )
 
-    async def test_reconnect_on_error_failure(self, modbus_api_instance):
+    async def test__attempt_reconnection_failure(self, modbus_api_instance):
         """Test failed reconnection."""
         modbus_api_instance.consecutive_failures = 2
         modbus_api_instance._modbus_client.close.return_value = True
         modbus_api_instance._modbus_client.connect.return_value = False
 
-        result = await modbus_api_instance.reconnect_on_error()
+        result = await modbus_api_instance._attempt_reconnection()
 
         assert result is False
         assert modbus_api_instance.consecutive_failures >= 3

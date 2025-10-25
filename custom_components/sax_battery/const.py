@@ -75,6 +75,9 @@ from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
 
 DOMAIN = "sax_battery"
+# Attribution
+ATTR_ATTRIBUTION = "attribution"
+ATTRIBUTION = "Data provided by SAX Battery System"
 
 # Multi-battery configuration keys
 CONF_BATTERIES = "batteries"
@@ -95,7 +98,6 @@ CONF_LIMIT_POWER = "limit_power"
 
 # Power Manager constants
 CONF_GRID_POWER_SENSOR = "grid_power_sensor"
-POWER_MANAGER_UPDATE_INTERVAL = 10  # seconds
 
 # Control modes
 SOLAR_CHARGING_MODE = "solar_charging"
@@ -482,14 +484,6 @@ DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER = SensorEntityDescription(
     native_unit_of_measurement=UnitOfPower.WATT,
 )
 
-DESCRIPTION_SAX_CUMULATIVE_ENERGY_PRODUCED = SensorEntityDescription(
-    key=SAX_CUMULATIVE_ENERGY_PRODUCED,
-    name="Sax Cumulative Energy Produced",
-    device_class=SensorDeviceClass.ENERGY,
-    state_class=SensorStateClass.TOTAL,
-    native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
-)
-
 DESCRIPTION_SAX_COMBINED_SOC = SensorEntityDescription(
     key=SAX_COMBINED_SOC,
     name="Sax Combined SOC",
@@ -499,11 +493,19 @@ DESCRIPTION_SAX_COMBINED_SOC = SensorEntityDescription(
     suggested_display_precision=0,
 )
 
+DESCRIPTION_SAX_CUMULATIVE_ENERGY_PRODUCED = SensorEntityDescription(
+    key=SAX_CUMULATIVE_ENERGY_PRODUCED,
+    name="Sax Cumulative Energy Produced",
+    device_class=SensorDeviceClass.ENERGY,
+    state_class=SensorStateClass.TOTAL_INCREASING,
+    native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+)
+
 DESCRIPTION_SAX_CUMULATIVE_ENERGY_CONSUMED = SensorEntityDescription(
     key=SAX_CUMULATIVE_ENERGY_CONSUMED,
     name="Sax Cumulative Energy Consumed",
     device_class=SensorDeviceClass.ENERGY,
-    state_class=SensorStateClass.TOTAL,
+    state_class=SensorStateClass.TOTAL_INCREASING,
     native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
 )
 

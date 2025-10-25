@@ -14,16 +14,7 @@ from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.sensor import SensorEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
 
-from .entity_keys import (
-    SAX_COMBINED_SOC,
-    SAX_CUMULATIVE_ENERGY_CONSUMED,
-    SAX_CUMULATIVE_ENERGY_PRODUCED,
-    SAX_MIN_SOC,
-    SAX_PILOT_POWER,
-    SAX_SMARTMETER_ENERGY_CONSUMED,
-    SAX_SMARTMETER_ENERGY_PRODUCED,
-    SAX_SOC,
-)
+from .entity_keys import SAX_PILOT_POWER
 from .enums import DeviceConstants, TypeConstants
 
 _LOGGER = logging.getLogger(__name__)
@@ -276,8 +267,13 @@ class SAXItem(BaseItem):
         self.coordinators = coordinators
 
     async def async_read_value(self) -> int | float | bool | None:
-        """Calculate system-wide value from multiple battery coordinators."""
-        return self.calculate_value(self.coordinators)
+        """Read value from data source.
+
+        Note: For calculated sensors, actual calculation happens in
+        SAXBatteryCalculatedSensor entity.
+        """
+        # Return None - calculation logic moved to sensor entity
+        return None
 
     async def async_write_value(self, value: float) -> bool:
         """Write system configuration value."""
@@ -290,35 +286,6 @@ class SAXItem(BaseItem):
 
         _LOGGER.debug("SAX item write not yet implemented for %s", self.name)
         return False
-
-    def calculate_value(self, coordinators: dict[str, Any]) -> float | int | None:
-        """Calculate system-wide value from multiple battery coordinators."""
-        try:
-            if self.name == SAX_COMBINED_SOC:
-                return self._calculate_combined_soc(coordinators)
-            if self.name == SAX_CUMULATIVE_ENERGY_PRODUCED:
-                return self._calculate_cumulative_energy_produced(coordinators)
-            if self.name == SAX_CUMULATIVE_ENERGY_CONSUMED:
-                return self._calculate_cumulative_energy_consumed(coordinators)
-            if self.name == SAX_PILOT_POWER:
-                return self._get_pilot_power_value(coordinators)
-
-            if self.name != SAX_MIN_SOC:
-                _LOGGER.warning("Unknown calculation type for SAXItem: %s", self.name)
-            return None  # noqa: TRY300
-        except (ValueError, TypeError, KeyError) as exc:
-            _LOGGER.error("Error calculating value for %s: %s", self.name, exc)
-            return None
-
-    def _get_pilot_power_value(self, coordinators: dict[str, Any]) -> float | None:
-        """Get pilot power value from the pilot service."""
-        for coordinator in coordinators.values():
-            if hasattr(coordinator, "sax_data") and hasattr(
-                coordinator.sax_data, "pilot"
-            ):
-                pilot = coordinator.sax_data.pilot
-                return pilot.calculated_power if pilot else 0.0
-        return 0.0
 
     async def _write_pilot_power_value(self, value: float) -> bool:
         """Write pilot power value to the pilot service."""
@@ -336,57 +303,6 @@ class SAXItem(BaseItem):
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("Failed to write pilot power value: %s", err)
             return False
-
-    def _calculate_combined_soc(
-        self,
-        coordinators: dict[str, Any],
-    ) -> float | None:
-        """Calculate combined SOC across all batteries."""
-        total_soc = 0.0
-        count = 0
-
-        for coordinator in coordinators.values():
-            if coordinator.data and SAX_SOC in coordinator.data:
-                soc_value = coordinator.data[SAX_SOC]
-                if soc_value is not None:
-                    total_soc += float(soc_value)
-                    count += 1
-
-        return total_soc / count if count > 0 else None
-
-    def _calculate_cumulative_energy_produced(
-        self,
-        coordinators: dict[str, Any],
-    ) -> float | None:
-        """Calculate cumulative energy produced across all batteries."""
-        total_energy = 0.0
-        count = 0
-
-        for coordinator in coordinators.values():
-            if coordinator.data and SAX_SMARTMETER_ENERGY_PRODUCED in coordinator.data:
-                energy_value = coordinator.data[SAX_SMARTMETER_ENERGY_PRODUCED]
-                if energy_value is not None:
-                    total_energy += float(energy_value)
-                    count += 1
-
-        return total_energy if count > 0 else None
-
-    def _calculate_cumulative_energy_consumed(
-        self,
-        coordinators: dict[str, Any],
-    ) -> float | None:
-        """Calculate cumulative energy consumed across all batteries."""
-        total_energy = 0.0
-        count = 0
-
-        for coordinator in coordinators.values():
-            if coordinator.data and SAX_SMARTMETER_ENERGY_CONSUMED in coordinator.data:
-                energy_value = coordinator.data[SAX_SMARTMETER_ENERGY_CONSUMED]
-                if energy_value is not None:
-                    total_energy += float(energy_value)
-                    count += 1
-
-        return total_energy if count > 0 else None
 
 
 @dataclass

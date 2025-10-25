@@ -638,7 +638,6 @@ def mock_coordinator(mock_sax_data, mock_modbus_api):
     coordinator.async_write_number_value = AsyncMock(return_value=True)
     coordinator.async_set_updated_data = MagicMock()
     coordinator.async_set_updated_data = MagicMock()
-    coordinator.update_sax_item_state = MagicMock()
     coordinator._async_update_data = AsyncMock(return_value={"test_value": 42})
 
     # Add sax_data attribute for device info

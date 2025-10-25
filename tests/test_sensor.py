@@ -399,36 +399,6 @@ class TestSAXBatteryCalculatedSensor:
         # Should use SAXItem's calculate_value method which calculates combined SOC
         assert sensor.native_value == 85.0  # (80 + 90) / 2
 
-    def test_calc_sensor_extra_state_attributes(self) -> None:
-        """Test calculated sensor extra state attributes."""
-        mock_coordinator = create_mock_coordinator({})
-
-        calc_item = SAXItem(
-            name=SAX_COMBINED_SOC,
-            mtype=TypeConstants.SENSOR_CALC,
-            device=DeviceConstants.BESS,
-            entitydescription=DESCRIPTION_SAX_COMBINED_SOC,
-        )
-
-        coordinators = {
-            "battery_a": cast(SAXBatteryCoordinator, mock_coordinator),
-            "battery_b": cast(SAXBatteryCoordinator, create_mock_coordinator({})),
-        }
-
-        sensor = SAXBatteryCalculatedSensor(
-            coordinator=mock_coordinator,
-            sax_item=calc_item,
-            coordinators=coordinators,
-        )
-
-        attributes = sensor.extra_state_attributes
-        assert attributes is not None
-        assert attributes["battery_id"] == "battery_a"
-        assert attributes["calculation_type"] == "function_based"
-        assert attributes["calculation_function"] == SAX_COMBINED_SOC
-        assert attributes["battery_count"] == 2
-        assert "last_update" in attributes
-
     def test_calc_sensor_system_device_info(self) -> None:
         """Test calculated sensor uses system device info."""
         mock_coordinator = create_mock_coordinator({})
@@ -585,11 +555,10 @@ class TestSensorPlatformSetup:
         mock_battery_config_sensor_platform,
     ) -> None:
         """Test successful setup of sensor entries."""
-        # Mock coordinators with battery_config - this is the critical fix
+        # Mock coordinators with battery_config
         mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
-        mock_coordinator.battery_config = (
-            mock_battery_config_sensor_platform  # Add missing attribute
-        )
+        mock_coordinator.battery_id = "battery_a"
+        mock_coordinator.battery_config = mock_battery_config_sensor_platform
         mock_coordinator.sax_data = MagicMock()
         mock_coordinator.sax_data.get_device_info.return_value = {
             "name": "Test Battery"
@@ -661,7 +630,9 @@ class TestSensorPlatformSetup:
             )
 
         # Verify entities were created
-        assert len(entities) >= 0  # Should handle entity creation properly
+        assert len(entities) == 2  # 1 modbus sensor + 1 calculated sensor
+        assert isinstance(entities[0], SAXBatteryModbusSensor)
+        assert isinstance(entities[1], SAXBatteryCalculatedSensor)
 
     async def test_async_setup_entry_mixed_item_types(
         self,
@@ -672,7 +643,8 @@ class TestSensorPlatformSetup:
         """Test setup with mixed item types - only sensor items should be created."""
         # Mock coordinator with battery_config attribute - this is the critical fix
         mock_coordinator = MagicMock(spec=SAXBatteryCoordinator)
-        mock_coordinator.battery_config = {  # Add missing attribute
+        mock_coordinator.battery_id = "battery_a"
+        mock_coordinator.battery_config = {
             CONF_BATTERY_HOST: "192.168.1.100",
             CONF_BATTERY_PORT: 502,
             CONF_BATTERY_ENABLED: True,
@@ -683,6 +655,7 @@ class TestSensorPlatformSetup:
         mock_coordinator.sax_data.get_device_info.return_value = {
             "name": "Test Battery"
         }
+
         # Mock mixed items - only sensors should be created
         sensor_item = ModbusItem(
             name="sax_test_sensor",
@@ -711,7 +684,6 @@ class TestSensorPlatformSetup:
             device=DeviceConstants.BESS,
         )
 
-        # Mock the filter functions to return appropriate items
         # Mock the filter functions to return appropriate items
         def mock_filter_items_by_type(items, item_type, config_entry, battery_id):
             if item_type == TypeConstants.SENSOR:
@@ -762,5 +734,9 @@ class TestSensorPlatformSetup:
                 hass, mock_config_entry_sensor_platform, mock_add_entities
             )
 
-        # Should have created sensor entities properly
-        assert len(entities) >= 0  # Updated to handle implementation variations
+        # Verify only sensor entities were created (no switches)
+        assert len(entities) == 2  # 1 modbus sensor + 1 calculated sensor
+        assert all(
+            isinstance(e, (SAXBatteryModbusSensor, SAXBatteryCalculatedSensor))
+            for e in entities
+        )

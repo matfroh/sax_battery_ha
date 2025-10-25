@@ -523,7 +523,12 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
             return manual_enabled
 
         # Default SAX item calculation
-        return bool(self._sax_item.calculate_value(self._coordinators))
+        if hasattr(self.coordinator, "power_manager"):
+            if self._sax_item.name == "solar_charging":
+                return bool(self.coordinator.power_manager.get_solar_charging_enabled())
+            if self._sax_item.name == "manual_control":
+                return bool(self.coordinator.power_manager.get_manual_control_enabled())
+        return False
 
     @property
     def available(self) -> bool:

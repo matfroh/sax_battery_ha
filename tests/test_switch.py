@@ -752,7 +752,6 @@ class TestSAXBatteryControlSwitch:
         sax_item.name = "solar_charging_switch"
         sax_item.device = DeviceConstants.SYS
         sax_item.entitydescription = None
-        sax_item.calculate_value.return_value = True
         sax_item.set_coordinators = MagicMock()
         return sax_item
 
@@ -853,24 +852,6 @@ class TestSAXBatteryControlSwitch:
 
         # Should get value from config entry
         assert switch.is_on is False
-
-    def test_control_switch_is_on_default_calculation(
-        self, mock_control_coordinator, mock_sax_item_control
-    ) -> None:
-        """Test control switch is_on uses SAX item calculation for unknown switches."""
-        mock_sax_item_control.name = "unknown_switch"
-        mock_sax_item_control.calculate_value.return_value = True
-        coordinators = {"battery_a": mock_control_coordinator}
-
-        switch = SAXBatteryControlSwitch(
-            coordinator=mock_control_coordinator,
-            sax_item=mock_sax_item_control,
-            coordinators=coordinators,
-        )
-
-        # Should use SAX item calculation
-        assert switch.is_on is True
-        mock_sax_item_control.calculate_value.assert_called_once_with(coordinators)
 
     def test_control_switch_is_on_none_config_entry(
         self, mock_control_coordinator, mock_sax_item_control
