@@ -71,7 +71,7 @@ class SOCManager:
                 _LOGGER.error("Coordinator missing config_entry")
                 return None
 
-            # Get ModbusItem for SAX_COMBINED_SOC from coordinator data
+            # Get SAXItem for SAX_COMBINED_SOC from coordinator data
             combined_soc_item = None
             for item_key, item_value in self.coordinator.data.items():
                 if item_key == SAX_COMBINED_SOC and hasattr(item_value, "item"):
@@ -80,7 +80,7 @@ class SOCManager:
 
             if combined_soc_item is None:
                 _LOGGER.debug(
-                    "Could not find ModbusItem for SAX_COMBINED_SOC in coordinator data"
+                    "Could not find SAXItem for SAX_COMBINED_SOC in coordinator data"
                 )
                 return None
 
