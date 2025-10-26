@@ -352,11 +352,14 @@ class SAXBatteryPilot:
             self.sax_data.data.get("combined_soc", 0) if self.sax_data.data else 0
         )
 
+        # Get current min_soc from coordinator
+        coordinator_min_soc = self.sax_data.min_soc if hasattr(self.sax_data, 'min_soc') else self.min_soc
+
         # Log the input values
         _LOGGER.debug(
             "Applying SOC constraints - Current combined SOC: %s%%, Min SOC: %s%%, Power: %sW",
             combined_soc,
-            self.min_soc,
+            coordinator_min_soc,
             power_value,
         )
 
@@ -364,7 +367,7 @@ class SAXBatteryPilot:
         original_value = power_value
 
         # Don't discharge below min SOC
-        if combined_soc < self.min_soc and power_value > 0:
+        if combined_soc < coordinator_min_soc and power_value > 0:
             power_value = 0
             _LOGGER.debug(
                 "Battery combined SOC below minimum (%s%%), preventing discharge",
@@ -461,8 +464,11 @@ class SAXBatteryPilot:
         else:
             master_soc = 0
 
+        # Get current min_soc from coordinator
+        coordinator_min_soc = self.sax_data.min_soc if hasattr(self.sax_data, 'min_soc') else self.min_soc
+
         # Don't discharge below min SOC
-        if master_soc <= self.min_soc and power_value < 0:
+        if master_soc <= coordinator_min_soc and power_value < 0:
             adjusted_power = 0.0
             _LOGGER.debug(
                 "Battery SOC at minimum (%s%%), preventing manual discharge", master_soc
