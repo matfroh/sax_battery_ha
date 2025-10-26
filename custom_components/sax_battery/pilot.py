@@ -100,9 +100,19 @@ class SAXBatteryPilot:
         self.power_sensor_entity_id = self.entry.data.get(CONF_POWER_SENSOR)
         self.pf_sensor_entity_id = self.entry.data.get(CONF_PF_SENSOR)
         self.priority_devices = self.entry.data.get(CONF_PRIORITY_DEVICES, [])
-        self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
-        self.update_interval = self.entry.data.get(
-            CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
+        # Get min_soc from coordinator if available, then check entry options, then fall back to entry data
+        self.min_soc = (
+            self.sax_data.min_soc if hasattr(self.sax_data, 'min_soc')
+            else self.entry.options.get(
+                CONF_MIN_SOC,
+                self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
+            )
+        )
+        # Get update_interval from coordinator if available
+        self.update_interval = (
+            self.sax_data.auto_pilot_interval
+            if hasattr(self.sax_data, 'auto_pilot_interval')
+            else self.entry.data.get(CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL)
         )
         self.solar_charging_enabled = self.entry.data.get(
             CONF_ENABLE_SOLAR_CHARGING, True
@@ -119,8 +129,14 @@ class SAXBatteryPilot:
             return
 
         self._running = True
+        # Get current interval from coordinator if available
+        current_interval = (
+            self.sax_data.auto_pilot_interval
+            if hasattr(self.sax_data, 'auto_pilot_interval')
+            else self.update_interval
+        )
         self._remove_interval_update = async_track_time_interval(
-            self.hass, self._async_update_pilot, timedelta(seconds=self.update_interval)
+            self.hass, self._async_update_pilot, timedelta(seconds=current_interval)
         )
 
         # Add listener for config entry updates
@@ -352,8 +368,11 @@ class SAXBatteryPilot:
             self.sax_data.data.get("combined_soc", 0) if self.sax_data.data else 0
         )
 
-        # Get current min_soc from coordinator
-        coordinator_min_soc = self.sax_data.min_soc if hasattr(self.sax_data, 'min_soc') else self.min_soc
+        # Get current min_soc from coordinator, options, or fallback to stored value
+        coordinator_min_soc = (
+            self.sax_data.min_soc if hasattr(self.sax_data, 'min_soc')
+            else self.entry.options.get(CONF_MIN_SOC, self.min_soc)
+        )
 
         # Log the input values
         _LOGGER.debug(
@@ -441,6 +460,18 @@ class SAXBatteryPilot:
     async def set_min_soc(self, min_soc: float) -> None:
         """Set the minimum SOC constraint."""
         self.min_soc = min_soc
+        
+        # Update coordinator's min_soc if possible
+        if hasattr(self.sax_data, 'min_soc'):
+            self.sax_data.min_soc = min_soc
+            
+        # Save to config entry options for persistence
+        new_options = dict(self.entry.options)
+        new_options[CONF_MIN_SOC] = min_soc
+        self.hass.config_entries.async_update_entry(
+            self.entry,
+            options=new_options
+        )
 
         # Apply new constraint immediately if running
         if self._running:
@@ -545,20 +576,21 @@ class SAXBatteryPilot:
                 _LOGGER.error("No master battery ID available")
                 return
 
-            success = await asyncio.wait_for(
-                hub.modbus_write_registers(
-                    master_battery_id,
-                    41,  # Starting register
-                    values,
-                    slave=64,  # Device ID for SAX battery system
-                ),
-                timeout=10.0,  # 10 second timeout for writes
-            )
-
-            if success:
-                _LOGGER.debug("Power command sent successfully: %sW", power)
-            else:
-                _LOGGER.error("Failed to send power command: %sW", power)
+            try:
+                # We ignore the result since the device has a known issue with response validation
+                await asyncio.wait_for(
+                    hub.modbus_write_registers(
+                        master_battery_id,
+                        41,  # Starting register
+                        values,
+                        slave=64,  # Device ID for SAX battery system
+                    ),
+                    timeout=10.0,  # 10 second timeout for writes
+                )
+                _LOGGER.debug("Power command sent: %sW", power)
+            except Exception as write_err:  # noqa: BLE001
+                # Log as debug since we know the device often returns invalid responses but still works
+                _LOGGER.debug("Expected Modbus write response error (device limitation): %s", write_err)
 
         except TimeoutError:
             _LOGGER.error("Timeout sending power command: %sW (took >10s)", power)
