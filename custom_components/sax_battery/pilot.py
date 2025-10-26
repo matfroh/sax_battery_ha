@@ -129,12 +129,21 @@ class SAXBatteryPilot:
             return
 
         self._running = True
-        # Get current interval from coordinator if available
-        current_interval = (
+        
+        # Get current interval from coordinator or entry options, with min 5s, max 300s
+        current_interval = max(5, min(300, (
             self.sax_data.auto_pilot_interval
             if hasattr(self.sax_data, 'auto_pilot_interval')
-            else self.update_interval
-        )
+            else self.entry.options.get(
+                CONF_AUTO_PILOT_INTERVAL,
+                self.entry.data.get(CONF_AUTO_PILOT_INTERVAL, 5)  # Default to 5s if not set
+            )
+        )))
+        
+        # Update the stored interval
+        self.update_interval = current_interval
+
+        # Start the update scheduler
         self._remove_interval_update = async_track_time_interval(
             self.hass, self._async_update_pilot, timedelta(seconds=current_interval)
         )
@@ -148,7 +157,7 @@ class SAXBatteryPilot:
         await self._async_update_pilot(None)
 
         _LOGGER.info(
-            "SAX Battery pilot started with %ss interval", self.update_interval
+            "SAX Battery pilot started with %ss interval", current_interval
         )
 
     async def _async_config_updated(self, hass: Any, entry: Any) -> None:
@@ -177,6 +186,31 @@ class SAXBatteryPilot:
 
     async def _async_update_pilot(self, now: Any = None) -> None:
         """Update the pilot calculations and send to battery."""
+        current_time = time.time()
+
+        # Get the current interval from coordinator or stored value
+        current_interval = (
+            self.sax_data.auto_pilot_interval
+            if hasattr(self.sax_data, 'auto_pilot_interval')
+            else self.update_interval
+        )
+
+        # Check if enough time has passed since last update
+        if hasattr(self, "_last_power_command_time"):
+            time_since_last = current_time - self._last_power_command_time
+            if time_since_last < current_interval:
+                _LOGGER.debug(
+                    "Skipping update - Only %.1fs since last update (interval: %ss)",
+                    time_since_last,
+                    current_interval,
+                )
+                return
+            _LOGGER.info(
+                "Power command frequency: %.1fs since last command (target: %ss interval)",
+                time_since_last,
+                current_interval,
+            )
+
         # Enhanced logging to track what's calling this method
         caller_frame = inspect.currentframe()
         caller_info = "unknown"
@@ -444,7 +478,21 @@ class SAXBatteryPilot:
 
     async def set_interval(self, interval: float) -> None:
         """Set the pilot update interval."""
-        self.update_interval = int(interval)
+        # Ensure interval is within valid range (5-300 seconds)
+        interval = max(5, min(300, int(interval)))
+        self.update_interval = interval
+        
+        # Update coordinator's interval if possible
+        if hasattr(self.sax_data, 'auto_pilot_interval'):
+            self.sax_data.auto_pilot_interval = interval
+
+        # Save to config entry options for persistence
+        new_options = dict(self.entry.options)
+        new_options[CONF_AUTO_PILOT_INTERVAL] = interval
+        self.hass.config_entries.async_update_entry(
+            self.entry,
+            options=new_options
+        )
 
         # Restart the timer with new interval
         if self._running and self._remove_interval_update is not None:
@@ -452,10 +500,14 @@ class SAXBatteryPilot:
             self._remove_interval_update = async_track_time_interval(
                 self.hass,
                 self._async_update_pilot,
-                timedelta(seconds=self.update_interval),
+                timedelta(seconds=interval),
+            )
+            _LOGGER.info(
+                "Pilot update scheduler restarted with %ss interval",
+                interval
             )
 
-        _LOGGER.debug("Pilot update interval changed to %ss", self.update_interval)
+        _LOGGER.debug("Pilot update interval changed to %ss", interval)
 
     async def set_min_soc(self, min_soc: float) -> None:
         """Set the minimum SOC constraint."""
@@ -523,17 +575,7 @@ class SAXBatteryPilot:
         """Send power command to battery via coordinator."""
         current_time = time.time()
 
-        # Enhanced logging to track frequency
-        if hasattr(self, "_last_power_command_time"):
-            time_since_last = current_time - self._last_power_command_time
-            _LOGGER.info(
-                "Power command frequency: %.1fs since last command (target: %ss interval)",
-                time_since_last,
-                self.update_interval,
-            )
-        else:
-            _LOGGER.info("First power command sent")
-
+        # Update the last command time
         self._last_power_command_time = current_time
 
         # Wait longer to avoid conflicts with coordinator reads
