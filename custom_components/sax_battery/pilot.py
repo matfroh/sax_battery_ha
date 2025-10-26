@@ -100,9 +100,19 @@ class SAXBatteryPilot:
         self.power_sensor_entity_id = self.entry.data.get(CONF_POWER_SENSOR)
         self.pf_sensor_entity_id = self.entry.data.get(CONF_PF_SENSOR)
         self.priority_devices = self.entry.data.get(CONF_PRIORITY_DEVICES, [])
-        self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
-        self.update_interval = self.entry.data.get(
-            CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL
+        # Get min_soc from coordinator if available, then check entry options, then fall back to entry data
+        self.min_soc = (
+            self.sax_data.min_soc if hasattr(self.sax_data, 'min_soc')
+            else self.entry.options.get(
+                CONF_MIN_SOC,
+                self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
+            )
+        )
+        # Get update_interval from coordinator if available
+        self.update_interval = (
+            self.sax_data.auto_pilot_interval
+            if hasattr(self.sax_data, 'auto_pilot_interval')
+            else self.entry.data.get(CONF_AUTO_PILOT_INTERVAL, DEFAULT_AUTO_PILOT_INTERVAL)
         )
         self.solar_charging_enabled = self.entry.data.get(
             CONF_ENABLE_SOLAR_CHARGING, True
@@ -119,8 +129,23 @@ class SAXBatteryPilot:
             return
 
         self._running = True
+
+        # Get current interval from coordinator or entry options, with min 5s, max 300s
+        current_interval = max(5, min(300, (
+            self.sax_data.auto_pilot_interval
+            if hasattr(self.sax_data, 'auto_pilot_interval')
+            else self.entry.options.get(
+                CONF_AUTO_PILOT_INTERVAL,
+                self.entry.data.get(CONF_AUTO_PILOT_INTERVAL, 5)  # Default to 5s if not set
+            )
+        )))
+
+        # Update the stored interval
+        self.update_interval = current_interval
+
+        # Start the update scheduler
         self._remove_interval_update = async_track_time_interval(
-            self.hass, self._async_update_pilot, timedelta(seconds=self.update_interval)
+            self.hass, self._async_update_pilot, timedelta(seconds=current_interval)
         )
 
         # Add listener for config entry updates
@@ -132,7 +157,7 @@ class SAXBatteryPilot:
         await self._async_update_pilot(None)
 
         _LOGGER.info(
-            "SAX Battery pilot started with %ss interval", self.update_interval
+            "SAX Battery pilot started with %ss interval", current_interval
         )
 
     async def _async_config_updated(self, hass: Any, entry: Any) -> None:
@@ -161,6 +186,31 @@ class SAXBatteryPilot:
 
     async def _async_update_pilot(self, now: Any = None) -> None:
         """Update the pilot calculations and send to battery."""
+        current_time = time.time()
+
+        # Get the current interval from coordinator or stored value
+        current_interval = (
+            self.sax_data.auto_pilot_interval
+            if hasattr(self.sax_data, 'auto_pilot_interval')
+            else self.update_interval
+        )
+
+        # Check if enough time has passed since last update
+        if hasattr(self, "_last_power_command_time"):
+            time_since_last = current_time - self._last_power_command_time
+            if time_since_last < current_interval:
+                _LOGGER.debug(
+                    "Skipping update - Only %.1fs since last update (interval: %ss)",
+                    time_since_last,
+                    current_interval,
+                )
+                return
+            _LOGGER.info(
+                "Power command frequency: %.1fs since last command (target: %ss interval)",
+                time_since_last,
+                current_interval,
+            )
+
         # Enhanced logging to track what's calling this method
         caller_frame = inspect.currentframe()
         caller_info = "unknown"
@@ -352,11 +402,17 @@ class SAXBatteryPilot:
             self.sax_data.data.get("combined_soc", 0) if self.sax_data.data else 0
         )
 
+        # Get current min_soc from coordinator, options, or fallback to stored value
+        coordinator_min_soc = (
+            self.sax_data.min_soc if hasattr(self.sax_data, 'min_soc')
+            else self.entry.options.get(CONF_MIN_SOC, self.min_soc)
+        )
+
         # Log the input values
         _LOGGER.debug(
             "Applying SOC constraints - Current combined SOC: %s%%, Min SOC: %s%%, Power: %sW",
             combined_soc,
-            self.min_soc,
+            coordinator_min_soc,
             power_value,
         )
 
@@ -364,7 +420,7 @@ class SAXBatteryPilot:
         original_value = power_value
 
         # Don't discharge below min SOC
-        if combined_soc < self.min_soc and power_value > 0:
+        if combined_soc < coordinator_min_soc and power_value > 0:
             power_value = 0
             _LOGGER.debug(
                 "Battery combined SOC below minimum (%s%%), preventing discharge",
@@ -422,7 +478,21 @@ class SAXBatteryPilot:
 
     async def set_interval(self, interval: float) -> None:
         """Set the pilot update interval."""
-        self.update_interval = int(interval)
+        # Ensure interval is within valid range (5-300 seconds)
+        interval = max(5, min(300, int(interval)))
+        self.update_interval = interval
+
+        # Update coordinator's interval if possible
+        if hasattr(self.sax_data, 'auto_pilot_interval'):
+            self.sax_data.auto_pilot_interval = interval
+
+        # Save to config entry options for persistence
+        new_options = dict(self.entry.options)
+        new_options[CONF_AUTO_PILOT_INTERVAL] = interval
+        self.hass.config_entries.async_update_entry(
+            self.entry,
+            options=new_options
+        )
 
         # Restart the timer with new interval
         if self._running and self._remove_interval_update is not None:
@@ -430,14 +500,30 @@ class SAXBatteryPilot:
             self._remove_interval_update = async_track_time_interval(
                 self.hass,
                 self._async_update_pilot,
-                timedelta(seconds=self.update_interval),
+                timedelta(seconds=interval),
+            )
+            _LOGGER.info(
+                "Pilot update scheduler restarted with %ss interval",
+                interval
             )
 
-        _LOGGER.debug("Pilot update interval changed to %ss", self.update_interval)
+        _LOGGER.debug("Pilot update interval changed to %ss", interval)
 
     async def set_min_soc(self, min_soc: float) -> None:
         """Set the minimum SOC constraint."""
         self.min_soc = min_soc
+
+        # Update coordinator's min_soc if possible
+        if hasattr(self.sax_data, 'min_soc'):
+            self.sax_data.min_soc = min_soc
+
+        # Save to config entry options for persistence
+        new_options = dict(self.entry.options)
+        new_options[CONF_MIN_SOC] = min_soc
+        self.hass.config_entries.async_update_entry(
+            self.entry,
+            options=new_options
+        )
 
         # Apply new constraint immediately if running
         if self._running:
@@ -461,8 +547,11 @@ class SAXBatteryPilot:
         else:
             master_soc = 0
 
+        # Get current min_soc from coordinator
+        coordinator_min_soc = self.sax_data.min_soc if hasattr(self.sax_data, 'min_soc') else self.min_soc
+
         # Don't discharge below min SOC
-        if master_soc <= self.min_soc and power_value < 0:
+        if master_soc <= coordinator_min_soc and power_value < 0:
             adjusted_power = 0.0
             _LOGGER.debug(
                 "Battery SOC at minimum (%s%%), preventing manual discharge", master_soc
@@ -486,17 +575,7 @@ class SAXBatteryPilot:
         """Send power command to battery via coordinator."""
         current_time = time.time()
 
-        # Enhanced logging to track frequency
-        if hasattr(self, "_last_power_command_time"):
-            time_since_last = current_time - self._last_power_command_time
-            _LOGGER.info(
-                "Power command frequency: %.1fs since last command (target: %ss interval)",
-                time_since_last,
-                self.update_interval,
-            )
-        else:
-            _LOGGER.info("First power command sent")
-
+        # Update the last command time
         self._last_power_command_time = current_time
 
         # Wait longer to avoid conflicts with coordinator reads
@@ -539,20 +618,21 @@ class SAXBatteryPilot:
                 _LOGGER.error("No master battery ID available")
                 return
 
-            success = await asyncio.wait_for(
-                hub.modbus_write_registers(
-                    master_battery_id,
-                    41,  # Starting register
-                    values,
-                    slave=64,  # Device ID for SAX battery system
-                ),
-                timeout=10.0,  # 10 second timeout for writes
-            )
-
-            if success:
-                _LOGGER.debug("Power command sent successfully: %sW", power)
-            else:
-                _LOGGER.error("Failed to send power command: %sW", power)
+            try:
+                # We ignore the result since the device has a known issue with response validation
+                await asyncio.wait_for(
+                    hub.modbus_write_registers(
+                        master_battery_id,
+                        41,  # Starting register
+                        values,
+                        slave=64,  # Device ID for SAX battery system
+                    ),
+                    timeout=10.0,  # 10 second timeout for writes
+                )
+                _LOGGER.debug("Power command sent: %sW", power)
+            except Exception as write_err:  # noqa: BLE001
+                # Log as debug since we know the device often returns invalid responses but still works
+                _LOGGER.debug("Expected Modbus write response error (device limitation): %s", write_err)
 
         except TimeoutError:
             _LOGGER.error("Timeout sending power command: %sW (took >10s)", power)
