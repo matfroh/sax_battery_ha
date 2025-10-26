@@ -129,7 +129,7 @@ class SAXBatteryPilot:
             return
 
         self._running = True
-        
+
         # Get current interval from coordinator or entry options, with min 5s, max 300s
         current_interval = max(5, min(300, (
             self.sax_data.auto_pilot_interval
@@ -139,7 +139,7 @@ class SAXBatteryPilot:
                 self.entry.data.get(CONF_AUTO_PILOT_INTERVAL, 5)  # Default to 5s if not set
             )
         )))
-        
+
         # Update the stored interval
         self.update_interval = current_interval
 
@@ -481,7 +481,7 @@ class SAXBatteryPilot:
         # Ensure interval is within valid range (5-300 seconds)
         interval = max(5, min(300, int(interval)))
         self.update_interval = interval
-        
+
         # Update coordinator's interval if possible
         if hasattr(self.sax_data, 'auto_pilot_interval'):
             self.sax_data.auto_pilot_interval = interval
