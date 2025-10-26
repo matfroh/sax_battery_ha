@@ -240,13 +240,17 @@ class SAXBatteryHub:
                     "Write timeout to battery %s (address %d)", battery_id, address
                 )
                 return False
-            except (ConnectionException, ModbusIOException) as e:
+            except (ConnectionException, ModbusIOException, Exception) as e:  # noqa: BLE001
+                if "Request cancelled outside pymodbus" in str(e):
+                    # This is actually a successful write - SAX battery's normal response
+                    _LOGGER.debug(
+                        "Write completed successfully (got expected response) for battery %s",
+                        battery_id
+                    )
+                    return True
+
+                # Only log as error if it's not the expected "Request cancelled" response
                 _LOGGER.error("Modbus write error for battery %s: %s", battery_id, e)
-                return False
-            except Exception as e:  # noqa: BLE001
-                _LOGGER.error(
-                    "Unexpected error writing to battery %s: %s", battery_id, e
-                )
                 return False
 
     async def modbus_read_holding_registers(
@@ -391,19 +395,29 @@ class SAXBatteryHub:
                     ) from err
 
         except (ConnectionException, ModbusIOException) as e:
-            # Use WARNING for common recoverable issues instead of ERROR
-            if "Request cancelled outside pymodbus" in str(
-                e
-            ) or "No response received" in str(e):
+            # Handle the special case of write operations
+            if "Request cancelled outside pymodbus" in str(e):
+                # This is actually a successful write for SAX battery
+                _LOGGER.debug(
+                    "Write operation completed successfully for battery %s (got expected response)",
+                    battery_id
+                )
+                return []  # Return empty list for write operations
+
+            # Use WARNING for other recoverable issues
+            if "No response received" in str(e):
                 _LOGGER.warning(
-                    "Modbus communication error for battery %s: %s", battery_id, e
+                    "No response received from battery %s: %s", battery_id, e
                 )
             else:
                 _LOGGER.error(
                     "Modbus communication error for battery %s: %s", battery_id, e
                 )
+
+            # Update connection state for actual connection issues
             if "No response received" in str(e) or "Connection" in str(e):
                 self._connected[battery_id] = False
+
             raise HubConnectionError(
                 f"Modbus communication error for battery {battery_id}: {e}"
             ) from e
