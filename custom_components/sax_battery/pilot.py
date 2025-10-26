@@ -195,8 +195,11 @@ class SAXBatteryPilot:
             else self.update_interval
         )
 
-        # Check if enough time has passed since last update
-        if hasattr(self, "_last_power_command_time"):
+        # Check the current calculated power before deciding to skip
+        current_calculated_power = getattr(self, 'calculated_power', None)
+
+        # Only enforce interval timing for non-zero power values
+        if hasattr(self, "_last_power_command_time") and current_calculated_power != 0:
             time_since_last = current_time - self._last_power_command_time
             if time_since_last < current_interval:
                 _LOGGER.debug(
@@ -574,6 +577,14 @@ class SAXBatteryPilot:
     async def send_power_command(self, power: float, power_factor: float) -> None:
         """Send power command to battery via coordinator."""
         current_time = time.time()
+
+        # Only skip resending if the current and previous commands were both zero
+        if power == 0 and hasattr(self, '_last_power_value') and self._last_power_value == 0:
+            _LOGGER.debug("Skipping resend of zero power command")
+            return
+
+        # Store the new power value for next comparison
+        self._last_power_value = power
 
         # Update the last command time
         self._last_power_command_time = current_time
