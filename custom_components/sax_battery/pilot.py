@@ -460,11 +460,11 @@ class SAXBatteryPilot:
     async def set_min_soc(self, min_soc: float) -> None:
         """Set the minimum SOC constraint."""
         self.min_soc = min_soc
-        
+
         # Update coordinator's min_soc if possible
         if hasattr(self.sax_data, 'min_soc'):
             self.sax_data.min_soc = min_soc
-            
+
         # Save to config entry options for persistence
         new_options = dict(self.entry.options)
         new_options[CONF_MIN_SOC] = min_soc
