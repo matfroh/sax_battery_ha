@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.helpers import entity_registry as er
 
-from .const import SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
+from .const import AGGREGATED_ITEMS, SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
 
 if TYPE_CHECKING:
     from .coordinator import SAXBatteryCoordinator
@@ -71,48 +71,37 @@ class SOCManager:
                 _LOGGER.error("Coordinator missing config_entry")
                 return None
 
-            # Get SAXItem for SAX_COMBINED_SOC from coordinator data
+            # Get SAXItem for SAX_COMBINED_SOC from list AGGREGATED_ITEMS
             combined_soc_item = None
-            for item_key, item_value in self.coordinator.data.items():
-                if item_key == SAX_COMBINED_SOC and hasattr(item_value, "item"):
-                    combined_soc_item = item_value.item
+            for item in AGGREGATED_ITEMS:
+                if item.name == SAX_COMBINED_SOC:
+                    combined_soc_item = item
                     break
 
             if combined_soc_item is None:
                 _LOGGER.debug(
-                    "Could not find SAXItem for SAX_COMBINED_SOC in coordinator data"
+                    "Could not find SAXItem for SAX_COMBINED_SOC in list AGGREGATED_ITEMS"
                 )
                 return None
 
-            # Generate unique_id using SAXBatteryData.get_unique_id_for_item
             # SAX_COMBINED_SOC is a cluster-wide entity (battery_id=None)
-            unique_id = self.coordinator.sax_data.get_unique_id_for_item(
+            # sensor: sensor.sax_cluster_combined_soc (unique_id=combined_soc, device_id=746f49dbe66819b0b95e98d8e67067cd)
+            entity_id = self.coordinator.sax_data.get_unique_id_for_item(
                 combined_soc_item,
                 battery_id=None,  # Cluster-wide entity
             )
 
-            # Type guard: Validate unique_id exists before entity lookup
-            if not unique_id:
-                _LOGGER.warning("Could not generate unique_id for SAX_COMBINED_SOC")
-                return None
-
-            # Get entity_id from registry
-            ent_reg = er.async_get(self.hass)
-            entity_id = ent_reg.async_get_entity_id("sensor", "sax_battery", unique_id)
-
+            # Type guard: Validate entity_id exists before entity lookup
             if not entity_id:
-                _LOGGER.debug(
-                    "SAX_COMBINED_SOC entity not found in registry (unique_id=%s)",
-                    unique_id,
-                )
+                _LOGGER.warning("Could not generate entity_id for SAX_COMBINED_SOC")
                 return None
 
             # Get state from Home Assistant
-            state = self.hass.states.get(entity_id)
+            state = self.hass.states.get(f"sensor.{entity_id}")
             if not state or state.state in ("unknown", "unavailable"):
                 _LOGGER.debug(
                     "SAX_COMBINED_SOC state unavailable (entity_id=%s, state=%s)",
-                    entity_id,
+                    f"sensor.{entity_id}",
                     state.state if state else "None",
                 )
                 return None
