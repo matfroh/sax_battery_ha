@@ -13,8 +13,6 @@ from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.helpers import entity_registry as er
-
 from .const import AGGREGATED_ITEMS, SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
 
 if TYPE_CHECKING:
@@ -86,7 +84,7 @@ class SOCManager:
 
             # SAX_COMBINED_SOC is a cluster-wide entity (battery_id=None)
             # sensor: sensor.sax_cluster_combined_soc (unique_id=combined_soc, device_id=746f49dbe66819b0b95e98d8e67067cd)
-            entity_id = self.coordinator.sax_data.get_unique_id_for_item(
+            entity_id = self.coordinator.sax_data.get_entity_id_for_item(
                 combined_soc_item,
                 battery_id=None,  # Cluster-wide entity
             )
@@ -97,11 +95,11 @@ class SOCManager:
                 return None
 
             # Get state from Home Assistant
-            state = self.hass.states.get(f"sensor.{entity_id}")
+            state = self.hass.states.get(entity_id)
             if not state or state.state in ("unknown", "unavailable"):
                 _LOGGER.debug(
                     "SAX_COMBINED_SOC state unavailable (entity_id=%s, state=%s)",
-                    f"sensor.{entity_id}",
+                    entity_id,
                     state.state if state else "None",
                 )
                 return None
@@ -225,42 +223,42 @@ class SOCManager:
                     )
                     return False
 
-                # Generate unique_id using SAXBatteryData.get_unique_id_for_item
+                # Generate entity_id using SAXBatteryData.get_entity_id_for_item
                 # Use master battery_id since SAX_MAX_DISCHARGE is WO register
-                unique_id = sax_data.get_unique_id_for_item(
+                entity_id = sax_data.get_entity_id_for_item(
                     max_discharge_item,
                     battery_id=self.coordinator.battery_id,
                 )
 
-                # Type guard: Validate unique_id exists before entity lookup
-                if not unique_id:
+                # Type guard: Validate entity_id exists before entity lookup
+                if not entity_id:
                     _LOGGER.error(
-                        "Could not generate unique_id for SAX_MAX_DISCHARGE(%s) (battery_id=%s)",
+                        "Could not generate entity_id for SAX_MAX_DISCHARGE(%s) (battery_id=%s)",
                         max_discharge_item,
                         self.coordinator.battery_id,
                     )
                     return False
 
-                # Get entity_id from registry
-                ent_reg = er.async_get(self.hass)
-                entity_id = ent_reg.async_get_entity_id(
-                    "number", "sax_battery", unique_id
-                )
+                # # Get entity_id from registry
+                # ent_reg = er.async_get(self.hass)
+                # entity_id = ent_reg.async_get_entity_id(
+                #     "number", "sax_battery", unique_id
+                # )
 
-                if not entity_id:
-                    _LOGGER.error(
-                        "SAX_MAX_DISCHARGE entity not found in registry (unique_id=%s, battery_id=%s)",
-                        unique_id,
-                        self.coordinator.battery_id,
-                    )
-                    return False
+                # if not entity_id:
+                #     _LOGGER.error(
+                #         "SAX_MAX_DISCHARGE entity not found in registry (unique_id=%s, battery_id=%s)",
+                #         unique_id,
+                #         self.coordinator.battery_id,
+                #     )
+                #     return False
 
-                _LOGGER.debug(
-                    "Enforcing discharge limit via entity: %s (unique_id=%s, battery_id=%s)",
-                    entity_id,
-                    unique_id,
-                    self.coordinator.battery_id,
-                )
+                # _LOGGER.debug(
+                #     "Enforcing discharge limit via entity: %s (unique_id=%s, battery_id=%s)",
+                #     entity_id,
+                #     unique_id,
+                #     self.coordinator.battery_id,
+                # )
 
                 # Set value through Home Assistant service
                 try:

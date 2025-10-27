@@ -28,7 +28,7 @@ from .const import (
     MODBUS_BATTERY_UNDOCUMENTED_ITEMS,
     PILOT_ITEMS,
 )
-from .enums import DeviceConstants
+from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
 from .utils import create_register_access_config, get_battery_realtime_items
@@ -410,3 +410,31 @@ class SAXBatteryData:
                 err,
             )
             return None
+
+    def get_entity_id_for_item(
+        self,
+        item: ModbusItem | SAXItem,
+        battery_id: str | None = None,
+    ) -> str | None:
+        """Generate entity ID for an ModbusItem or SAXItem using device info."""
+        unique_id = self.get_unique_id_for_item(item, battery_id)
+        if unique_id is None:
+            return None
+
+        if item.mtype in [
+            TypeConstants.NUMBER_WO,
+            TypeConstants.NUMBER_RO,
+            TypeConstants.NUMBER,
+        ]:
+            return f"number.{unique_id}"
+        if item.mtype in [TypeConstants.SENSOR, TypeConstants.SENSOR_CALC]:
+            return f"sensor.{unique_id}"
+        if item.mtype == TypeConstants.SWITCH:
+            return f"switch.{unique_id}"
+
+        _LOGGER.warning(
+            "Unknown item type '%s' for item '%s', cannot generate entity_id",
+            item.mtype,
+            item.name,
+        )
+        return None
