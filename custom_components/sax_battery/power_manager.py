@@ -23,7 +23,6 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
@@ -32,10 +31,10 @@ from .const import (
     CONF_GRID_POWER_SENSOR,
     CONF_MANUAL_CONTROL,
     DEFAULT_AUTO_PILOT_INTERVAL,
-    DOMAIN,
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
     MANUAL_CONTROL_MODE,
+    MODBUS_BATTERY_BMS_ITEMS,
     PILOT_ITEMS,
     SAX_AC_POWER_TOTAL,
     SAX_NOMINAL_FACTOR,
@@ -118,11 +117,10 @@ class PowerManager:
 
     def _resolve_entity_ids(self) -> None:
         """Resolve entity IDs for power control entities from registry."""
-        if not self.coordinator.config_entry:
-            _LOGGER.error("Coordinator has no config entry, cannot resolve entity IDs")
+        # Validate coordinator has required dependencies
+        if not hasattr(self.coordinator, "sax_data"):
+            _LOGGER.error("Coordinator missing sax_data attribute")
             return
-
-        ent_reg = er.async_get(self.hass)
 
         # Resolve SAX_PILOT_POWER entity (the one that actually exists!)
         # Find the pilot power item from the list
@@ -135,31 +133,19 @@ class PowerManager:
             _LOGGER.error("Could not find %s in PILOT_ITEMS", SAX_PILOT_POWER)
             return
 
-        power_unique_id = self.coordinator.sax_data.get_unique_id_for_item(
+        power_entity_id = self.coordinator.sax_data.get_entity_id_for_item(
             pilot_power_item,
             SAX_PILOT_POWER,
         )
 
-        if power_unique_id:
-            self._power_entity_id = ent_reg.async_get_entity_id(
-                "number",
-                DOMAIN,
-                power_unique_id,
+        if power_entity_id:
+            self._power_entity_id = power_entity_id
+            _LOGGER.info(
+                "✓ Resolved power entity: SAX_PILOT_POWER (entity_id: %s)",
+                self._power_entity_id,
             )
-
-            if not self._power_entity_id:
-                _LOGGER.error(
-                    "Could not find power entity (unique_id: %s)",
-                    power_unique_id,
-                )
-            else:
-                _LOGGER.info(
-                    "✓ Resolved power entity: %s (unique_id: %s)",
-                    self._power_entity_id,
-                    power_unique_id,
-                )
         else:
-            _LOGGER.error("Could not generate unique_id for %s", SAX_PILOT_POWER)
+            _LOGGER.error("Could not generate entity_id for %s", SAX_PILOT_POWER)
 
         power_factor_item = next(
             (item for item in PILOT_ITEMS if item.name == SAX_NOMINAL_FACTOR),
@@ -171,28 +157,17 @@ class PowerManager:
             return
 
         # Resolve SAX_NOMINAL_FACTOR entity (for power factor)
-        factor_unique_id = self.coordinator.sax_data.get_unique_id_for_item(
+        factor_entity_id = self.coordinator.sax_data.get_entity_id_for_item(
             power_factor_item,
             SAX_NOMINAL_FACTOR,
         )
 
-        if factor_unique_id:
-            self._power_factor_entity_id = ent_reg.async_get_entity_id(
-                "number",
-                DOMAIN,
-                factor_unique_id,
+        if factor_entity_id:
+            self._power_factor_entity_id = factor_entity_id
+            _LOGGER.info(
+                "✓ Resolved power factor entity: SAX_NOMINAL_FACTOR (entity_id: %s)",
+                self._power_factor_entity_id,
             )
-
-            if not self._power_factor_entity_id:
-                _LOGGER.error(
-                    "Could not find power factor entity (unique_id: %s)",
-                    factor_unique_id,
-                )
-            else:
-                _LOGGER.info(
-                    "✓ Resolved power factor entity: %s",
-                    self._power_factor_entity_id,
-                )
         else:
             _LOGGER.error("Could not generate unique_id for %s", SAX_NOMINAL_FACTOR)
 
@@ -416,7 +391,7 @@ class PowerManager:
         await self.update_power_setpoint(final_target)
 
     async def _get_battery_power(self) -> float | None:
-        """Get current battery power from Home Assistant state machine.
+        """Get current battery power (SAX_AC_POWER_TOTAL) from Home Assistant state machine.
 
         Returns:
             float | None: Current battery power in watts or None if unavailable
@@ -425,7 +400,8 @@ class PowerManager:
             OWASP A05: Validates entity availability before access
 
         Performance:
-            Direct state machine access with entity registry lookup
+            Direct state machine access with multiple lookup strategies
+
         """
         try:
             # Validate coordinator has required dependencies
@@ -433,80 +409,47 @@ class PowerManager:
                 _LOGGER.error("Coordinator missing sax_data attribute")
                 return None
 
-            if not self.coordinator.config_entry:
-                _LOGGER.error("Coordinator missing config_entry")
-                return None
-
-            # Get ModbusItem for SAX_AC_POWER_TOTAL from coordinator data
-            battery_power_item = None
-            for item_key, item_value in self.coordinator.data.items():
-                if item_key == SAX_AC_POWER_TOTAL and hasattr(item_value, "item"):
-                    battery_power_item = item_value.item
+            # Get SAXItem for SAX_AC_POWER_TOTAL from list MODBUS_BATTERY_BMS_ITEMS
+            power_ac_item = None
+            for item in MODBUS_BATTERY_BMS_ITEMS:
+                if item.name == SAX_AC_POWER_TOTAL:
+                    power_ac_item = item
                     break
 
-            if battery_power_item is None:
+            if power_ac_item is None:
                 _LOGGER.debug(
-                    "Could not find ModbusItem for %s in coordinator data",
-                    SAX_AC_POWER_TOTAL,
+                    "Could not find SAXItem for SAX_AC_POWER_TOTAL in list MODBUS_BATTERY_BMS_ITEMS"
                 )
                 return None
 
-            # Generate unique_id using SAXBatteryData.get_unique_id_for_item
-            # SAX_AC_POWER_TOTAL is per-battery (use master battery_id)
-            unique_id = self.coordinator.sax_data.get_unique_id_for_item(
-                battery_power_item,
-                battery_id=self.coordinator.battery_id,
+            # SAX_AC_POWER_TOTAL is a cluster-wide entity (battery_id=None)
+            # sensor: sensor.sax_cluster_ac_power_total
+            power_entity_id = self.coordinator.sax_data.get_entity_id_for_item(
+                power_ac_item,
+                battery_id=None,  # Cluster-wide entity
             )
 
-            # Type guard: Validate unique_id exists before entity lookup
-            if not unique_id:
-                _LOGGER.warning(
-                    "Could not generate unique_id for %s",
-                    SAX_AC_POWER_TOTAL,
-                )
+            if power_entity_id is None:
                 return None
 
-            # Get entity_id from registry
-            ent_reg = er.async_get(self.hass)
-            entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, unique_id)
-
-            if not entity_id:
-                _LOGGER.debug(
-                    "%s entity not found in registry (unique_id=%s)",
-                    SAX_AC_POWER_TOTAL,
-                    unique_id,
-                )
-                return None
-
-            # Get state from Home Assistant
-            state = self.hass.states.get(entity_id)
-            if not state or state.state in ("unknown", "unavailable"):
-                _LOGGER.debug(
-                    "%s state unavailable (entity_id=%s, state=%s)",
-                    SAX_AC_POWER_TOTAL,
-                    entity_id,
-                    state.state if state else "None",
-                )
-                return None
-
-            # Convert state to float
-            try:
-                return float(state.state)
-            except (ValueError, TypeError) as err:
-                _LOGGER.warning(
-                    "Invalid battery power value: %s (%s)",
-                    state.state,
-                    err,
-                )
-                return None
-
+            state = self.hass.states.get(power_entity_id)
+            if state and state.state not in ("unknown", "unavailable", None):
+                try:
+                    power_value = float(state.state)
+                    _LOGGER.info(
+                        "✓ Found battery power %s: %.1fW",
+                        power_entity_id,
+                        power_value,
+                    )
+                    return power_value  # noqa: TRY300
+                except (ValueError, TypeError) as err:
+                    _LOGGER.debug("Could not convert registry entity value: %s", err)
         except Exception as err:
             _LOGGER.error(  # noqa: G201
-                "Unexpected error getting battery power: %s",
-                err,
-                exc_info=True,
+                "Unexpected error getting battery power: %s", err, exc_info=True
             )
-            return None
+
+        return None
 
     async def update_power_setpoint(self, power: float) -> None:
         """Update power setpoint via number entity service call.
@@ -537,13 +480,14 @@ class PowerManager:
         self._state.target_power = clamped_power
         self._state.last_update = datetime.now()
 
-        power_entity_id = "number.sax_cluster_pilot_power"
+        if self._power_entity_id is None:
+            return
 
         # Verify entity exists
-        if not self.hass.states.get(power_entity_id):
+        if not self.hass.states.get(self._power_entity_id):
             _LOGGER.error(
                 "Power entity %s not found in Home Assistant",
-                power_entity_id,
+                self._power_entity_id,
             )
             return
 
@@ -556,7 +500,7 @@ class PowerManager:
                         "number",
                         "set_value",
                         {
-                            "entity_id": power_entity_id,
+                            "entity_id": self._power_entity_id,
                             "value": clamped_power,
                         },
                         blocking=False,
@@ -565,13 +509,13 @@ class PowerManager:
                 _LOGGER.info(
                     "✓ Power setpoint updated to %sW via %s",
                     clamped_power,
-                    power_entity_id,
+                    self._power_entity_id,
                 )
             except TimeoutError:
                 _LOGGER.error(
                     "Timeout setting power value to %sW (entity: %s)",
                     clamped_power,
-                    power_entity_id,
+                    self._power_entity_id,
                 )
             except Exception as err:
                 _LOGGER.error(  # noqa: G201
