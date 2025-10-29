@@ -444,43 +444,6 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if isinstance(item, ModbusItem)
             ]
 
-    # async def _update_battery_data_registry_aware(
-    #     self, data: dict[str, Any], entity_registry: Any
-    # ) -> None:
-    #     """Update battery data from enabled modbus items only.
-
-    #     Args:
-    #         data: Dictionary to store the updated values
-    #         entity_registry: Home Assistant entity registry
-
-    #     Security: Error handling for communication failures
-    #     Performance: Only polls enabled entities, efficient item iteration
-    #     """
-    #     try:
-    #         # Performance optimization: Get only enabled modbus items
-    #         enabled_items = await self._get_enabled_modbus_items(entity_registry)
-
-    #         _LOGGER.debug(
-    #             "Polling %d enabled modbus items for %s",
-    #             len(enabled_items),
-    #             self.battery_id,
-    #         )
-
-    #         # Update data from each enabled modbus item
-    #         for item in enabled_items:
-    #             # Performance: Skip items that don't support reading
-    #             if hasattr(item, "is_read_only") and item.is_read_only():
-    #                 _LOGGER.debug("Skipping read-only item %s", item.name)
-    #                 continue
-
-    #             await self._read_battery_item(item, data)
-
-    #     except (ModbusException, OSError, TimeoutError) as err:
-    #         _LOGGER.error(
-    #             "Error updating battery data for %s: %s", self.battery_id, err
-    #         )
-    #         raise
-
     async def _update_smart_meter_data_registry_aware(
         self, data: dict[str, Any], entity_registry: Any
     ) -> None:
@@ -613,31 +576,6 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         return await item.async_write_value(write_value)
 
-    # def update_sax_item_state(self, item: SAXItem | str, value: Any) -> None:
-    #     """Update SAX item state for calculated values.
-
-    #     Args:
-    #         item: SAXItem instance or item name
-    #         value: New value to set
-
-    #     Security: Input validation for item existence
-    #     """
-    #     if isinstance(item, str):
-    #         # Find SAXItem by name
-    #         sax_items = self.sax_data.get_sax_items_for_battery(self.battery_id)
-    #         item_obj = next((i for i in sax_items if i.name == item), None)
-    #         if item_obj is None:
-    #             _LOGGER.warning("SAXItem %s not found", item)
-    #             return
-    #         item = item_obj
-
-    #     # Update the value in coordinator data
-    #     if hasattr(item, "name"):
-    #         if not self.data:
-    #             self.data = {}
-    #         self.data[item.name] = value
-    #         _LOGGER.debug("Updated SAX item %s with value %s", item.name, value)
-
     async def async_write_pilot_control_value(
         self,
         power_item: ModbusItem,
@@ -695,37 +633,6 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("Unexpected error in pilot control write operation: %s", err)
             return False
-
-    # async def _update_battery_data(self, data: dict[str, Any]) -> None:
-    #     """Update battery data from modbus items.
-
-    #     Args:
-    #         data: Dictionary to store the updated values
-
-    #     Security: Error handling for communication failures
-    #     Performance: Efficient item iteration with read-only checks
-    #     """
-    #     try:
-    #         # Performance optimization: Use list comprehension to get modbus items
-    #         modbus_items = [
-    #             item
-    #             for item in self.sax_data.get_modbus_items_for_battery(self.battery_id)
-    #             if isinstance(item, ModbusItem)
-    #         ]
-
-    #         # Update data from each modbus item
-    #         for item in modbus_items:
-    #             # Performance: Skip read-only check for write-only items (now synchronous)
-    #             if hasattr(item, "is_read_only") and not item.is_read_only():
-    #                 continue
-
-    #             await self._read_battery_item(item, data)
-
-    #     except (ModbusException, OSError, TimeoutError) as err:
-    #         _LOGGER.error(
-    #             "Error updating battery data for %s: %s", self.battery_id, err
-    #         )
-    #         raise
 
     async def _read_battery_item(self, item: ModbusItem, data: dict[str, Any]) -> None:
         """Read a single battery item and update data dictionary.

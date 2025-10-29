@@ -944,14 +944,6 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
         nominal_factor = await self._calculate_nominal_factor(power_value)
 
         # Get the ModbusItems for atomic write
-        power_item = next(
-            (
-                item
-                for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
-                if item.name == SAX_NOMINAL_POWER
-            ),
-            None,
-        )
         factor_item = next(
             (
                 item
@@ -960,9 +952,21 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
             ),
             None,
         )
+        power_item = next(
+            (
+                item
+                for item in MODBUS_BATTERY_POWER_CONTROL_ITEMS
+                if item.name == SAX_NOMINAL_POWER
+            ),
+            None,
+        )
 
         if not power_item or not factor_item:
             raise HomeAssistantError("Control register items not found")
+
+        # Update corresponding entities if they exist
+        self._update_power_entity(SAX_NOMINAL_FACTOR, factor_item, nominal_factor)
+        self._update_power_entity(SAX_NOMINAL_POWER, power_item, nominal_power)
 
         # Write to control registers atomically via coordinator
         success = await self.coordinator.async_write_pilot_control_value(
@@ -1013,3 +1017,28 @@ class SAXBatteryConfigNumber(CoordinatorEntity[SAXBatteryCoordinator], NumberEnt
 
         # Return default conservative power factor
         return default_pf
+
+    def _update_power_entity(self, name: str, item: ModbusItem, value: float) -> None:
+        """Update the nominal power entity if it exists.
+
+        Args:
+            name: name of Modbus item
+            item: ModbusItem for diagnosisstic pilot power
+            value: New value for number local cache
+        """
+        if not item:
+            return
+
+        # Find the corresponding entity and update its state
+        entity_id = self.coordinator.sax_data.get_entity_id_for_item(item, name)
+        if entity_id is not None:
+            entity = self.hass.states.get(entity_id)
+            if entity:
+                self.hass.states.async_set(
+                    entity_id,
+                    str(value),
+                    {
+                        **entity.attributes,
+                        "note": "Updated via pilot power change",
+                    },
+                )
