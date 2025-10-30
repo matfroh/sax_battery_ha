@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import logging
 from typing import Any
 
+from custom_components.sax_battery.enums import TypeConstants
 from homeassistant.config_entries import ConfigEntry
 
 from .const import (
@@ -17,6 +18,7 @@ from .const import (
     MODBUS_BATTERY_POWER_CONTROL_ITEMS,
     MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     MODBUS_BATTERY_REALTIME_ITEMS,
+    SAX_PILOT_POWER,
     SOLAR_CHARGING_SWITCH,
     WRITE_ONLY_REGISTERS,
 )
@@ -115,12 +117,20 @@ def should_enable_entity_by_default(
 
     # Handle SAXItem control switches - enabled when pilot mode is active
     if isinstance(item, SAXItem):
-        if item.name in (SOLAR_CHARGING_SWITCH, MANUAL_CONTROL_SWITCH):
-            _LOGGER.debug(
-                "Checking SAXItem control switch %s, pilot_from_ha=%s",
-                item.name,
-                enable_power_control,
-            )
+        if item.name in (SOLAR_CHARGING_SWITCH, MANUAL_CONTROL_SWITCH, SAX_PILOT_POWER):
+            if item.mtype == TypeConstants.SWITCH:
+                _LOGGER.debug(
+                    "Checking SAXItem control switch '%s', pilot_from_ha=%s",
+                    item.name,
+                    enable_power_control,
+                )
+            else:
+                _LOGGER.debug(
+                    "Checking SAXItem control number '%s', pilot_from_ha=%s",
+                    item.name,
+                    enable_power_control,
+                )
+
             return enable_power_control
 
         # For other SAXItems, respect the item's enabled_by_default attribute

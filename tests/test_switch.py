@@ -750,6 +750,7 @@ class TestSAXBatteryControlSwitch:
         """Create mock SAX item for control switch."""
         sax_item = MagicMock(spec=SAXItem)
         sax_item.name = "solar_charging_switch"
+        sax_item.mtype = TypeConstants.SWITCH
         sax_item.device = DeviceConstants.SYS
         sax_item.entitydescription = None
         sax_item.set_coordinators = MagicMock()
@@ -1157,6 +1158,7 @@ class TestAsyncSetupEntry:
         sax_item = MagicMock(spec=SAXItem)
         sax_item.name = "solar_charging_switch"
         sax_item.device = DeviceConstants.SYS
+        sax_item.mtype = TypeConstants.SWITCH
         sax_item.set_coordinators = MagicMock()
 
         mock_setup_data["sax_data"].get_sax_items_for_battery.return_value = [sax_item]
@@ -1294,6 +1296,7 @@ class TestAsyncSetupEntry:
         sax_item = MagicMock(spec=SAXItem)
         sax_item.name = "solar_charging_switch"
         sax_item.device = DeviceConstants.SYS
+        sax_item.mtype = TypeConstants.SWITCH
         sax_item.set_coordinators = MagicMock()
 
         mock_setup_data["sax_data"].get_modbus_items_for_battery.return_value = [
