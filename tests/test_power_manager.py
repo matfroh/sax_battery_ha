@@ -274,7 +274,6 @@ class TestPowerManagerLifecycle:
 class TestSolarChargingMode:
     """Test solar charging mode functionality."""
 
-    @pytest.mark.skip("fix mock line 345")
     async def test_solar_charging_update_with_valid_grid_sensor(
         self,
         hass: HomeAssistant,
@@ -312,23 +311,29 @@ class TestSolarChargingMode:
             SAX_AC_POWER_TOTAL: mock_battery_item,
         }
 
-        # Mock entity registry for battery power lookup
+        # Patch entity registry and sax_data.get_unique_id_for_item
         with patch("homeassistant.helpers.entity_registry.async_get") as mock_ent_reg:
             mock_reg = MagicMock()
+            # Ensure entity_id matches what will be set in hass.states
             mock_reg.async_get_entity_id = MagicMock(
                 return_value="sensor.battery_a_ac_power_total"
             )
             mock_ent_reg.return_value = mock_reg
 
-            # Mock sax_data.get_unique_id_for_item
+            # Patch sax_data.get_unique_id_for_item to match the entity_id
             mock_coordinator_master.sax_data.get_unique_id_for_item.return_value = (  # type: ignore[attr-defined]
                 "battery_a_ac_power_total"
             )
 
-            # Mock battery power state in state machine
+            # Set battery power state in state machine
             hass.states.async_set(
                 "sensor.battery_a_ac_power_total", "500"
             )  # 500W discharging
+
+            # Patch sax_data.get_entity_id_for_item to return correct entity_id
+            mock_coordinator_master.sax_data.get_entity_id_for_item = MagicMock(  # type: ignore[method-assign]
+                return_value="sensor.battery_a_ac_power_total"
+            )
 
             power_manager = PowerManager(
                 hass=hass,
@@ -343,9 +348,6 @@ class TestSolarChargingMode:
                 await power_manager._update_solar_charging_power()
 
                 mock_update.assert_called_once()
-
-                # Verify calculation: current_battery (500W) - grid_power (-1000W) = 1500W
-                # Then constrained to 1000W by SOC manager
                 call_args = mock_update.call_args[0]
                 assert call_args[0] == 1000
 
@@ -439,7 +441,6 @@ class TestSolarChargingMode:
 
             mock_update.assert_not_called()
 
-    @pytest.mark.skip("fix mock line 510")
     async def test_solar_charging_applies_soc_constraints(
         self,
         hass: HomeAssistant,
@@ -477,7 +478,7 @@ class TestSolarChargingMode:
             SAX_AC_POWER_TOTAL: mock_battery_item,
         }
 
-        # Mock entity registry for battery power lookup
+        # Patch entity registry and sax_data.get_unique_id_for_item
         with patch("homeassistant.helpers.entity_registry.async_get") as mock_ent_reg:
             mock_reg = MagicMock()
             mock_reg.async_get_entity_id = MagicMock(
@@ -485,15 +486,18 @@ class TestSolarChargingMode:
             )
             mock_ent_reg.return_value = mock_reg
 
-            # Mock sax_data.get_unique_id_for_item
             mock_coordinator_master.sax_data.get_unique_id_for_item.return_value = (  # type: ignore[attr-defined]
                 "battery_a_ac_power_total"
             )
 
-            # Mock battery power state in state machine
             hass.states.async_set(
                 "sensor.battery_a_ac_power_total", "1000"
             )  # 1kW discharging
+
+            # Patch sax_data.get_entity_id_for_item to return correct entity_id
+            mock_coordinator_master.sax_data.get_entity_id_for_item = MagicMock(  # type: ignore[method-assign]
+                return_value="sensor.battery_a_ac_power_total"
+            )
 
             power_manager = PowerManager(
                 hass=hass,
@@ -507,11 +511,7 @@ class TestSolarChargingMode:
             ) as mock_update:
                 await power_manager._update_solar_charging_power()
 
-                # Should use constrained value
                 mock_update.assert_called_once_with(2000)
-
-                # Verify SOC manager was called with calculated power
-                # current_battery (1000W) - grid_power (-5000W) = 6000W (before constraint)
                 mock_coordinator_master.soc_manager.apply_constraints.assert_called_once()
 
 

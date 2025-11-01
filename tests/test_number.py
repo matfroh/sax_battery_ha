@@ -1315,7 +1315,6 @@ class TestSAXBatteryConfigNumberPilotPower:
             device=DeviceConstants.SYS,
         )
 
-    @pytest.mark.skip("mock requires update for entity value update")
     async def test_handle_pilot_power_update_calculates_nominal_values(
         self,
         hass: HomeAssistant,
@@ -1327,6 +1326,9 @@ class TestSAXBatteryConfigNumberPilotPower:
             coordinator=mock_coordinator_config_base,
             sax_item=mock_pilot_item,
         )
+
+        # Set hass attribute (required for state machine access)
+        number.hass = hass
 
         # Mock SOC manager with AsyncMock
         mock_coordinator_config_base.soc_manager = MagicMock()
@@ -1342,6 +1344,17 @@ class TestSAXBatteryConfigNumberPilotPower:
         mock_coordinator_config_base.async_write_pilot_control_value = AsyncMock(
             return_value=True
         )
+
+        # Mock sax_data.get_entity_id_for_item to return valid entity IDs
+        mock_coordinator_config_base.sax_data.get_entity_id_for_item = MagicMock(
+            side_effect=lambda item, name: f"number.{name}"
+            if name in [SAX_NOMINAL_POWER, SAX_NOMINAL_FACTOR]
+            else None
+        )
+
+        # Set up state machine entities for nominal power/factor
+        hass.states.async_set("number.sax_nominal_power", "0")
+        hass.states.async_set("number.sax_nominal_factor", "0")
 
         await number._handle_pilot_power_update(2000.0)
 
