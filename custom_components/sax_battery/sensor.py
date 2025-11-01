@@ -1,4 +1,4 @@
-"""Sensor platform for SAX Battery integration."""
+"""SAX Battery sensor platform."""
 
 from __future__ import annotations
 
@@ -6,716 +6,647 @@ from datetime import datetime
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import RestoreSensor, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    PERCENTAGE,
-    UnitOfElectricCurrent,
-    UnitOfElectricPotential,
-    UnitOfEnergy,
-    UnitOfFrequency,
-    UnitOfPower,
-    UnitOfTemperature,
-)
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    CONF_MASTER_BATTERY,  # Import from local const.py, not homeassistant.const
+    ATTR_ATTRIBUTION,
+    ATTRIBUTION,
+    BATTERY_IDS,
+    CONF_BATTERY_IS_MASTER,
+    CONF_BATTERY_PHASE,
     DOMAIN,
-    # Add any other constants you need from const.py
+    SAX_COMBINED_SOC,
+    SAX_CUMULATIVE_ENERGY_CONSUMED,
+    SAX_CUMULATIVE_ENERGY_PRODUCED,
+    SAX_SMARTMETER_ENERGY_CONSUMED,
+    SAX_SMARTMETER_ENERGY_PRODUCED,
+    SAX_SOC,
 )
 from .coordinator import SAXBatteryCoordinator
+from .entity_utils import filter_items_by_type, filter_sax_items_by_type
+from .enums import DeviceConstants, TypeConstants
+from .items import ModbusItem, SAXItem
 
 _LOGGER = logging.getLogger(__name__)
+
+# Coordinator-based sensors don't need update serialization
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the SAX Battery sensors."""
-    coordinator: SAXBatteryCoordinator = hass.data[DOMAIN][entry.entry_id]
-
-    # Debug: Show the full config entry data
-    _LOGGER.info(
-        "Config entry data: %s",
-        {k: v for k, v in entry.data.items() if "password" not in k.lower()},
-    )
-
-    # Get master battery from config entry data (stored during config flow)
-    master_battery_id = entry.data.get(CONF_MASTER_BATTERY)
-
-    _LOGGER.info("Master battery from config: %s", master_battery_id)
-
-    # Fallback logic if not found in config
-    if not master_battery_id and hasattr(coordinator.hub, "batteries"):
-        available_batteries = list(coordinator.hub.batteries.keys())
-        master_battery_id = available_batteries[0] if available_batteries else None
-        _LOGGER.warning(
-            "No master battery in config, using fallback: %s from available: %s",
-            master_battery_id,
-            available_batteries,
-        )
-
-    _LOGGER.info(
-        "Final master battery selection: %s, Available batteries: %s",
-        master_battery_id,
-        list(coordinator.hub.batteries.keys())
-        if hasattr(coordinator.hub, "batteries") and coordinator.hub.batteries
-        else "None",
-    )
+    """Set up SAX Battery sensor platform with multi-battery support."""
+    integration_data = hass.data[DOMAIN][config_entry.entry_id]
+    coordinators = integration_data["coordinators"]
+    sax_data = integration_data["sax_data"]
 
     entities: list[SensorEntity] = []
 
-    # Create combined sensors first (these aggregate data from all batteries)
-    entities.extend(
-        [
-            SAXBatteryCombinedSensor(coordinator, "combined_soc", "Combined SOC"),
-            SAXBatteryCombinedSensor(coordinator, "combined_power", "Combined Power"),
-        ]
-    )
+    # Create sensors for each battery using new constants
+    for battery_id, coordinator in coordinators.items():
+        # Validate battery_id is in allowed list
+        if battery_id not in BATTERY_IDS:
+            _LOGGER.warning("Invalid battery ID %s, skipping", battery_id)
+            continue
 
-    # Keep track of created sensors to avoid duplicates
-    created_sensors: set[str] = set()
-
-    # Create sensors for all data keys from the coordinator
-    if coordinator.data:
-        for key in coordinator.data:
-            # Skip combined keys as they're handled above
-            if key.startswith("combined_"):
-                continue
-
-            # Handle battery-specific sensors (battery_a_, battery_b_, etc.)
-            if key.startswith("battery_"):
-                for battery_prefix in ["battery_a_", "battery_b_", "battery_c_"]:
-                    if key.startswith(battery_prefix):
-                        battery_letter = battery_prefix.split("_")[1].upper()
-                        battery_name = f"Battery {battery_letter}"
-
-                        # Create unique sensor key to track duplicates
-                        sensor_key = f"battery_{battery_letter.lower()}_{key.replace(battery_prefix, '')}"
-
-                        if sensor_key not in created_sensors:
-                            entities.append(
-                                SAXBatterySensor(
-                                    coordinator, key, battery_name=battery_name
-                                )
-                            )
-                            created_sensors.add(sensor_key)
-                        break
-            else:
-                # Handle non-battery-specific keys
-                # Only create if this isn't duplicating a battery-specific sensor
-                sensor_base_key = key
-
-                # Check if this sensor would duplicate a battery-specific one
-                is_duplicate = False
-                for battery_id in ["battery_a", "battery_b", "battery_c"]:
-                    battery_specific_key = f"{battery_id}_{sensor_base_key}"
-                    if battery_specific_key in coordinator.data:
-                        is_duplicate = True
-                        break
-
-                # Only create the non-prefixed sensor if it's not a duplicate
-                if not is_duplicate and key not in created_sensors:
-                    entities.append(SAXBatterySensor(coordinator, key))
-                    created_sensors.add(key)
-
-    # Add cumulative energy sensors with the configured master battery
-    if master_battery_id:
-        entities.extend(
-            [
-                SAXBatteryCumulativeEnergyProducedSensor(
-                    coordinator, master_battery_id
-                ),
-                SAXBatteryCumulativeEnergyConsumedSensor(
-                    coordinator, master_battery_id
-                ),
-            ]
-        )
+        # Get battery-specific configuration
+        battery_config = coordinator.battery_config
+        is_master = battery_config.get(CONF_BATTERY_IS_MASTER, False)
+        phase = battery_config.get(CONF_BATTERY_PHASE, "L1")
 
         _LOGGER.debug(
-            "Added cumulative sensors using master battery: %s", master_battery_id
+            "Setting up sensors for %s battery %s (%s)",
+            "master" if is_master else "slave",
+            battery_id,
+            phase,
+        )
+
+        # Filter sensor items for this battery
+        sensor_items = filter_items_by_type(
+            sax_data.get_modbus_items_for_battery(battery_id),
+            TypeConstants.SENSOR,
+            config_entry,
+            battery_id,
+        )
+
+        for modbus_item in sensor_items:
+            if isinstance(modbus_item, ModbusItem):
+                entities.append(  # noqa: PERF401
+                    SAXBatteryModbusSensor(
+                        coordinator=coordinator,
+                        battery_id=battery_id,
+                        modbus_item=modbus_item,
+                    )
+                )
+
+        _LOGGER.info(
+            "Added %d modbus sensor entities for %s", len(sensor_items), battery_id
+        )
+
+    # Create system-wide calculated sensors only once (using master battery coordinator)
+    # Find master coordinator - check both the coordinator's battery_config AND sax_data
+    master_coordinator = None
+    for battery_id, coordinator in coordinators.items():
+        # Check coordinator's battery_config first
+        is_master = coordinator.battery_config.get(CONF_BATTERY_IS_MASTER, False)
+
+        # If not found in coordinator, check sax_data as fallback
+        if not is_master and battery_id in sax_data.batteries:
+            battery_model = sax_data.batteries[battery_id]
+            is_master = battery_model.is_master
+
+        if is_master:
+            master_coordinator = coordinator
+            _LOGGER.debug(
+                "Found master battery coordinator: %s (is_master=%s)",
+                battery_id,
+                is_master,
+            )
+            break
+
+    if master_coordinator:
+        # Get calculated sensor items
+        sax_items = filter_sax_items_by_type(
+            sax_data.get_sax_items_for_battery(
+                sax_data.master_battery_id or "battery_a"
+            ),
+            TypeConstants.SENSOR,
+        )
+
+        # Create calculated sensors
+        for sax_item in sax_items:
+            sax_item.set_coordinators(coordinators)
+            entities.append(
+                SAXBatteryCalculatedSensor(
+                    master_coordinator,
+                    sax_item,
+                    coordinators,
+                )
+            )
+
+        _LOGGER.debug(
+            "Created %d calculated sensors using master coordinator", len(sax_items)
         )
     else:
-        _LOGGER.warning("No master battery configured, skipping cumulative sensors")
-
-    async_add_entities(entities)
-
-
-class SAXBatteryCombinedSensor(CoordinatorEntity, SensorEntity):
-    """Combined sensor that aggregates data from all batteries."""
-
-    def __init__(
-        self,
-        coordinator: SAXBatteryCoordinator,
-        sensor_type: str,
-        name: str,
-    ) -> None:
-        """Initialize the combined sensor."""
-        super().__init__(coordinator)
-        self._sensor_type = sensor_type
-
-        # Match old naming convention exactly
-        match sensor_type:
-            case "combined_soc":
-                self._attr_name = "Sax Battery Combined SOC"
-                self._attr_device_class = SensorDeviceClass.BATTERY
-                self._attr_native_unit_of_measurement = PERCENTAGE
-                self._attr_state_class = SensorStateClass.MEASUREMENT
-            case "combined_power":
-                self._attr_name = "Sax Battery Combined Power"
-                self._attr_device_class = SensorDeviceClass.POWER
-                self._attr_native_unit_of_measurement = UnitOfPower.WATT
-                self._attr_state_class = SensorStateClass.MEASUREMENT
-
-        self._attr_unique_id = f"{DOMAIN}_{sensor_type}"
-
-        # Add device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
-
-    @property
-    def should_poll(self) -> bool:
-        """Return True if entity has to be polled for state."""
-        return True
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the combined value."""
-        if not self.coordinator.data:
-            return None
-
-        return self.coordinator.data.get(self._sensor_type)
-
-    async def async_update(self) -> None:
-        """Update the sensor by recalculating combined values."""
-        # Force coordinator update first
-        await self.coordinator.async_request_refresh()
-
-        # Calculate combined values similar to old implementation
-        match self._sensor_type:
-            case "combined_power":
-                await self._calculate_combined_power()
-            case "combined_soc":
-                await self._calculate_combined_soc()
-
-    async def _calculate_combined_power(self) -> None:
-        """Calculate combined power from all batteries."""
-        total_power = 0.0
-
-        # Sum power from all configured batteries
-        for battery_id in self.coordinator.batteries:
-            power_key = f"{battery_id}_power"
-            if (
-                self.coordinator.data
-                and power_key in self.coordinator.data
-                and self.coordinator.data[power_key] is not None
-            ):
-                total_power += self.coordinator.data[power_key]
-
-        # Store in coordinator data for consistency
-        if not self.coordinator.data:
-            self.coordinator.data = {}
-        self.coordinator.data["combined_power"] = round(total_power, 1)
-
-        # Also store in combined_data for backward compatibility
-        if not hasattr(self.coordinator, "combined_data"):
-            self.coordinator.combined_data = {}
-        self.coordinator.combined_data["sax_battery_combined_power"] = round(
-            total_power, 1
+        _LOGGER.warning(
+            "No master battery found for cumulative energy calculation. "
+            "Available batteries: %s, battery configs: %s",
+            list(coordinators.keys()),
+            {
+                bid: coord.battery_config.get(CONF_BATTERY_IS_MASTER, "not set")
+                for bid, coord in coordinators.items()
+            },
         )
 
-        self._attr_native_value = round(total_power, 1)
-
-    async def _calculate_combined_soc(self) -> None:
-        """Calculate average SOC from all batteries."""
-        total_soc = 0.0
-        valid_batteries = 0
-
-        # Calculate average SOC from all configured batteries
-        for battery_id in self.coordinator.batteries:
-            soc_key = f"{battery_id}_soc"
-            if (
-                self.coordinator.data
-                and soc_key in self.coordinator.data
-                and self.coordinator.data[soc_key] is not None
-            ):
-                total_soc += self.coordinator.data[soc_key]
-                valid_batteries += 1
-
-        # Calculate average if we have valid data
-        if valid_batteries > 0:
-            combined_soc = round(total_soc / valid_batteries, 1)
-
-            # Store in coordinator data
-            if not self.coordinator.data:
-                self.coordinator.data = {}
-            self.coordinator.data["combined_soc"] = combined_soc
-
-            # Also store in combined_data for backward compatibility (matching old const)
-            if not hasattr(self.coordinator, "combined_data"):
-                self.coordinator.combined_data = {}
-            self.coordinator.combined_data["sax_battery_combined_soc"] = combined_soc
-
-            self._attr_native_value = combined_soc
-        else:
-            # No valid SOC data
-            if self.coordinator.data:
-                self.coordinator.data["combined_soc"] = None
-            if hasattr(self.coordinator, "combined_data"):
-                self.coordinator.combined_data["sax_battery_combined_soc"] = None
-            self._attr_native_value = None
-
-
-class SAXBatteryCumulativeEnergyProducedSensor(CoordinatorEntity, SensorEntity):
-    """SAX Battery Cumulative Energy Produced sensor - accumulates charging energy."""
-
-    def __init__(
-        self, coordinator: SAXBatteryCoordinator, master_battery_id: str | None
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._master_battery_id = master_battery_id
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-        self._attr_name = "Sax Battery Cumulative Energy Produced"
-        self._attr_unique_id = f"{DOMAIN}_cumulative_energy_produced"
-        self._last_update_time: datetime | None = None
-        self._cumulative_value = 0.0
-
-        # Log initialization details
+    if entities:
+        async_add_entities(entities)
         _LOGGER.info(
-            "Cumulative Energy Produced sensor initialized with master battery: %s",
-            self._master_battery_id,
+            "Set up %d sensor entities across %d batteries",
+            len(entities),
+            len(coordinators),
         )
 
-        # Add device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
 
-    @property
-    def native_value(self) -> float:
-        """Return the native value of the sensor."""
-        # Update cumulative value when requested
-        self._update_cumulative_value()
-        return self._cumulative_value
+class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEntity):
+    """Implementation of a SAX Battery modbus sensor entity."""
 
-    def _update_cumulative_value(self) -> None:
-        """Update the cumulative value if enough time has passed."""
-        current_time = datetime.now()
-
-        # Only update the cumulative value once per hour
-        should_update = (
-            self._last_update_time is None
-            or (current_time - self._last_update_time).total_seconds() >= 3600
-        )
-
-        if should_update:
-            _LOGGER.debug(
-                "Cumulative Energy Produced: Time condition met, checking data"
-            )
-
-            # Get the current energy produced value from master battery
-            if self.coordinator.data and self._master_battery_id:
-                # Look for the master battery's energy produced sensor data
-                master_key = f"{self._master_battery_id}_energy_produced"
-                current_value = self.coordinator.data.get(master_key)
-
-                # Debug: Show what master battery we're using and what keys are available
-                available_keys = (
-                    list(self.coordinator.data.keys()) if self.coordinator.data else []
-                )
-                energy_produced_keys = [
-                    k for k in available_keys if "energy_produced" in k
-                ]
-
-                _LOGGER.info(
-                    "Cumulative Energy Produced: Master battery ID: %s, "
-                    "Looking for key: '%s', Found value: %s, "
-                    "Available energy_produced keys: %s, "
-                    "All available keys: %s",
-                    self._master_battery_id,
-                    master_key,
-                    current_value,
-                    energy_produced_keys,
-                    available_keys[:10],  # Show first 10 keys to avoid log spam
-                )
-
-                if current_value is not None and current_value > 0:
-                    # Update the cumulative value (accumulate charging energy)
-                    old_cumulative = self._cumulative_value
-                    self._cumulative_value += current_value
-                    # Update the last update time
-                    self._last_update_time = current_time
-
-                    _LOGGER.info(
-                        "Cumulative Energy Produced: Master battery %s - Added %s kWh to cumulative total. "
-                        "Old: %s kWh, New: %s kWh",
-                        self._master_battery_id,
-                        current_value,
-                        old_cumulative,
-                        self._cumulative_value,
-                    )
-                else:
-                    _LOGGER.debug(
-                        "Cumulative Energy Produced: Current value is None or <= 0: %s",
-                        current_value,
-                    )
-            else:
-                _LOGGER.debug(
-                    "Cumulative Energy Produced: No coordinator data or master battery ID. "
-                    "Data exists: %s, Master ID: %s",
-                    self.coordinator.data is not None,
-                    self._master_battery_id,
-                )
-        else:
-            time_diff = (current_time - self._last_update_time).total_seconds()
-            _LOGGER.debug(
-                "Cumulative Energy Produced: Too soon to update. Time since last update: %s seconds",
-                time_diff,
-            )
-
-
-class SAXBatteryCumulativeEnergyConsumedSensor(CoordinatorEntity, SensorEntity):
-    """SAX Battery Cumulative Energy Consumed sensor - accumulates discharging energy."""
-
-    def __init__(
-        self, coordinator: SAXBatteryCoordinator, master_battery_id: str | None
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._master_battery_id = master_battery_id
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-        self._attr_name = "Sax Battery Cumulative Energy Consumed"
-        self._attr_unique_id = f"{DOMAIN}_cumulative_energy_consumed"
-        self._last_update_time: datetime | None = None
-        self._cumulative_value = 0.0
-
-        # Add device info
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
-
-    @property
-    def native_value(self) -> float:
-        """Return the native value of the sensor."""
-        # Update cumulative value when requested
-        self._update_cumulative_value()
-        return self._cumulative_value
-
-    def _update_cumulative_value(self) -> None:
-        """Update the cumulative value if enough time has passed."""
-        current_time = datetime.now()
-
-        _LOGGER.debug(
-            "Cumulative Energy Consumed: Checking update conditions. "
-            "Last update: %s, Current time: %s, Master battery: %s",
-            self._last_update_time,
-            current_time,
-            self._master_battery_id,
-        )
-
-        # Only update the cumulative value once per hour
-        should_update = (
-            self._last_update_time is None
-            or (current_time - self._last_update_time).total_seconds() >= 3600
-        )
-
-        if should_update:
-            _LOGGER.debug(
-                "Cumulative Energy Consumed: Time condition met, checking data"
-            )
-
-            # Get the current energy consumed value from master battery
-            if self.coordinator.data and self._master_battery_id:
-                # Look for the master battery's energy consumed sensor data
-                master_key = f"{self._master_battery_id}_energy_consumed"
-                current_value = self.coordinator.data.get(master_key)
-
-                _LOGGER.debug(
-                    "Cumulative Energy Consumed: Looking for key '%s', found value: %s (type: %s)",
-                    master_key,
-                    current_value,
-                    type(current_value).__name__
-                    if current_value is not None
-                    else "None",
-                )
-
-                # Debug: Show all available keys
-                available_keys = (
-                    list(self.coordinator.data.keys()) if self.coordinator.data else []
-                )
-                energy_keys = [k for k in available_keys if "energy" in k.lower()]
-                _LOGGER.debug(
-                    "Available energy-related keys in coordinator data: %s",
-                    energy_keys,
-                )
-
-                if current_value is not None and current_value > 0:
-                    # Update the cumulative value (accumulate discharging energy)
-                    old_cumulative = self._cumulative_value
-                    self._cumulative_value += current_value
-                    # Update the last update time
-                    self._last_update_time = current_time
-
-                    _LOGGER.info(
-                        "Cumulative Energy Consumed: Added %s kWh to cumulative total. "
-                        "Old: %s kWh, New: %s kWh",
-                        current_value,
-                        old_cumulative,
-                        self._cumulative_value,
-                    )
-                else:
-                    _LOGGER.debug(
-                        "Cumulative Energy Consumed: Current value is None or <= 0: %s",
-                        current_value,
-                    )
-            else:
-                _LOGGER.debug(
-                    "Cumulative Energy Consumed: No coordinator data or master battery ID. "
-                    "Data exists: %s, Master ID: %s",
-                    self.coordinator.data is not None,
-                    self._master_battery_id,
-                )
-        else:
-            time_diff = (current_time - self._last_update_time).total_seconds()
-            _LOGGER.debug(
-                "Cumulative Energy Consumed: Too soon to update. Time since last update: %s seconds",
-                time_diff,
-            )
-
-
-class SAXBatterySensor(CoordinatorEntity, SensorEntity):
-    """SAX Battery sensor using coordinator."""
+    _attr_has_entity_name = True
 
     def __init__(
         self,
         coordinator: SAXBatteryCoordinator,
-        data_key: str,
-        battery_name: str | None = None,
+        battery_id: str,
+        modbus_item: ModbusItem,
     ) -> None:
-        """Initialize the SAX Battery sensor."""
+        """Initialize the modbus sensor."""
         super().__init__(coordinator)
-        self._data_key = data_key
-        self._battery_name = battery_name
+        self._modbus_item = modbus_item
+        self._battery_id = battery_id
 
-        # Use battery-specific name if provided
-        if battery_name:
-            # Remove battery prefix (battery_a_, battery_b_, etc.) from data key
-            sensor_key = data_key
-            for prefix in ["battery_a_", "battery_b_", "battery_c_"]:
-                if data_key.startswith(prefix):
-                    sensor_key = data_key.replace(prefix, "")
-                    break
+        # Generate unique ID using class name pattern
+        item_name: str = self._modbus_item.name.removeprefix("sax_")
 
-            sensor_base_name = self._get_sensor_name(sensor_key)
-            # Create entity name in format: SAX Battery A Sensor Name
-            battery_letter = battery_name.split()[-1].upper()
-            self._attr_name = f"Sax Battery {battery_letter} {sensor_base_name}"
-            # Update unique_id to match the naming pattern you want: sax_battery_a_sensor_key
-            self._attr_unique_id = (
-                f"{DOMAIN}_battery_{battery_letter.lower()}_{sensor_key}"
-            )
+        if item_name.endswith("_sm"):
+            self._attr_unique_id = f"sax_{item_name}"
         else:
-            self._attr_name = self._get_sensor_name(data_key)
-            self._attr_unique_id = f"{DOMAIN}_{data_key}"
+            self._attr_unique_id = f"sax_{self._battery_id}_{item_name}"
 
-        self._attr_device_class, self._attr_native_unit_of_measurement = (
-            self._get_device_class_and_unit(data_key)
+        # Set entity description from modbus item if available
+        if self._modbus_item.entitydescription is not None:
+            self.entity_description = self._modbus_item.entitydescription  # type: ignore[assignment]
+
+        # Set entity registry enabled state from ModbusItem
+        self._attr_entity_registry_enabled_default = getattr(
+            self._modbus_item, "enabled_by_default", True
         )
-        self._attr_state_class = self._get_state_class(data_key)
 
-        # Add device info - use coordinator device_id for consistency
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.device_id)},
-            "name": "SAX Battery System",
-            "manufacturer": "SAX",
-            "model": "SAX Battery",
-            "sw_version": "1.0",
-        }
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "name")
+            and isinstance(self.entity_description.name, str)
+        ):
+            # Remove "Sax " prefix from entity description name
+            self.entity_description.key.removeprefix("Smartmeter ")  # beautify the key
+            entity_name = str(self.entity_description.name)
+            entity_name = entity_name.removeprefix("Sax ")
+            self._attr_name = entity_name
+        else:
+            # Fallback: use clean item name without prefixes
+            clean_name = item_name.replace("_", " ").title()
+            self._attr_name = clean_name
 
-    def _get_sensor_name(self, key: str) -> str:
-        """Get human-readable sensor name."""
-        name_mapping = {
-            "soc": "SOC",
-            "power": "Power",
-            "smartmeter": "Smart Meter",
-            "capacity": "Capacity",
-            "cycles": "Cycles",
-            "temp": "Temperature",
-            "energy_produced": "Energy Produced",
-            "energy_consumed": "Energy Consumed",
-            "voltage_l1": "Voltage L1",
-            "voltage_l2": "Voltage L2",
-            "voltage_l3": "Voltage L3",
-            "current_l1": "Current L1",
-            "current_l2": "Current L2",
-            "current_l3": "Current L3",
-            "grid_frequency": "Grid Frequency",
-            "active_power_l1": "Active Power L1",
-            "active_power_l2": "Active Power L2",
-            "active_power_l3": "Active Power L3",
-            "apparent_power": "Apparent Power",
-            "reactive_power": "Reactive Power",
-            "power_factor": "Power Factor",
-            "phase_currents_sum": "Phase Currents Sum",
-            "ac_power_total": "AC Power Total",
-            "storage_status": "Storage Status",
-            "smartmeter_voltage_l1": "Smart Meter Voltage L1",
-            "smartmeter_voltage_l2": "Smart Meter Voltage L2",
-            "smartmeter_voltage_l3": "Smart Meter Voltage L3",
-            "smartmeter_current_l1": "Smart Meter Current L1",
-            "smartmeter_current_l2": "Smart Meter Current L2",
-            "smartmeter_current_l3": "Smart Meter Current L3",
-            "smartmeter_total_power": "Smart Meter Total Power",
-        }
-        return name_mapping.get(key, key.replace("_", " ").title())
-
-    def _get_device_class_and_unit(
-        self, key: str
-    ) -> tuple[SensorDeviceClass | None, str | None]:
-        """Get device class and unit for sensor."""
-        # Remove battery prefix for lookup
-        lookup_key = key
-        for prefix in ["battery_a_", "battery_b_", "battery_c_"]:
-            if key.startswith(prefix):
-                lookup_key = key.replace(prefix, "")
-                break
-
-        mapping = {
-            "soc": (SensorDeviceClass.BATTERY, PERCENTAGE),
-            "power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "capacity": (SensorDeviceClass.ENERGY, UnitOfEnergy.WATT_HOUR),
-            "temp": (SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS),
-            "energy_produced": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR),
-            "energy_consumed": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR),
-            "voltage_l1": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT),
-            "voltage_l2": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT),
-            "voltage_l3": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT),
-            "current_l1": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
-            "current_l2": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
-            "current_l3": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE),
-            "grid_frequency": (SensorDeviceClass.FREQUENCY, UnitOfFrequency.HERTZ),
-            "active_power_l1": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "active_power_l2": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "active_power_l3": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "apparent_power": (SensorDeviceClass.APPARENT_POWER, "VA"),
-            "reactive_power": (
-                SensorDeviceClass.REACTIVE_POWER,
-                "var",
-            ),  # Fixed: was "VAR"
-            "power_factor": (SensorDeviceClass.POWER_FACTOR, PERCENTAGE),
-            "phase_currents_sum": (
-                SensorDeviceClass.CURRENT,
-                UnitOfElectricCurrent.AMPERE,
-            ),
-            "ac_power_total": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-            "smartmeter_voltage_l1": (
-                SensorDeviceClass.VOLTAGE,
-                UnitOfElectricPotential.VOLT,
-            ),
-            "smartmeter_voltage_l2": (
-                SensorDeviceClass.VOLTAGE,
-                UnitOfElectricPotential.VOLT,
-            ),
-            "smartmeter_voltage_l3": (
-                SensorDeviceClass.VOLTAGE,
-                UnitOfElectricPotential.VOLT,
-            ),
-            "smartmeter_current_l1": (
-                SensorDeviceClass.CURRENT,
-                UnitOfElectricCurrent.AMPERE,
-            ),
-            "smartmeter_current_l2": (
-                SensorDeviceClass.CURRENT,
-                UnitOfElectricCurrent.AMPERE,
-            ),
-            "smartmeter_current_l3": (
-                SensorDeviceClass.CURRENT,
-                UnitOfElectricCurrent.AMPERE,
-            ),
-            "smartmeter_total_power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
-        }
-        return mapping.get(lookup_key, (None, None))
-
-    def _get_state_class(self, key: str) -> SensorStateClass | None:
-        """Get state class for sensor."""
-        # Remove battery prefix for lookup
-        lookup_key = key
-        for prefix in ["battery_a_", "battery_b_", "battery_c_"]:
-            if key.startswith(prefix):
-                lookup_key = key.replace(prefix, "")
-                break
-
-        if lookup_key in ["energy_produced", "energy_consumed", "cycles"]:
-            return SensorStateClass.TOTAL_INCREASING
-        if lookup_key == "capacity":  # Capacity should be TOTAL, not MEASUREMENT
-            return SensorStateClass.TOTAL
-        if lookup_key in [
-            "soc",
-            "power",
-            "temp",
-            "voltage_l1",
-            "voltage_l2",
-            "voltage_l3",
-            "current_l1",
-            "current_l2",
-            "current_l3",
-            "grid_frequency",
-            "active_power_l1",
-            "active_power_l2",
-            "active_power_l3",
-            "apparent_power",
-            "reactive_power",
-            "power_factor",  # Added missing power_factor
-            "phase_currents_sum",
-            "ac_power_total",
-            "smartmeter_voltage_l1",
-            "smartmeter_voltage_l2",
-            "smartmeter_voltage_l3",
-            "smartmeter_current_l1",
-            "smartmeter_current_l2",
-            "smartmeter_current_l3",
-            "smartmeter_total_power",
-        ]:
-            return SensorStateClass.MEASUREMENT
-        return None
+        # Set device info
+        self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
+            battery_id, self._modbus_item.device
+        )
 
     @property
     def native_value(self) -> Any:
-        """Return the value of the sensor."""
-        if self.coordinator.data is None:
+        """Return the state of the sensor."""
+        if not self.coordinator.data:
             return None
-        return self.coordinator.data.get(self._data_key)
+        return self.coordinator.data.get(self._modbus_item.name)
 
     @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success and self._data_key in (
-            self.coordinator.data or {}
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
+        return {
+            "battery_id": self._battery_id,
+            "modbus_address": getattr(self._modbus_item, "address", None),
+            "last_update": getattr(self.coordinator, "last_update_success_time", None),
+            "raw_value": self.coordinator.data.get(self._modbus_item.name)
+            if self.coordinator.data
+            else None,
+        }
+
+
+class SAXBatteryCalculatedSensor(
+    CoordinatorEntity[SAXBatteryCoordinator], RestoreSensor
+):
+    """SAX Battery calculated sensor entity with system-wide aggregation."""
+
+    _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({ATTR_ATTRIBUTION})
+
+    def __init__(
+        self,
+        coordinator: SAXBatteryCoordinator,
+        sax_item: SAXItem,
+        coordinators: dict[str, SAXBatteryCoordinator],
+    ) -> None:
+        """Initialize the calculated sensor entity.
+
+        Args:
+            coordinators: Dictionary of battery_id -> coordinator for aggregation
+            sax_item: SAXItem containing entity configuration
+            coordinator: Coordinator for the master battery
+
+        Security:
+            OWASP A05: Validates coordinators and item configuration
+        """
+        super().__init__(coordinator)
+        self._sax_item = sax_item
+        self._coordinators = coordinators
+
+        # Cache the master coordinator during initialization
+        self._master_coordinator = self._find_master_coordinator()
+
+        # Set coordinators on the SAX item for calculations
+        self._sax_item.set_coordinators(coordinators)
+
+        # Generate unique ID using class name pattern (without "(Calculated)" suffix)
+        clean_name: str = self._sax_item.name.removeprefix("sax_")
+        self._attr_unique_id = clean_name
+
+        # Set entity description from sax item if available
+        if self._sax_item.entitydescription is not None:
+            self.entity_description = self._sax_item.entitydescription  # type: ignore[assignment]
+
+        if (
+            hasattr(self, "entity_description")
+            and self.entity_description
+            and hasattr(self.entity_description, "name")
+            and isinstance(self.entity_description.name, str)
+        ):
+            self._attr_name = self.entity_description.name.removeprefix("Sax ")
+
+        # State management for TOTAL_INCREASING sensors
+        self._previous_reading_produced: float | None = None
+        self._previous_reading_consumed: float | None = None
+        self._cumulative_produced: float = 0.0
+        self._cumulative_consumed: float = 0.0
+        self._last_update_time: datetime | None = None
+
+        # Set system device info
+        self._attr_device_info: DeviceInfo = coordinator.sax_data.get_device_info(
+            "cluster", DeviceConstants.SYS
         )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the calculated sensor value.
+
+        Performance:
+            O(n) iteration over coordinators - efficient for small battery counts
+
+        Security:
+            OWASP A05: Validates coordinator data availability
+        """
+        if self._sax_item.name == SAX_COMBINED_SOC:
+            return self._calculate_combined_soc()
+        if self._sax_item.name == SAX_CUMULATIVE_ENERGY_PRODUCED:
+            return self._calculate_cumulative_energy_produced()
+        if self._sax_item.name == SAX_CUMULATIVE_ENERGY_CONSUMED:
+            return self._calculate_cumulative_energy_consumed()
+
+        _LOGGER.warning("Unknown calculation type for sensor: %s", self._sax_item.name)
+        return None
+
+    def _calculate_combined_soc(self) -> float | None:
+        """Calculate combined SOC from all batteries."""
+        total_soc = 0.0
+        battery_count = 0
+
+        for coordinator in self._coordinators.values():
+            if not coordinator.data:
+                continue
+
+            soc_value = coordinator.data.get(SAX_SOC)
+            if soc_value is not None:
+                try:
+                    total_soc += float(soc_value)
+                    battery_count += 1
+                except (ValueError, TypeError):
+                    _LOGGER.debug(
+                        "Invalid SOC value for battery %s: %s",
+                        coordinator.battery_id,
+                        soc_value,
+                    )
+
+        if battery_count == 0:
+            return None
+
+        return round(total_soc / battery_count, 1)
+
+    def _calculate_cumulative_energy_produced(self) -> float:
+        """Calculate cumulative energy produced from master battery smart meter.
+
+        For TOTAL_INCREASING sensors, accumulates hourly deltas from the master
+        battery's smart meter reading.
+
+        Returns:
+            Total accumulated energy in Wh (always >= 0.0)
+
+        Performance:
+            Only updates once per hour to match smart meter reading interval
+
+        Security:
+            OWASP A05: Validates coordinator data availability
+        """
+        current_time = datetime.now()
+
+        # Only update once per hour (matches smart meter update interval)
+        should_update = (
+            self._last_update_time is None
+            or (current_time - self._last_update_time).total_seconds() >= 3600
+        )
+
+        if not should_update:
+            _LOGGER.debug(
+                "Cumulative energy produced: Too soon to update (last: %s)",
+                self._last_update_time,
+            )
+            return self._cumulative_produced
+
+        # Use cached master coordinator
+        if not self._master_coordinator:
+            _LOGGER.warning("No master battery found for cumulative energy calculation")
+            if isinstance(self._attr_native_value, float):
+                return self._attr_native_value
+            return 0.0
+
+        if not self._master_coordinator.data:
+            if isinstance(self._attr_native_value, float):
+                return self._attr_native_value
+            return 0.0
+
+        # Get smart meter energy produced value
+        current_reading = self._master_coordinator.data.get(
+            SAX_SMARTMETER_ENERGY_PRODUCED
+        )
+        if current_reading is None:
+            return self._cumulative_produced
+
+        # Calculate and accumulate delta
+        delta = self._calculate_energy_delta(
+            current_reading,
+            self._previous_reading_produced,
+            "produced",
+        )
+        if delta > 0:
+            old_cumulative = self._cumulative_produced
+            self._cumulative_produced += delta
+
+            _LOGGER.info(
+                "Cumulative energy produced updated: +%s Wh (total: %s Wh, was: %s Wh)",
+                delta,
+                self._cumulative_produced,
+                old_cumulative,
+            )
+
+        # Update state
+        self._previous_reading_produced = current_reading
+        self._last_update_time = current_time
+
+        return self._cumulative_produced
+
+    def _calculate_cumulative_energy_consumed(self) -> float:
+        """Calculate cumulative energy consumed from master battery smart meter.
+
+        For TOTAL_INCREASING sensors, accumulates hourly deltas from the master
+        battery's smart meter reading.
+
+        Returns:
+            Total accumulated energy in Wh (always >= 0.0)
+
+        Performance:
+            Only updates once per hour to match smart meter reading interval
+
+        Security:
+            OWASP A05: Validates coordinator data availability
+        """
+        current_time = datetime.now()
+
+        # Only update once per hour (matches smart meter update interval)
+        should_update = (
+            self._last_update_time is None
+            or (current_time - self._last_update_time).total_seconds() >= 3600
+        )
+
+        if not should_update:
+            _LOGGER.debug(
+                "Cumulative energy consumed: Too soon to update (last: %s)",
+                self._last_update_time,
+            )
+            return self._cumulative_consumed
+
+        if not self._master_coordinator:
+            _LOGGER.warning("No master battery found for cumulative energy calculation")
+            if isinstance(self._attr_native_value, float):
+                return self._attr_native_value
+            return 0.0
+
+        if not self._master_coordinator.data:
+            if isinstance(self._attr_native_value, float):
+                return self._attr_native_value
+            return 0.0
+
+        # Get smart meter energy consumed value
+        current_reading = self._master_coordinator.data.get(
+            SAX_SMARTMETER_ENERGY_CONSUMED
+        )
+
+        if current_reading is None:
+            return self._cumulative_consumed
+
+        # Calculate and accumulate delta
+        delta = self._calculate_energy_delta(
+            current_reading,
+            self._previous_reading_consumed,
+            "consumed",
+        )
+
+        if delta > 0:
+            old_cumulative = self._cumulative_consumed
+            self._cumulative_consumed += delta
+
+            _LOGGER.info(
+                "Cumulative energy consumed updated: +%s Wh (total: %s Wh, was: %s Wh)",
+                delta,
+                self._cumulative_consumed,
+                old_cumulative,
+            )
+
+        # Update state
+        self._previous_reading_consumed = current_reading
+        self._last_update_time = current_time
+
+        return self._cumulative_consumed
+
+    def _find_master_coordinator(self) -> SAXBatteryCoordinator | None:
+        """Find the master coordinator from available coordinators.
+
+        Returns:
+            Master coordinator if found, None otherwise
+        """
+        for coordinator in self._coordinators.values():
+            # Check coordinator's battery_config for is_master flag
+            if coordinator.battery_config.get(CONF_BATTERY_IS_MASTER, False):
+                _LOGGER.debug("Found master coordinator: %s", coordinator.battery_id)
+                return coordinator
+
+        _LOGGER.debug(
+            "No master coordinator found in %d coordinators", len(self._coordinators)
+        )
+        return None
+
+    def _get_smart_meter_reading(
+        self,
+        coordinator: SAXBatteryCoordinator,
+        key: str,
+    ) -> float | None:
+        """Get smart meter reading from coordinator data.
+
+        Args:
+            coordinator: Coordinator to read from
+            key: Data key (SAX_SMARTMETER_ENERGY_PRODUCED or _CONSUMED)
+
+        Returns:
+            Reading value or None if unavailable/invalid
+        """
+        if not coordinator.data or key not in coordinator.data:
+            _LOGGER.debug("No %s data in coordinator", key)
+            return None
+
+        reading = coordinator.data[key]
+
+        if reading is None or reading <= 0:
+            _LOGGER.debug("Invalid reading for %s: %s", key, reading)
+            return None
+
+        return float(reading)
+
+    def _calculate_energy_delta(
+        self,
+        current_reading: float,
+        previous_reading: float | None,
+        energy_type: str,
+    ) -> float:
+        """Calculate energy delta with counter reset handling.
+
+        Args:
+            current_reading: Current meter reading
+            previous_reading: Previous meter reading (None for first reading)
+            energy_type: "produced" or "consumed" for logging
+
+        Returns:
+            Energy delta (>= 0), or 0 for first reading
+
+        Security:
+            OWASP A05: Handles counter resets safely
+        """
+        if previous_reading is None:
+            # First reading - initialize but don't accumulate
+            _LOGGER.info(
+                "First energy %s reading: %s Wh",
+                energy_type,
+                current_reading,
+            )
+            return 0.0
+
+        delta = current_reading - previous_reading
+
+        # Handle counter reset (meter rolled over or was reset)
+        if delta < 0:
+            _LOGGER.warning(
+                "Energy %s counter reset: %s -> %s (treating as new baseline)",
+                energy_type,
+                previous_reading,
+                current_reading,
+            )
+            return current_reading  # Treat as new baseline
+
+        return delta
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state when entity is added to hass.
+
+        Security:
+            OWASP A05: Validates restored state before use
+        """
+        await super().async_added_to_hass()
+
+        # Restore previous state for TOTAL_INCREASING sensors
+        if self._sax_item.name in (
+            SAX_CUMULATIVE_ENERGY_PRODUCED,
+            SAX_CUMULATIVE_ENERGY_CONSUMED,
+        ):
+            await self._restore_cumulative_state()
+
+    async def _restore_cumulative_state(self) -> None:
+        """Restore cumulative energy state from last known value.
+
+        Security:
+            OWASP A05: Validates restored state
+        """
+        last_state = await self.async_get_last_state()
+
+        if not last_state or last_state.state in (
+            STATE_UNKNOWN,
+            STATE_UNAVAILABLE,
+        ):
+            _LOGGER.debug("No previous state to restore for %s", self._sax_item.name)
+            return
+
+        try:
+            restored_value = float(last_state.state)
+
+            if self._sax_item.name == SAX_CUMULATIVE_ENERGY_PRODUCED:
+                self._cumulative_produced = restored_value
+                _LOGGER.info(
+                    "Restored cumulative energy produced: %s Wh", restored_value
+                )
+            elif self._sax_item.name == SAX_CUMULATIVE_ENERGY_CONSUMED:
+                self._cumulative_consumed = restored_value
+                _LOGGER.info(
+                    "Restored cumulative energy consumed: %s Wh", restored_value
+                )
+
+        except (ValueError, TypeError) as exc:
+            _LOGGER.warning(
+                "Failed to restore state for %s: %s",
+                self._sax_item.name,
+                exc,
+            )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes.
+
+        Returns:
+            Dictionary of extra attributes for diagnostics
+        """
+        # Use dict[str, Any] to allow mixed value types
+        attrs: dict[str, Any] = {ATTR_ATTRIBUTION: ATTRIBUTION}
+
+        # Add diagnostic info for energy sensors
+        if self._sax_item.name == SAX_CUMULATIVE_ENERGY_PRODUCED:
+            attrs.update(
+                {
+                    "last_reading": self._previous_reading_produced,
+                    "last_update": self._last_update_time.isoformat()
+                    if self._last_update_time
+                    else None,
+                }
+            )
+        elif self._sax_item.name == SAX_CUMULATIVE_ENERGY_CONSUMED:
+            attrs.update(
+                {
+                    "last_reading": self._previous_reading_consumed,
+                    "last_update": self._last_update_time.isoformat()
+                    if self._last_update_time
+                    else None,
+                }
+            )
+
+        return attrs

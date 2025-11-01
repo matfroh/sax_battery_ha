@@ -42,13 +42,18 @@
     }
   },
   "cSpell.words": [
+    "caplog",
     "codeowners",
+    "ECONNRESET",
     "entitydescription",
+    "EPIPE",
+    "hostnames",
     "mformat",
     "mtype",
     "Mult",
     "mypy",
     "pymodbus",
+    "setpoint",
     "STATUSANZEIGE"
   ],
   "workbench.editor.restoreViewState": false,

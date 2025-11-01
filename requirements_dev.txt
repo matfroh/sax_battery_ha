@@ -1,5 +1,5 @@
 -r requirements.txt
-homeassistant==2025.9.1
+homeassistant==2025.10.1
 colorlog==6.9.0
 ruff
 mypy
