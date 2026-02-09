@@ -47,40 +47,52 @@ graph TB
 
 ## 📊 Register Map
 
+### Control Registers (Write-Only)
+
+| Register | Internal | Name | Type | Range | Factor | Description |
+|----------|----------|------|------|-------|---------|-------------|
+| 40042 | 41 | `sax_nominal_power` | INT16 | -32768-32767 | 1.0 | Pilot Power Setpoint (W) |
+| 40043 | 42 | `sax_nominal_factor` | UINT16 | 0-100 | 1.0 | Pilot Power Factor (%) |
+| 40044 | 43 | `sax_max_discharge` | UINT16 | 0-65535 | 1.0 | Max Discharge Power (W) |
+| 40045 | 44 | `sax_max_charge` | UINT16 | 0-65535 | 1.0 | Max Charge Power (W) |
+
 ### Battery Management System (BMS) Registers
 
-| Register | Name | Type | Range | Factor | Description |
-|----------|------|------|-------|---------|-------------|
-| 40001 | `sax_soc` | UINT16 | 0-100 | 1.0 | State of Charge (%) |
-| 40002 | `sax_ac_power` | INT16 | -32768-32767 | 1.0 | AC Power (W) |
-| 40003 | `sax_ac_voltage` | UINT16 | 0-65535 | 0.1 | AC Voltage (V) |
-| 40004 | `sax_ac_current` | INT16 | -32768-32767 | 0.1 | AC Current (A) |
-| 40005 | `sax_dc_voltage` | UINT16 | 0-65535 | 0.1 | DC Voltage (V) |
-| 40006 | `sax_dc_current` | INT16 | -32768-32767 | 0.1 | DC Current (A) |
-| 40007 | `sax_temperature` | INT16 | -32768-32767 | 0.1 | Temperature (°C) |
-| 40008 | `sax_status` | UINT16 | 0-65535 | 1.0 | Status Flags |
-| 40009 | `sax_cycle_count` | UINT16 | 0-65535 | 1.0 | Charge Cycles |
+| Register | Internal | Name | Type | Range | Factor | Description |
+|----------|----------|------|------|-------|---------|-------------|
+| 40046 | 45 | `sax_status` | UINT16 | 0-65535 | 1.0 | Status Flags |
+| 40047 | 46 | `sax_soc` | UINT16 | 0-100 | 1.0 | State of Charge (%) |
+| 40048 | 47 | `sax_power` | INT16 | -32768-32767 | 1.0 | Power (W) |
+| 40049 | 48 | `sax_power_sm` | INT16 | -32768-32767 | 1.0 | Power (W) |
+| 40074 | 73 | `sax_current_l1` | INT16 | -32768-32767 | 0.1 | Current (A) |
+| 40075 | 74 | `sax_current_l2` | INT16 | -32768-32767 | 0.1 | Current (A) |
+| 40075 | 75 | `sax_current_l3` | INT16 | -32768-32767 | 0.1 | Current (A) |
+| 40081 | 80 | `sax_voltage_l1` | UINT16 | 0-65535 | 0.1 | Voltage (V) |
+| 40082 | 81 | `sax_voltage_l2` | UINT16 | 0-65535 | 0.1 | Voltage (V) |
+| 40083 | 82 | `sax_voltage_l2` | UINT16 | 0-65535 | 0.1 | Voltage (V) |
+| 40087 | 86 | `sax_grid_frequency` | UINT16 | 0-65535 | 0.01 | Grid Frequency (Hz) |
+| 40085 | 84 | `sax_ac_total_power` | INT16 | -32768-32767 | 1.0 | Grid Power L1 (W) |
+| 40089 | 88 | `apparent_power` | INT16 | -32768-32767 | 1.0 | Power AC (apparent) (VA) |
+| 40091 | 90 | `reactive_power` | INT16 | -32768-32767 | 1.0 | Power AC (reactive) (VAr) |
+| 40093 | 92 | `power_factor` | INT16 | -32768-32767 | 0.1 | Power factor (%) |
+| 40117 | 116 |`sax_cycle_count` | UINT16 | 0-65535 | 1.0 | Charge Cycles |
+| 40118 | 117 |`sax_temperature` | INT16 | -32768-32767 | 0.1 | Temperature (°C) |
+| 40116 | 115 |`sax_capacity` | UINT16 | 0-65535 | 10.0 | Energy (Wh) |
 
 ### Smart Meter Registers (Master Battery Only)
 
-| Register | Name | Type | Range | Factor | Description |
-|----------|------|------|-------|---------|-------------|
-| 40101 | `sax_grid_power_l1` | INT16 | -32768-32767 | 1.0 | Grid Power L1 (W) |
-| 40102 | `sax_grid_power_l2` | INT16 | -32768-32767 | 1.0 | Grid Power L2 (W) |
-| 40103 | `sax_grid_power_l3` | INT16 | -32768-32767 | 1.0 | Grid Power L3 (W) |
-| 40104 | `sax_grid_voltage_l1` | UINT16 | 0-65535 | 0.1 | Grid Voltage L1 (V) |
-| 40105 | `sax_grid_voltage_l2` | UINT16 | 0-65535 | 0.1 | Grid Voltage L2 (V) |
-| 40106 | `sax_grid_voltage_l3` | UINT16 | 0-65535 | 0.1 | Grid Voltage L3 (V) |
-| 40107 | `sax_grid_frequency` | UINT16 | 0-65535 | 0.01 | Grid Frequency (Hz) |
-
-### Control Registers (Write-Only)
-
-| Register | Name | Type | Range | Factor | Description |
-|----------|------|------|-------|---------|-------------|
-| 41 | `sax_max_discharge` | UINT16 | 0-65535 | 1.0 | Max Discharge Power (W) |
-| 42 | `sax_max_charge` | UINT16 | 0-65535 | 1.0 | Max Charge Power (W) |
-| 43 | `sax_nominal_power` | INT16 | -32768-32767 | 1.0 | Pilot Power Setpoint (W) |
-| 44 | `sax_nominal_factor` | UINT16 | 0-100 | 1.0 | Pilot Power Factor (%) |
+| Register | Internal | Name | Type | Range | Factor | Description |
+|----------|----------|------|------|-------|---------|-------------|
+| 40100 | 99 | `current_l1_sm` | INT16 | -32768-32767 | 0.1 | Current (A) |
+| 40101 | 100 | `current_l2_sm` | INT16 | -32768-32767 | 0.1 | Current (A) |
+| 40102 | 101 | `current_l3_sm` | INT16 | -32768-32767 | 0.1 | Current (A) |
+| 40103 | 102 | `power_l1_sm` | INT16 | -32768-32767 | 1.0 | Grid Power L3 (W) |
+| 40104 | 103 | `power_l2_sm` | INT16 | -32768-32767 | 1.0 | Grid Power L3 (W) |
+| 40105 | 104 | `power_l3_sm` | INT16 | -32768-32767 | 1.0 | Grid Power L3 (W) |
+| 40107 | 106 | `voltage_l1_sm` | UINT16 | 0-65535 | 0.1 | Grid Voltage L1 (V) |
+| 40108 | 107 | `voltage_l2_sm` | UINT16 | 0-65535 | 0.1 | Grid Voltage L2 (V) |
+| 40109 | 108 | `voltage_l3_sm` | UINT16 | 0-65535 | 0.1 | Grid Voltage L3 (V) |
+| 40110 | 109 | `total_power_sm` | INT16 | -32768-32767 | 1.0 | Total power (active) (W) |
 
 ## 🔧 Modbus API Implementation
 
