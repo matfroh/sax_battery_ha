@@ -18,6 +18,7 @@ from custom_components.sax_battery.const import (
     CONF_CONTROL_POWER,
     CONF_ENABLE_GRID_CHARGING,
     CONF_LIMIT_POWER,
+    CONF_MANUAL_CONTROL,
     CONF_MIN_SOC,
     CONF_POWER_SENSOR,
     DEFAULT_MIN_SOC,
