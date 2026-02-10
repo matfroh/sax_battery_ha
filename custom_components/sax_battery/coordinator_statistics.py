@@ -314,7 +314,6 @@ class CoordinatorStatistics:
         Performance:
             Centralized computation, called once per cache refresh (Issue #43)
         """
-        # Calculate error breakdown
         error_counts: dict[str, int] = {}
         failed_registers: dict[int, int] = {}
 
