@@ -425,12 +425,13 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         # Match the unique ID from pilot.py
         self._attr_unique_id = f"{DOMAIN}_pilot_power_{coordinator.device_id}"
         self._attr_name = "Manual Power Control"
+        # Positive = discharge, negative = charge (SAX register 41 convention)
         self._attr_native_min_value = (
-            -coordinator.batteries.__len__() * 3600
-        )  # Max discharge
-        self._attr_native_max_value = (
-            coordinator.batteries.__len__() * 4500
+            -coordinator.batteries.__len__() * 4500
         )  # Max charge
+        self._attr_native_max_value = (
+            coordinator.batteries.__len__() * 3600
+        )  # Max discharge
         self._attr_native_step = 10
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_native_value = 0.0  # Start at 0
@@ -463,9 +464,9 @@ class SAXBatteryManualPowerEntity(NumberEntity):
         """Return the icon to use for the entity."""
         current_value = self.native_value or 0
         if current_value > 0:
-            return "mdi:battery-charging"
+            return "mdi:battery-minus"  # Positive = discharge
         if current_value < 0:
-            return "mdi:battery-minus"
+            return "mdi:battery-charging"  # Negative = charge
         return "mdi:battery"
 
     async def async_set_native_value(self, value: float) -> None:

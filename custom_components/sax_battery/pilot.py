@@ -360,19 +360,25 @@ class SAXBatteryPilot:
                 _LOGGER.debug(
                     "Condition met: priority_power <= 50 (%s <= 50)", priority_power
                 )
-                net_power = total_power - battery_power
+                # Battery power is positive when discharging, which reduces the
+                # measured grid import. Add it back to recover the underlying
+                # household demand (the grid value with the battery idle).
+                net_power = total_power + battery_power
                 _LOGGER.debug(
-                    "Calculated net_power = %s - %s = %s",
+                    "Calculated net_power = %s + %s = %s",
                     total_power,
                     battery_power,
                     net_power,
                 )
 
-            target_power = -net_power
+            # Positive = discharge, negative = charge (SAX register 41 convention).
+            # Cover an import (positive net_power) by discharging, absorb a surplus
+            # (negative net_power) by charging.
+            target_power = net_power
 
-            # Apply limits
+            # Apply limits (positive = discharge, negative = charge)
             target_power = max(
-                -self.max_discharge_power, min(self.max_charge_power, target_power)
+                -self.max_charge_power, min(self.max_discharge_power, target_power)
             )
 
             # Apply SOC constraints
@@ -659,8 +665,9 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
         self._pilot = pilot
         self._attr_unique_id = f"{DOMAIN}_pilot_power_{self._pilot.sax_data.device_id}"
         self._attr_name = "Battery Pilot Power"
-        self._attr_native_min_value = -self._pilot.max_discharge_power
-        self._attr_native_max_value = self._pilot.max_charge_power
+        # Positive = discharge, negative = charge (SAX register 41 convention)
+        self._attr_native_min_value = -self._pilot.max_charge_power
+        self._attr_native_max_value = self._pilot.max_discharge_power
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_should_poll = True
@@ -688,9 +695,9 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
     def icon(self) -> str | None:
         """Return the icon to use for the entity."""
         if self._pilot.calculated_power > 0:
-            return "mdi:battery-charging"
+            return "mdi:battery-minus"  # Positive = discharge
         if self._pilot.calculated_power < 0:
-            return "mdi:battery-minus"
+            return "mdi:battery-charging"  # Negative = charge
         return "mdi:battery"
 
     async def async_set_native_value(self, value: float) -> None:
