@@ -295,27 +295,32 @@ class SAXBatteryPilot:
                 )
                 return
 
-            # Get current PF value
+            # Get current PF value. The power factor only fills the secondary
+            # register (42); a missing or invalid reading must not block the
+            # power command, so fall back to unity (1.0) and keep regulating.
+            power_factor = 1.0
             pf_state = self.hass.states.get(self.pf_sensor_entity_id)
             if pf_state is None:
-                _LOGGER.warning("PF sensor %s not found", self.pf_sensor_entity_id)
-                return
-
-            if pf_state.state in (None, "unknown", "unavailable"):
                 _LOGGER.warning(
-                    "PF sensor %s state is %s", self.pf_sensor_entity_id, pf_state.state
+                    "PF sensor %s not found, using power factor 1.0",
+                    self.pf_sensor_entity_id,
                 )
-                return
-
-            try:
-                power_factor = float(pf_state.state)
-            except (ValueError, TypeError) as err:
-                _LOGGER.error(
-                    "Could not convert PF sensor state '%s' to float: %s",
+            elif pf_state.state in (None, "unknown", "unavailable"):
+                _LOGGER.warning(
+                    "PF sensor %s state is %s, using power factor 1.0",
+                    self.pf_sensor_entity_id,
                     pf_state.state,
-                    err,
                 )
-                return
+            else:
+                try:
+                    power_factor = float(pf_state.state)
+                except (ValueError, TypeError) as err:
+                    _LOGGER.error(
+                        "Could not convert PF sensor state '%s' to float, "
+                        "using power factor 1.0: %s",
+                        pf_state.state,
+                        err,
+                    )
 
             # Get priority device power consumption
             priority_power = 0.0
