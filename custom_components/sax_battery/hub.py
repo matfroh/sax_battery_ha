@@ -254,9 +254,20 @@ class SAXBatteryHub:
                 return False
 
     async def modbus_read_holding_registers(
-        self, address: int, count: int, slave: int = 1, battery_id: str | None = None
+        self,
+        address: int,
+        count: int,
+        slave: int = 1,
+        battery_id: str | None = None,
+        quick_probe: bool = False,
     ) -> list[int]:
-        """Read holding registers with timeout protection."""
+        """Read holding registers with timeout protection.
+
+        quick_probe=True does a single short-timeout attempt with no retries,
+        for cheaply checking whether an optional Modbus unit id responds at
+        all (some SAX units expose slave ids for optional accessories, e.g.
+        the smartmeter add-on, that simply never respond if not installed).
+        """
         if battery_id is None:
             battery_id = list(self.batteries.keys())[0] if self.batteries else ""
 
@@ -298,9 +309,16 @@ class SAXBatteryHub:
                     f"No client available for battery {battery_id}"
                 )
 
+        # A quick probe makes exactly one short-timeout attempt instead of
+        # the full retry-with-backoff cycle, so checking whether an optional
+        # unit id responds at all doesn't cost MODBUS_RETRIES * READ_TIMEOUT
+        # seconds every single poll.
+        max_attempts = 1 if quick_probe else MODBUS_RETRIES + 1
+        attempt_timeout = 3.0 if quick_probe else READ_TIMEOUT
+
         try:
             # Add retry logic with exponential backoff for transaction ID issues
-            for attempt in range(MODBUS_RETRIES + 1):
+            for attempt in range(max_attempts):
                 try:
                     # Add small delay between operations to reduce conflicts
                     if attempt > 0:
@@ -311,16 +329,16 @@ class SAXBatteryHub:
                         client.read_holding_registers(
                             address, count=count, device_id=slave
                         ),
-                        timeout=READ_TIMEOUT,  # 8 second timeout per read
+                        timeout=attempt_timeout,
                     )
 
                     if result.isError():
-                        if attempt < MODBUS_RETRIES:
+                        if attempt < max_attempts - 1:
                             _LOGGER.warning(
                                 "Modbus error response for battery %s (attempt %d/%d): %s",
                                 battery_id,
                                 attempt + 1,
-                                MODBUS_RETRIES + 1,
+                                max_attempts,
                                 result,
                             )
                             await asyncio.sleep(
@@ -330,7 +348,7 @@ class SAXBatteryHub:
                         _LOGGER.error(
                             "Modbus error response for battery %s after %d attempts: %s",
                             battery_id,
-                            MODBUS_RETRIES + 1,
+                            max_attempts,
                             result,
                         )
                         raise HubException(
@@ -346,12 +364,12 @@ class SAXBatteryHub:
                     return result.registers  # noqa: TRY300
 
                 except TimeoutError:
-                    if attempt < MODBUS_RETRIES:
+                    if attempt < max_attempts - 1:
                         _LOGGER.warning(
                             "Register read timeout for battery %s (attempt %d/%d, address %d)",
                             battery_id,
                             attempt + 1,
-                            MODBUS_RETRIES + 1,
+                            max_attempts,
                             address,
                         )
                         await asyncio.sleep(
@@ -361,7 +379,7 @@ class SAXBatteryHub:
                     _LOGGER.error(
                         "Register read timeout for battery %s after %d attempts (address %d)",
                         battery_id,
-                        MODBUS_RETRIES + 1,
+                        max_attempts,
                         address,
                     )
                     self._connected[battery_id] = False  # Mark as disconnected
@@ -370,12 +388,12 @@ class SAXBatteryHub:
                     ) from None
 
                 except (ConnectionException, ModbusIOException) as err:
-                    if attempt < MODBUS_RETRIES:
+                    if attempt < max_attempts - 1:
                         _LOGGER.warning(
                             "Modbus communication error for battery %s (attempt %d/%d): %s",
                             battery_id,
                             attempt + 1,
-                            MODBUS_RETRIES + 1,
+                            max_attempts,
                             err,
                         )
                         self._connected[battery_id] = False
@@ -386,7 +404,7 @@ class SAXBatteryHub:
                     _LOGGER.error(
                         "Modbus communication error for battery %s after %d attempts: %s",
                         battery_id,
-                        MODBUS_RETRIES + 1,
+                        max_attempts,
                         err,
                     )
                     self._connected[battery_id] = False
@@ -523,6 +541,14 @@ class SAXBattery:
         self.port = port
         self._register_map = self._get_register_map()
         self._data_manager: Any = None  # Will be set by coordinator
+        # Some SAX units expose Modbus unit ids for optional accessories
+        # (e.g. the smartmeter add-on) that simply never respond if that
+        # accessory isn't installed/paired. Once a unit id is confirmed
+        # unresponsive we stop polling it every cycle - otherwise a single
+        # dead unit id burns the whole per-battery read budget every time
+        # and the affected entities/config entry never finish loading.
+        self._dead_slaves: set[int] = set()
+        self._probed_slaves: set[int] = set()
 
     def _get_register_map(self) -> dict[str, dict[str, Any]]:
         """Get the complete register map for SAX Battery from original working version."""
@@ -866,6 +892,11 @@ class SAXBattery:
 
         for key, config in self._register_map.items():
             slave_id = config.get("slave", 1)  # Get slave ID from config
+
+            if slave_id in self._dead_slaves:
+                data[key] = None
+                continue
+
             _LOGGER.debug(
                 "Reading register for %s: address=%d, count=%d, slave=%d",
                 key,
@@ -873,12 +904,15 @@ class SAXBattery:
                 config["count"],
                 slave_id,
             )
+            quick_probe = slave_id not in self._probed_slaves
+            self._probed_slaves.add(slave_id)
             try:
                 raw_registers = await self._hub.modbus_read_holding_registers(
                     address=config["address"],
                     count=config["count"],
                     slave=slave_id,
                     battery_id=self.battery_id,  # Pass battery_id to specify which client to use
+                    quick_probe=quick_probe,
                 )
 
                 if raw_registers is not None:
@@ -906,9 +940,21 @@ class SAXBattery:
                     )
 
             except (HubException, ConnectionException, ModbusIOException) as e:
-                _LOGGER.error(
-                    "Error reading %s (address %d): %s", key, config["address"], e
-                )
+                if quick_probe:
+                    _LOGGER.warning(
+                        "Unit id %d did not respond to probe (register %s, "
+                        "address %d) - treating as not installed and no "
+                        "longer polling it: %s",
+                        slave_id,
+                        key,
+                        config["address"],
+                        e,
+                    )
+                    self._dead_slaves.add(slave_id)
+                else:
+                    _LOGGER.error(
+                        "Error reading %s (address %d): %s", key, config["address"], e
+                    )
                 data[key] = None
 
         _LOGGER.debug("Finished reading battery data, got %d values", len(data))
