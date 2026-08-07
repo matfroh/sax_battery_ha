@@ -254,9 +254,20 @@ class SAXBatteryHub:
                 return False
 
     async def modbus_read_holding_registers(
-        self, address: int, count: int, slave: int = 1, battery_id: str | None = None
+        self,
+        address: int,
+        count: int,
+        slave: int = 1,
+        battery_id: str | None = None,
+        quick_probe: bool = False,
     ) -> list[int]:
-        """Read holding registers with timeout protection."""
+        """Read holding registers with timeout protection.
+
+        quick_probe=True does a single short-timeout attempt with no retries,
+        for cheaply checking whether an optional Modbus unit id responds at
+        all (some SAX units expose slave ids for optional accessories, e.g.
+        the smartmeter add-on, that simply never respond if not installed).
+        """
         if battery_id is None:
             battery_id = list(self.batteries.keys())[0] if self.batteries else ""
 
@@ -298,9 +309,16 @@ class SAXBatteryHub:
                     f"No client available for battery {battery_id}"
                 )
 
+        # A quick probe makes exactly one short-timeout attempt instead of
+        # the full retry-with-backoff cycle, so checking whether an optional
+        # unit id responds at all doesn't cost MODBUS_RETRIES * READ_TIMEOUT
+        # seconds every single poll.
+        max_attempts = 1 if quick_probe else MODBUS_RETRIES + 1
+        attempt_timeout = 3.0 if quick_probe else READ_TIMEOUT
+
         try:
             # Add retry logic with exponential backoff for transaction ID issues
-            for attempt in range(MODBUS_RETRIES + 1):
+            for attempt in range(max_attempts):
                 try:
                     # Add small delay between operations to reduce conflicts
                     if attempt > 0:
@@ -311,16 +329,16 @@ class SAXBatteryHub:
                         client.read_holding_registers(
                             address, count=count, device_id=slave
                         ),
-                        timeout=READ_TIMEOUT,  # 8 second timeout per read
+                        timeout=attempt_timeout,
                     )
 
                     if result.isError():
-                        if attempt < MODBUS_RETRIES:
+                        if attempt < max_attempts - 1:
                             _LOGGER.warning(
                                 "Modbus error response for battery %s (attempt %d/%d): %s",
                                 battery_id,
                                 attempt + 1,
-                                MODBUS_RETRIES + 1,
+                                max_attempts,
                                 result,
                             )
                             await asyncio.sleep(
@@ -330,7 +348,7 @@ class SAXBatteryHub:
                         _LOGGER.error(
                             "Modbus error response for battery %s after %d attempts: %s",
                             battery_id,
-                            MODBUS_RETRIES + 1,
+                            max_attempts,
                             result,
                         )
                         raise HubException(
@@ -346,12 +364,12 @@ class SAXBatteryHub:
                     return result.registers  # noqa: TRY300
 
                 except TimeoutError:
-                    if attempt < MODBUS_RETRIES:
+                    if attempt < max_attempts - 1:
                         _LOGGER.warning(
                             "Register read timeout for battery %s (attempt %d/%d, address %d)",
                             battery_id,
                             attempt + 1,
-                            MODBUS_RETRIES + 1,
+                            max_attempts,
                             address,
                         )
                         await asyncio.sleep(
@@ -361,7 +379,7 @@ class SAXBatteryHub:
                     _LOGGER.error(
                         "Register read timeout for battery %s after %d attempts (address %d)",
                         battery_id,
-                        MODBUS_RETRIES + 1,
+                        max_attempts,
                         address,
                     )
                     self._connected[battery_id] = False  # Mark as disconnected
@@ -370,12 +388,12 @@ class SAXBatteryHub:
                     ) from None
 
                 except (ConnectionException, ModbusIOException) as err:
-                    if attempt < MODBUS_RETRIES:
+                    if attempt < max_attempts - 1:
                         _LOGGER.warning(
                             "Modbus communication error for battery %s (attempt %d/%d): %s",
                             battery_id,
                             attempt + 1,
-                            MODBUS_RETRIES + 1,
+                            max_attempts,
                             err,
                         )
                         self._connected[battery_id] = False
@@ -386,7 +404,7 @@ class SAXBatteryHub:
                     _LOGGER.error(
                         "Modbus communication error for battery %s after %d attempts: %s",
                         battery_id,
-                        MODBUS_RETRIES + 1,
+                        max_attempts,
                         err,
                     )
                     self._connected[battery_id] = False
@@ -523,6 +541,14 @@ class SAXBattery:
         self.port = port
         self._register_map = self._get_register_map()
         self._data_manager: Any = None  # Will be set by coordinator
+        # Some SAX units expose Modbus unit ids for optional accessories
+        # (e.g. the smartmeter add-on) that simply never respond if that
+        # accessory isn't installed/paired. Once a unit id is confirmed
+        # unresponsive we stop polling it every cycle - otherwise a single
+        # dead unit id burns the whole per-battery read budget every time
+        # and the affected entities/config entry never finish loading.
+        self._dead_slaves: set[int] = set()
+        self._probed_slaves: set[int] = set()
 
     def _get_register_map(self) -> dict[str, dict[str, Any]]:
         """Get the complete register map for SAX Battery from original working version."""
@@ -800,7 +826,560 @@ class SAXBattery:
                 "signed": True,
                 "slave": 40,
             },
+            # SunSpec interface (slave 100). Available from firmware
+            # combination Master V61 / Gateway V54 onward - separate from,
+            # and independent of, the slave 40 "Extended Mode" block above.
+            # Raw values + their SunSpec scale factor registers are read
+            # here; _apply_sunspec_scaling() combines them into the actual
+            # derived_* sensor values (raw * 10**scalefactor) after all
+            # registers have been read, see read_data().
+            #
+            # NOTE on addressing: unlike the slave 64/40 registers above
+            # (internal address = protocol address - 40001, per SAX's own
+            # older Modbus manual), this SunSpec register table uses
+            # internal address = protocol address - 40000. Verified
+            # live, register by register, against the official SunSpec
+            # doc's "well-known" (constant) values - e.g. protocol 40052
+            # ("Scalefaktor Leistungsvorgabe", documented as always -2)
+            # only reads back -2 at internal address 52, not 51.
+            "sunspec_version_master": {
+                "address": 11,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Version Master",
+                "slave": 100,
+            },
+            "sunspec_version_gateway": {
+                "address": 12,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Version Gateway",
+                "slave": 100,
+            },
+            "sunspec_pv_power_raw": {
+                "address": 45,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec PV Power Raw",
+                "slave": 100,
+            },
+            "sunspec_pv_power_sf": {
+                "address": 46,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec PV Power Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_max_power_reference": {
+                "address": 53,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Max Power Reference",
+                "slave": 100,
+            },
+            "sunspec_grid_frequency_raw": {
+                "address": 70,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Frequency Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_frequency_sf": {
+                "address": 71,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Frequency Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_sum_raw": {
+                "address": 72,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Grid Power Sum Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_l1_raw": {
+                "address": 73,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Grid Power L1 Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_l2_raw": {
+                "address": 74,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Grid Power L2 Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_l3_raw": {
+                "address": 75,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Grid Power L3 Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_sf": {
+                "address": 76,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Power Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_current_sum_raw": {
+                "address": 56,
+                "count": 1,
+                "scale": 1,
+                "unit": "A",
+                "name": "SunSpec Grid Current Sum Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_current_l1_raw": {
+                "address": 57,
+                "count": 1,
+                "scale": 1,
+                "unit": "A",
+                "name": "SunSpec Grid Current L1 Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_current_l2_raw": {
+                "address": 58,
+                "count": 1,
+                "scale": 1,
+                "unit": "A",
+                "name": "SunSpec Grid Current L2 Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_current_l3_raw": {
+                "address": 59,
+                "count": 1,
+                "scale": 1,
+                "unit": "A",
+                "name": "SunSpec Grid Current L3 Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_current_sf": {
+                "address": 60,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Current Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_voltage_ln_avg_raw": {
+                "address": 61,
+                "count": 1,
+                "scale": 1,
+                "unit": "V",
+                "name": "SunSpec Grid Voltage L-N Avg Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_voltage_l1_raw": {
+                "address": 62,
+                "count": 1,
+                "scale": 1,
+                "unit": "V",
+                "name": "SunSpec Grid Voltage L1 Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_voltage_l2_raw": {
+                "address": 63,
+                "count": 1,
+                "scale": 1,
+                "unit": "V",
+                "name": "SunSpec Grid Voltage L2 Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_voltage_l3_raw": {
+                "address": 64,
+                "count": 1,
+                "scale": 1,
+                "unit": "V",
+                "name": "SunSpec Grid Voltage L3 Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_voltage_ll_avg_raw": {
+                "address": 65,
+                "count": 1,
+                "scale": 1,
+                "unit": "V",
+                "name": "SunSpec Grid Voltage L-L Avg Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_voltage_sf": {
+                "address": 69,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Voltage Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_apparent_power_sum_raw": {
+                "address": 77,
+                "count": 1,
+                "scale": 1,
+                "unit": "VA",
+                "name": "SunSpec Grid Apparent Power Sum Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_apparent_power_sf": {
+                "address": 81,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Apparent Power Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_reactive_power_sum_raw": {
+                "address": 82,
+                "count": 1,
+                "scale": 1,
+                "unit": "var",
+                "name": "SunSpec Grid Reactive Power Sum Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_reactive_power_sf": {
+                "address": 86,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Reactive Power Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_factor_sum_raw": {
+                "address": 87,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Power Factor Sum Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_factor_l1_raw": {
+                "address": 88,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Power Factor L1 Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_factor_l2_raw": {
+                "address": 89,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Power Factor L2 Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_factor_l3_raw": {
+                "address": 90,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Power Factor L3 Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_factor_sf": {
+                "address": 91,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Power Factor Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_capacity_raw": {
+                "address": 97,
+                "count": 1,
+                "scale": 1,
+                "unit": "Wh",
+                "name": "SunSpec Capacity Raw",
+                "slave": 100,
+            },
+            "sunspec_capacity_sf": {
+                "address": 110,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Capacity Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_available_charge_power_raw": {
+                "address": 98,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Available Charge Power Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_available_discharge_power_raw": {
+                "address": 99,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Available Discharge Power Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_charge_discharge_power_sf": {
+                "address": 111,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Charge Discharge Power Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
         }
+
+    # (raw_key, scale_factor_key, derived_key, unit, display_name)
+    _SUNSPEC_DERIVED = [
+        (
+            "sunspec_pv_power_raw",
+            "sunspec_pv_power_sf",
+            "sunspec_pv_power",
+            "W",
+            "SunSpec PV Power",
+        ),
+        (
+            "sunspec_grid_frequency_raw",
+            "sunspec_grid_frequency_sf",
+            "sunspec_grid_frequency",
+            "Hz",
+            "SunSpec Grid Frequency",
+        ),
+        (
+            "sunspec_grid_power_sum_raw",
+            "sunspec_grid_power_sf",
+            "sunspec_grid_power_sum",
+            "W",
+            "SunSpec Grid Power Sum",
+        ),
+        (
+            "sunspec_grid_power_l1_raw",
+            "sunspec_grid_power_sf",
+            "sunspec_grid_power_l1",
+            "W",
+            "SunSpec Grid Power L1",
+        ),
+        (
+            "sunspec_grid_power_l2_raw",
+            "sunspec_grid_power_sf",
+            "sunspec_grid_power_l2",
+            "W",
+            "SunSpec Grid Power L2",
+        ),
+        (
+            "sunspec_grid_power_l3_raw",
+            "sunspec_grid_power_sf",
+            "sunspec_grid_power_l3",
+            "W",
+            "SunSpec Grid Power L3",
+        ),
+        (
+            "sunspec_grid_current_sum_raw",
+            "sunspec_grid_current_sf",
+            "sunspec_grid_current_sum",
+            "A",
+            "SunSpec Grid Current Sum",
+        ),
+        (
+            "sunspec_grid_current_l1_raw",
+            "sunspec_grid_current_sf",
+            "sunspec_grid_current_l1",
+            "A",
+            "SunSpec Grid Current L1",
+        ),
+        (
+            "sunspec_grid_current_l2_raw",
+            "sunspec_grid_current_sf",
+            "sunspec_grid_current_l2",
+            "A",
+            "SunSpec Grid Current L2",
+        ),
+        (
+            "sunspec_grid_current_l3_raw",
+            "sunspec_grid_current_sf",
+            "sunspec_grid_current_l3",
+            "A",
+            "SunSpec Grid Current L3",
+        ),
+        (
+            "sunspec_grid_voltage_ln_avg_raw",
+            "sunspec_grid_voltage_sf",
+            "sunspec_grid_voltage_ln_avg",
+            "V",
+            "SunSpec Grid Voltage L-N Avg",
+        ),
+        (
+            "sunspec_grid_voltage_l1_raw",
+            "sunspec_grid_voltage_sf",
+            "sunspec_grid_voltage_l1",
+            "V",
+            "SunSpec Grid Voltage L1",
+        ),
+        (
+            "sunspec_grid_voltage_l2_raw",
+            "sunspec_grid_voltage_sf",
+            "sunspec_grid_voltage_l2",
+            "V",
+            "SunSpec Grid Voltage L2",
+        ),
+        (
+            "sunspec_grid_voltage_l3_raw",
+            "sunspec_grid_voltage_sf",
+            "sunspec_grid_voltage_l3",
+            "V",
+            "SunSpec Grid Voltage L3",
+        ),
+        (
+            "sunspec_grid_voltage_ll_avg_raw",
+            "sunspec_grid_voltage_sf",
+            "sunspec_grid_voltage_ll_avg",
+            "V",
+            "SunSpec Grid Voltage L-L Avg",
+        ),
+        (
+            "sunspec_grid_apparent_power_sum_raw",
+            "sunspec_grid_apparent_power_sf",
+            "sunspec_grid_apparent_power_sum",
+            "VA",
+            "SunSpec Grid Apparent Power Sum",
+        ),
+        (
+            "sunspec_grid_reactive_power_sum_raw",
+            "sunspec_grid_reactive_power_sf",
+            "sunspec_grid_reactive_power_sum",
+            "var",
+            "SunSpec Grid Reactive Power Sum",
+        ),
+        (
+            "sunspec_grid_power_factor_sum_raw",
+            "sunspec_grid_power_factor_sf",
+            "sunspec_grid_power_factor_sum",
+            None,
+            "SunSpec Grid Power Factor Sum",
+        ),
+        (
+            "sunspec_grid_power_factor_l1_raw",
+            "sunspec_grid_power_factor_sf",
+            "sunspec_grid_power_factor_l1",
+            None,
+            "SunSpec Grid Power Factor L1",
+        ),
+        (
+            "sunspec_grid_power_factor_l2_raw",
+            "sunspec_grid_power_factor_sf",
+            "sunspec_grid_power_factor_l2",
+            None,
+            "SunSpec Grid Power Factor L2",
+        ),
+        (
+            "sunspec_grid_power_factor_l3_raw",
+            "sunspec_grid_power_factor_sf",
+            "sunspec_grid_power_factor_l3",
+            None,
+            "SunSpec Grid Power Factor L3",
+        ),
+        (
+            "sunspec_capacity_raw",
+            "sunspec_capacity_sf",
+            "sunspec_capacity",
+            "Wh",
+            "SunSpec Capacity",
+        ),
+        (
+            "sunspec_available_charge_power_raw",
+            "sunspec_charge_discharge_power_sf",
+            "sunspec_available_charge_power",
+            "W",
+            "SunSpec Available Charge Power",
+        ),
+        (
+            "sunspec_available_discharge_power_raw",
+            "sunspec_charge_discharge_power_sf",
+            "sunspec_available_discharge_power",
+            "W",
+            "SunSpec Available Discharge Power",
+        ),
+    ]
+
+    def _apply_sunspec_scaling(
+        self, data: dict[str, float | int | None]
+    ) -> None:
+        """Combine SunSpec raw values with their scale factor registers.
+
+        SunSpec encodes values as raw * 10**scalefactor, with the scale
+        factor stored in a separate register. Adds the derived, correctly
+        scaled value into data under derived_key, in place.
+        """
+        for raw_key, sf_key, derived_key, _unit, _name in self._SUNSPEC_DERIVED:
+            raw = data.get(raw_key)
+            scale_factor = data.get(sf_key)
+            if raw is None or scale_factor is None:
+                data[derived_key] = None
+                continue
+
+            # Defensive bounds check: real SunSpec scale factors are
+            # always small single-digit exponents. A device returning
+            # something wildly outside that range (glitch, unexpected
+            # register contents, mis-signed read, etc.) must never be
+            # allowed to compute 10**huge_number and blow up the entire
+            # coordinator update - just drop this one derived value.
+            if not -10 <= scale_factor <= 10:
+                _LOGGER.warning(
+                    "Ignoring implausible SunSpec scale factor %s from %s "
+                    "for %s (raw=%s)",
+                    scale_factor,
+                    sf_key,
+                    derived_key,
+                    raw,
+                )
+                data[derived_key] = None
+                continue
+
+            try:
+                data[derived_key] = round(
+                    float(raw) * (10 ** int(scale_factor)), 2
+                )
+            except (ValueError, OverflowError, TypeError) as err:
+                _LOGGER.warning(
+                    "Failed to scale %s (raw=%s, scale_factor=%s): %s",
+                    derived_key,
+                    raw,
+                    scale_factor,
+                    err,
+                )
+                data[derived_key] = None
 
     def _convert_value(
         self, raw_value: int | list[int], config: dict[str, Any]
@@ -866,6 +1445,11 @@ class SAXBattery:
 
         for key, config in self._register_map.items():
             slave_id = config.get("slave", 1)  # Get slave ID from config
+
+            if slave_id in self._dead_slaves:
+                data[key] = None
+                continue
+
             _LOGGER.debug(
                 "Reading register for %s: address=%d, count=%d, slave=%d",
                 key,
@@ -873,12 +1457,15 @@ class SAXBattery:
                 config["count"],
                 slave_id,
             )
+            quick_probe = slave_id not in self._probed_slaves
+            self._probed_slaves.add(slave_id)
             try:
                 raw_registers = await self._hub.modbus_read_holding_registers(
                     address=config["address"],
                     count=config["count"],
                     slave=slave_id,
                     battery_id=self.battery_id,  # Pass battery_id to specify which client to use
+                    quick_probe=quick_probe,
                 )
 
                 if raw_registers is not None:
@@ -906,10 +1493,24 @@ class SAXBattery:
                     )
 
             except (HubException, ConnectionException, ModbusIOException) as e:
-                _LOGGER.error(
-                    "Error reading %s (address %d): %s", key, config["address"], e
-                )
+                if quick_probe:
+                    _LOGGER.warning(
+                        "Unit id %d did not respond to probe (register %s, "
+                        "address %d) - treating as not installed and no "
+                        "longer polling it: %s",
+                        slave_id,
+                        key,
+                        config["address"],
+                        e,
+                    )
+                    self._dead_slaves.add(slave_id)
+                else:
+                    _LOGGER.error(
+                        "Error reading %s (address %d): %s", key, config["address"], e
+                    )
                 data[key] = None
+
+        self._apply_sunspec_scaling(data)
 
         _LOGGER.debug("Finished reading battery data, got %d values", len(data))
         return data
