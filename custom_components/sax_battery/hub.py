@@ -826,7 +826,219 @@ class SAXBattery:
                 "signed": True,
                 "slave": 40,
             },
+            # SunSpec interface (slave 100). Available from firmware
+            # combination Master V61 / Gateway V54 onward - separate from,
+            # and independent of, the slave 40 "Extended Mode" block above.
+            # Raw values + their SunSpec scale factor registers are read
+            # here; _apply_sunspec_scaling() combines them into the actual
+            # derived_* sensor values (raw * 10**scalefactor) after all
+            # registers have been read, see read_data().
+            "sunspec_version_master": {
+                "address": 10,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Version Master",
+                "slave": 100,
+            },
+            "sunspec_version_gateway": {
+                "address": 11,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Version Gateway",
+                "slave": 100,
+            },
+            "sunspec_pv_power_raw": {
+                "address": 44,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec PV Power Raw",
+                "slave": 100,
+            },
+            "sunspec_pv_power_sf": {
+                "address": 45,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec PV Power Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_max_power_reference": {
+                "address": 52,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Max Power Reference",
+                "slave": 100,
+            },
+            "sunspec_grid_frequency_raw": {
+                "address": 69,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Frequency Raw",
+                "slave": 100,
+            },
+            "sunspec_grid_frequency_sf": {
+                "address": 70,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Frequency Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_sum_raw": {
+                "address": 71,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Grid Power Sum Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_l1_raw": {
+                "address": 72,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Grid Power L1 Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_l2_raw": {
+                "address": 73,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Grid Power L2 Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_l3_raw": {
+                "address": 74,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Grid Power L3 Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_grid_power_sf": {
+                "address": 75,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Grid Power Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_available_charge_power_raw": {
+                "address": 97,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Available Charge Power Raw",
+                "slave": 100,
+            },
+            "sunspec_available_discharge_power_raw": {
+                "address": 98,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
+                "name": "SunSpec Available Discharge Power Raw",
+                "slave": 100,
+            },
+            "sunspec_charge_discharge_power_sf": {
+                "address": 110,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Charge Discharge Power Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
         }
+
+    # (raw_key, scale_factor_key, derived_key, unit, display_name)
+    _SUNSPEC_DERIVED = [
+        (
+            "sunspec_pv_power_raw",
+            "sunspec_pv_power_sf",
+            "sunspec_pv_power",
+            "W",
+            "SunSpec PV Power",
+        ),
+        (
+            "sunspec_grid_frequency_raw",
+            "sunspec_grid_frequency_sf",
+            "sunspec_grid_frequency",
+            "Hz",
+            "SunSpec Grid Frequency",
+        ),
+        (
+            "sunspec_grid_power_sum_raw",
+            "sunspec_grid_power_sf",
+            "sunspec_grid_power_sum",
+            "W",
+            "SunSpec Grid Power Sum",
+        ),
+        (
+            "sunspec_grid_power_l1_raw",
+            "sunspec_grid_power_sf",
+            "sunspec_grid_power_l1",
+            "W",
+            "SunSpec Grid Power L1",
+        ),
+        (
+            "sunspec_grid_power_l2_raw",
+            "sunspec_grid_power_sf",
+            "sunspec_grid_power_l2",
+            "W",
+            "SunSpec Grid Power L2",
+        ),
+        (
+            "sunspec_grid_power_l3_raw",
+            "sunspec_grid_power_sf",
+            "sunspec_grid_power_l3",
+            "W",
+            "SunSpec Grid Power L3",
+        ),
+        (
+            "sunspec_available_charge_power_raw",
+            "sunspec_charge_discharge_power_sf",
+            "sunspec_available_charge_power",
+            "W",
+            "SunSpec Available Charge Power",
+        ),
+        (
+            "sunspec_available_discharge_power_raw",
+            "sunspec_charge_discharge_power_sf",
+            "sunspec_available_discharge_power",
+            "W",
+            "SunSpec Available Discharge Power",
+        ),
+    ]
+
+    def _apply_sunspec_scaling(
+        self, data: dict[str, float | int | None]
+    ) -> None:
+        """Combine SunSpec raw values with their scale factor registers.
+
+        SunSpec encodes values as raw * 10**scalefactor, with the scale
+        factor stored in a separate register. Adds the derived, correctly
+        scaled value into data under derived_key, in place.
+        """
+        for raw_key, sf_key, derived_key, _unit, _name in self._SUNSPEC_DERIVED:
+            raw = data.get(raw_key)
+            scale_factor = data.get(sf_key)
+            if raw is None or scale_factor is None:
+                data[derived_key] = None
+                continue
+            data[derived_key] = round(float(raw) * (10 ** int(scale_factor)), 2)
 
     def _convert_value(
         self, raw_value: int | list[int], config: dict[str, Any]
@@ -956,6 +1168,8 @@ class SAXBattery:
                         "Error reading %s (address %d): %s", key, config["address"], e
                     )
                 data[key] = None
+
+        self._apply_sunspec_scaling(data)
 
         _LOGGER.debug("Finished reading battery data, got %d values", len(data))
         return data

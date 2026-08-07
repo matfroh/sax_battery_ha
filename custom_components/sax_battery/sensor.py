@@ -593,6 +593,36 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "smartmeter_current_l2": "Smart Meter Current L2",
             "smartmeter_current_l3": "Smart Meter Current L3",
             "smartmeter_total_power": "Smart Meter Total Power",
+            # SunSpec interface (slave 100)
+            "sunspec_version_master": "SunSpec Version Master",
+            "sunspec_version_gateway": "SunSpec Version Gateway",
+            "sunspec_pv_power_raw": "SunSpec PV Power Raw",
+            "sunspec_pv_power_sf": "SunSpec PV Power Scale Factor",
+            "sunspec_pv_power": "SunSpec PV Power",
+            "sunspec_max_power_reference": "SunSpec Max Power Reference",
+            "sunspec_grid_frequency_raw": "SunSpec Grid Frequency Raw",
+            "sunspec_grid_frequency_sf": "SunSpec Grid Frequency Scale Factor",
+            "sunspec_grid_frequency": "SunSpec Grid Frequency",
+            "sunspec_grid_power_sum_raw": "SunSpec Grid Power Sum Raw",
+            "sunspec_grid_power_l1_raw": "SunSpec Grid Power L1 Raw",
+            "sunspec_grid_power_l2_raw": "SunSpec Grid Power L2 Raw",
+            "sunspec_grid_power_l3_raw": "SunSpec Grid Power L3 Raw",
+            "sunspec_grid_power_sf": "SunSpec Grid Power Scale Factor",
+            "sunspec_grid_power_sum": "SunSpec Grid Power Sum",
+            "sunspec_grid_power_l1": "SunSpec Grid Power L1",
+            "sunspec_grid_power_l2": "SunSpec Grid Power L2",
+            "sunspec_grid_power_l3": "SunSpec Grid Power L3",
+            "sunspec_available_charge_power_raw": (
+                "SunSpec Available Charge Power Raw"
+            ),
+            "sunspec_available_discharge_power_raw": (
+                "SunSpec Available Discharge Power Raw"
+            ),
+            "sunspec_charge_discharge_power_sf": (
+                "SunSpec Charge Discharge Power Scale Factor"
+            ),
+            "sunspec_available_charge_power": "SunSpec Available Charge Power",
+            "sunspec_available_discharge_power": "SunSpec Available Discharge Power",
         }
         return name_mapping.get(key, key.replace("_", " ").title())
 
@@ -660,6 +690,25 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
                 UnitOfElectricCurrent.AMPERE,
             ),
             "smartmeter_total_power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            # SunSpec interface (slave 100) - derived, scale-corrected values
+            "sunspec_pv_power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_max_power_reference": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_grid_frequency": (
+                SensorDeviceClass.FREQUENCY,
+                UnitOfFrequency.HERTZ,
+            ),
+            "sunspec_grid_power_sum": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_grid_power_l1": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_grid_power_l2": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_grid_power_l3": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_available_charge_power": (
+                SensorDeviceClass.POWER,
+                UnitOfPower.WATT,
+            ),
+            "sunspec_available_discharge_power": (
+                SensorDeviceClass.POWER,
+                UnitOfPower.WATT,
+            ),
         }
         return mapping.get(lookup_key, (None, None))
 
@@ -702,6 +751,15 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "smartmeter_current_l2",
             "smartmeter_current_l3",
             "smartmeter_total_power",
+            "sunspec_pv_power",
+            "sunspec_max_power_reference",
+            "sunspec_grid_frequency",
+            "sunspec_grid_power_sum",
+            "sunspec_grid_power_l1",
+            "sunspec_grid_power_l2",
+            "sunspec_grid_power_l3",
+            "sunspec_available_charge_power",
+            "sunspec_available_discharge_power",
         ]:
             return SensorStateClass.MEASUREMENT
         return None
