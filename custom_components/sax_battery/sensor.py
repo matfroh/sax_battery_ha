@@ -612,6 +612,9 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "sunspec_grid_power_l1": "SunSpec Grid Power L1",
             "sunspec_grid_power_l2": "SunSpec Grid Power L2",
             "sunspec_grid_power_l3": "SunSpec Grid Power L3",
+            "sunspec_capacity_raw": "SunSpec Capacity Raw",
+            "sunspec_capacity_sf": "SunSpec Capacity Scale Factor",
+            "sunspec_capacity": "SunSpec Capacity",
             "sunspec_available_charge_power_raw": (
                 "SunSpec Available Charge Power Raw"
             ),
@@ -701,6 +704,7 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "sunspec_grid_power_l1": (SensorDeviceClass.POWER, UnitOfPower.WATT),
             "sunspec_grid_power_l2": (SensorDeviceClass.POWER, UnitOfPower.WATT),
             "sunspec_grid_power_l3": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_capacity": (SensorDeviceClass.ENERGY, UnitOfEnergy.WATT_HOUR),
             "sunspec_available_charge_power": (
                 SensorDeviceClass.POWER,
                 UnitOfPower.WATT,
@@ -723,7 +727,10 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
 
         if lookup_key in ["energy_produced", "energy_consumed", "cycles"]:
             return SensorStateClass.TOTAL_INCREASING
-        if lookup_key == "capacity":  # Capacity should be TOTAL, not MEASUREMENT
+        if lookup_key in (
+            "capacity",
+            "sunspec_capacity",
+        ):  # Capacity should be TOTAL, not MEASUREMENT
             return SensorStateClass.TOTAL
         if lookup_key in [
             "soc",

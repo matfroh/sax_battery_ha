@@ -833,8 +833,17 @@ class SAXBattery:
             # here; _apply_sunspec_scaling() combines them into the actual
             # derived_* sensor values (raw * 10**scalefactor) after all
             # registers have been read, see read_data().
+            #
+            # NOTE on addressing: unlike the slave 64/40 registers above
+            # (internal address = protocol address - 40001, per SAX's own
+            # older Modbus manual), this SunSpec register table uses
+            # internal address = protocol address - 40000. Verified
+            # live, register by register, against the official SunSpec
+            # doc's "well-known" (constant) values - e.g. protocol 40052
+            # ("Scalefaktor Leistungsvorgabe", documented as always -2)
+            # only reads back -2 at internal address 52, not 51.
             "sunspec_version_master": {
-                "address": 10,
+                "address": 11,
                 "count": 1,
                 "scale": 1,
                 "unit": None,
@@ -842,7 +851,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_version_gateway": {
-                "address": 11,
+                "address": 12,
                 "count": 1,
                 "scale": 1,
                 "unit": None,
@@ -850,7 +859,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_pv_power_raw": {
-                "address": 44,
+                "address": 45,
                 "count": 1,
                 "scale": 1,
                 "unit": "W",
@@ -858,7 +867,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_pv_power_sf": {
-                "address": 45,
+                "address": 46,
                 "count": 1,
                 "scale": 1,
                 "unit": None,
@@ -867,7 +876,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_max_power_reference": {
-                "address": 52,
+                "address": 53,
                 "count": 1,
                 "scale": 1,
                 "unit": "W",
@@ -875,7 +884,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_grid_frequency_raw": {
-                "address": 69,
+                "address": 70,
                 "count": 1,
                 "scale": 1,
                 "unit": None,
@@ -883,7 +892,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_grid_frequency_sf": {
-                "address": 70,
+                "address": 71,
                 "count": 1,
                 "scale": 1,
                 "unit": None,
@@ -892,7 +901,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_grid_power_sum_raw": {
-                "address": 71,
+                "address": 72,
                 "count": 1,
                 "scale": 1,
                 "unit": "W",
@@ -901,7 +910,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_grid_power_l1_raw": {
-                "address": 72,
+                "address": 73,
                 "count": 1,
                 "scale": 1,
                 "unit": "W",
@@ -910,7 +919,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_grid_power_l2_raw": {
-                "address": 73,
+                "address": 74,
                 "count": 1,
                 "scale": 1,
                 "unit": "W",
@@ -919,7 +928,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_grid_power_l3_raw": {
-                "address": 74,
+                "address": 75,
                 "count": 1,
                 "scale": 1,
                 "unit": "W",
@@ -928,7 +937,7 @@ class SAXBattery:
                 "slave": 100,
             },
             "sunspec_grid_power_sf": {
-                "address": 75,
+                "address": 76,
                 "count": 1,
                 "scale": 1,
                 "unit": None,
@@ -936,24 +945,43 @@ class SAXBattery:
                 "signed": True,
                 "slave": 100,
             },
-            "sunspec_available_charge_power_raw": {
+            "sunspec_capacity_raw": {
                 "address": 97,
                 "count": 1,
                 "scale": 1,
-                "unit": "W",
-                "name": "SunSpec Available Charge Power Raw",
+                "unit": "Wh",
+                "name": "SunSpec Capacity Raw",
                 "slave": 100,
             },
-            "sunspec_available_discharge_power_raw": {
+            "sunspec_capacity_sf": {
+                "address": 110,
+                "count": 1,
+                "scale": 1,
+                "unit": None,
+                "name": "SunSpec Capacity Scale Factor",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_available_charge_power_raw": {
                 "address": 98,
                 "count": 1,
                 "scale": 1,
                 "unit": "W",
+                "name": "SunSpec Available Charge Power Raw",
+                "signed": True,
+                "slave": 100,
+            },
+            "sunspec_available_discharge_power_raw": {
+                "address": 99,
+                "count": 1,
+                "scale": 1,
+                "unit": "W",
                 "name": "SunSpec Available Discharge Power Raw",
+                "signed": True,
                 "slave": 100,
             },
             "sunspec_charge_discharge_power_sf": {
-                "address": 110,
+                "address": 111,
                 "count": 1,
                 "scale": 1,
                 "unit": None,
@@ -1006,6 +1034,13 @@ class SAXBattery:
             "sunspec_grid_power_l3",
             "W",
             "SunSpec Grid Power L3",
+        ),
+        (
+            "sunspec_capacity_raw",
+            "sunspec_capacity_sf",
+            "sunspec_capacity",
+            "Wh",
+            "SunSpec Capacity",
         ),
         (
             "sunspec_available_charge_power_raw",
