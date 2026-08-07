@@ -1038,7 +1038,38 @@ class SAXBattery:
             if raw is None or scale_factor is None:
                 data[derived_key] = None
                 continue
-            data[derived_key] = round(float(raw) * (10 ** int(scale_factor)), 2)
+
+            # Defensive bounds check: real SunSpec scale factors are
+            # always small single-digit exponents. A device returning
+            # something wildly outside that range (glitch, unexpected
+            # register contents, mis-signed read, etc.) must never be
+            # allowed to compute 10**huge_number and blow up the entire
+            # coordinator update - just drop this one derived value.
+            if not -10 <= scale_factor <= 10:
+                _LOGGER.warning(
+                    "Ignoring implausible SunSpec scale factor %s from %s "
+                    "for %s (raw=%s)",
+                    scale_factor,
+                    sf_key,
+                    derived_key,
+                    raw,
+                )
+                data[derived_key] = None
+                continue
+
+            try:
+                data[derived_key] = round(
+                    float(raw) * (10 ** int(scale_factor)), 2
+                )
+            except (ValueError, OverflowError, TypeError) as err:
+                _LOGGER.warning(
+                    "Failed to scale %s (raw=%s, scale_factor=%s): %s",
+                    derived_key,
+                    raw,
+                    scale_factor,
+                    err,
+                )
+                data[derived_key] = None
 
     def _convert_value(
         self, raw_value: int | list[int], config: dict[str, Any]
