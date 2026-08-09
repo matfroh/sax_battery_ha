@@ -24,10 +24,13 @@ from custom_components.sax_battery.const import (
     CONF_BATTERY_IS_MASTER,
     CONF_BATTERY_PORT,
     CONF_CONTROL_POWER,
+    CONF_EFFECTIVE_PROTOCOL_MODE,
     CONF_LIMIT_POWER,
     CONF_MASTER_BATTERY,
     CONF_MIN_SOC,
     CONF_POWER_SENSOR,
+    CONF_PROTOCOL_MODE,
+    CONF_VERIFY_SUNSPEC,
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
     DOMAIN,
@@ -99,7 +102,7 @@ class TestSAXBatteryConfigFlowExtended:
         )
 
         assert result.get("type") == FlowResultType.FORM
-        assert result.get("step_id") == "battery_config"
+        assert result.get("step_id") == "protocol_options"
         assert flow._control_power is False
         assert flow._limit_power is True
 
@@ -156,7 +159,7 @@ class TestSAXBatteryConfigFlowExtended:
         )
 
         assert result.get("type") == FlowResultType.FORM
-        assert result.get("step_id") == "battery_config"
+        assert result.get("step_id") == "protocol_options"
 
     async def test_battery_config_invalid_host_format(
         self, hass: HomeAssistant
@@ -262,6 +265,28 @@ class TestSAXBatteryConfigFlowExtended:
         assert errors is not None
         assert "invalid_master" in errors.get(CONF_MASTER_BATTERY, "")
 
+    async def test_protocol_options_persist_selection(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Test that protocol options persist the selected mode and verification flag."""
+        flow = SAXBatteryConfigFlow()
+        flow.hass = hass
+        flow._battery_count = 1
+
+        result = await flow.async_step_protocol_options(
+            {
+                CONF_PROTOCOL_MODE: "sunspec",
+                CONF_VERIFY_SUNSPEC: True,
+            }
+        )
+
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
+        assert flow._protocol_mode == "sunspec"
+        assert flow._verify_sunspec is True
+        assert flow._data[CONF_PROTOCOL_MODE] == "sunspec"
+        assert flow._data[CONF_VERIFY_SUNSPEC] is True
+
     async def test_battery_config_successful_single_battery(
         self, hass: HomeAssistant
     ) -> None:
@@ -269,6 +294,8 @@ class TestSAXBatteryConfigFlowExtended:
         flow = SAXBatteryConfigFlow()
         flow.hass = hass
         flow._battery_count = 1
+        flow._protocol_mode = "sunspec"
+        flow._verify_sunspec = True
 
         result = await flow.async_step_battery_config(
             {
@@ -282,6 +309,9 @@ class TestSAXBatteryConfigFlowExtended:
         assert CONF_BATTERIES in result["data"]
         assert CONF_MASTER_BATTERY in result["data"]
         assert result["data"][CONF_MASTER_BATTERY] == "bess_a"
+        assert result["data"][CONF_PROTOCOL_MODE] == "sunspec"
+        assert result["data"][CONF_VERIFY_SUNSPEC] is True
+        assert result["data"][CONF_EFFECTIVE_PROTOCOL_MODE] == "sunspec"
 
     async def test_battery_config_successful_multi_battery(
         self, hass: HomeAssistant
@@ -503,7 +533,17 @@ class TestSAXBatteryConfigFlowExtended:
 
             result = await flow.async_step_control_options(control_options_input)
 
-            # Should proceed to battery_config step
+            # Should proceed to protocol_options step
+            assert result.get("type") == FlowResultType.FORM
+            assert result.get("step_id") == "protocol_options"
+
+            result = await flow.async_step_protocol_options(
+                {
+                    CONF_PROTOCOL_MODE: "legacy",
+                    CONF_VERIFY_SUNSPEC: False,
+                }
+            )
+
             assert result.get("type") == FlowResultType.FORM
             assert result.get("step_id") == "battery_config"
 
@@ -1188,9 +1228,9 @@ class TestSAXBatteryConfigFlowMissingCoverage:
             }
         )
 
-        # Line 212: Should proceed to battery_config, not priority_devices
+        # Line 212: Should proceed to protocol_options, not priority_devices
         assert result.get("type") == FlowResultType.FORM
-        assert result.get("step_id") == "battery_config"
+        assert result.get("step_id") == "protocol_options"
 
     async def test_reconfigure_entry_wrong_domain(self, hass: HomeAssistant) -> None:
         """Test reconfigure aborts when entry has wrong domain (line 417, 419)."""
@@ -1268,7 +1308,7 @@ class TestSAXBatteryConfigFlowEdgeCases:
         )
 
         assert result.get("type") == FlowResultType.FORM
-        assert result.get("step_id") == "battery_config"
+        assert result.get("step_id") == "protocol_options"
         # Verify sensor stored in data
         assert flow._data[CONF_POWER_SENSOR] == "sensor.battery_power"
 
@@ -1572,7 +1612,7 @@ class TestSAXBatteryConfigFlowDeadCodeRemoval:
         flow._battery_count = 1
         result = await flow.async_step_sensors({})
         assert result.get("type") == FlowResultType.FORM
-        assert result.get("step_id") == "battery_config"
+        assert result.get("step_id") == "protocol_options"
 
 
 @pytest.mark.usefixtures("_mock_setup_integration")

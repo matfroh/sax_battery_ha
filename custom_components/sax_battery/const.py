@@ -146,6 +146,11 @@ CONF_LIMIT_POWER = "limit_power"
 CONF_SM_CONNECTED = "sm_connected"
 CONF_BALANCED_LOADING = "balanced_loading"
 
+# Protocol selection configuration
+CONF_PROTOCOL_MODE = "protocol_mode"
+CONF_VERIFY_SUNSPEC = "verify_sunspec"
+CONF_EFFECTIVE_PROTOCOL_MODE = "effective_protocol_mode"
+
 # Control modes
 PV_CHARGING_MODE = "enable_pv_charging"
 GRID_CHARGING_MODE = "enable_grid_charging"

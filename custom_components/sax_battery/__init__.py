@@ -7,7 +7,7 @@ import logging
 import re
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, UnknownEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -24,9 +24,12 @@ from .const import (
     CONF_BATTERY_PHASE,
     CONF_BATTERY_PORT,
     CONF_CONTROL_POWER,
+    CONF_EFFECTIVE_PROTOCOL_MODE,
     CONF_LIMIT_POWER,
     CONF_MASTER_BATTERY,
+    CONF_PROTOCOL_MODE,
     CONF_SM_CONNECTED,
+    CONF_VERIFY_SUNSPEC,
     DEFAULT_PORT,
     DOMAIN,
     SAX_MAX_CHARGE,
@@ -37,7 +40,7 @@ from .coordinator import SAXBatteryCoordinator
 from .modbusobject import ModbusAPI
 from .models import SAXBatteryData
 from .power_manager import PowerManager
-from .protocol_detector import detect_protocol_mode
+from .protocol_detector import ProtocolDetectionResult, validate_sunspec_availability
 from .protocol_mode import ProtocolMode
 from .txid_error_tracker import setup_handler as _setup_txid_handler
 
@@ -749,8 +752,40 @@ async def _setup_battery_coordinator(
     if not await modbus_api.connect():
         raise ConfigEntryNotReady(f"Could not connect to {battery_id} at {host}:{port}")
 
-    # Detect protocol mode with safe fallback to legacy
-    detection = await detect_protocol_mode(modbus_api=modbus_api, battery_id=battery_id)
+    configured_mode = entry.data.get(CONF_PROTOCOL_MODE, "legacy")
+    verify_sunspec = bool(entry.data.get(CONF_VERIFY_SUNSPEC, False))
+    effective_mode = configured_mode
+    detection_reason = "configured_legacy"
+    detection_path = "configured_legacy"
+
+    if configured_mode == "sunspec" and verify_sunspec:
+        detection = await validate_sunspec_availability(
+            modbus_api=modbus_api,
+            battery_id=battery_id,
+        )
+        effective_mode = detection.mode.value
+        detection_reason = detection.reason
+        detection_path = detection.detection_path
+    else:
+        detection = ProtocolDetectionResult(
+            mode=ProtocolMode.LEGACY,
+            detected_device_id=64,
+            detection_path=detection_path,
+            reason=detection_reason,
+        )
+        if configured_mode == "sunspec":
+            _LOGGER.info(
+                "%s: SunSpec was selected but validation is disabled; using legacy mode",
+                battery_id,
+            )
+
+    if configured_mode == "sunspec" and verify_sunspec:
+        _LOGGER.info(
+            "%s: Effective protocol mode=%s (reason=%s)",
+            battery_id,
+            effective_mode,
+            detection_reason,
+        )
 
     # Create coordinator
     coordinator = SAXBatteryCoordinator(
@@ -760,22 +795,40 @@ async def _setup_battery_coordinator(
         modbus_api=modbus_api,
         config_entry=entry,
         battery_config=battery_config,
-        protocol_mode=detection.mode,
+        protocol_mode=ProtocolMode(effective_mode),
         detected_device_id=detection.detected_device_id,
-        detection_path=detection.detection_path,
-        detection_reason=detection.reason,
+        detection_path=detection_path,
+        detection_reason=detection_reason,
     )
 
     _LOGGER.info(
         "%s: Protocol mode=%s, device_id=%s (%s)",
         battery_id,
-        detection.mode.value,
+        coordinator.protocol_mode.value,
         detection.detected_device_id,
-        detection.reason,
+        detection_reason,
     )
 
+    # Persist the resolved mode so diagnostics can reflect the chosen runtime mode.
+    try:
+        hass.config_entries.async_update_entry(
+            entry,
+            data={
+                **entry.data,
+                CONF_PROTOCOL_MODE: configured_mode,
+                CONF_VERIFY_SUNSPEC: verify_sunspec,
+                CONF_EFFECTIVE_PROTOCOL_MODE: coordinator.protocol_mode.value,
+            },
+        )
+    except UnknownEntry:
+        _LOGGER.debug(
+            "%s: Skipping config entry update for unregistered entry %s",
+            battery_id,
+            entry.entry_id,
+        )
+
     # In SunSpec mode, load startup metadata once during setup/reload.
-    if detection.mode == ProtocolMode.SUNSPEC:
+    if coordinator.protocol_mode == ProtocolMode.SUNSPEC:
         try:
             await coordinator.async_initialize_sunspec_metadata()
         except Exception as err:  # noqa: BLE001

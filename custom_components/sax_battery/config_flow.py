@@ -28,11 +28,14 @@ from .const import (
     CONF_BATTERY_PORT,
     CONF_CONTROL_POWER,
     CONF_DEVICE_ID,
+    CONF_EFFECTIVE_PROTOCOL_MODE,
     CONF_LIMIT_POWER,
     CONF_MASTER_BATTERY,
     CONF_MIN_SOC,
     CONF_POWER_SENSOR,
+    CONF_PROTOCOL_MODE,
     CONF_SM_CONNECTED,
+    CONF_VERIFY_SUNSPEC,
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
     DOMAIN,
@@ -58,6 +61,8 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._limit_power: bool = False
         self._sm_connected: bool = True
         self._balanced_loading: bool = False
+        self._protocol_mode: str = "legacy"
+        self._verify_sunspec: bool = False
 
     @staticmethod
     @callback
@@ -124,7 +129,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self._control_power:
                 return await self.async_step_power_options()
             # Skip control-specific steps if not enabled
-            return await self.async_step_battery_config()
+            return await self.async_step_protocol_options()
 
         return self.async_show_form(
             step_id="control_options",
@@ -162,9 +167,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._sm_connected and self._balanced_loading:
                 return await self.async_step_sensors()
             if not self._sm_connected:
-                return await self.async_step_battery_config()
+                return await self.async_step_protocol_options()
             # sm_connected=True → smart meter handles power
-            return await self.async_step_battery_config()
+            return await self.async_step_protocol_options()
 
         return self.async_show_form(
             step_id="power_options",
@@ -187,8 +192,8 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             self._data.update(user_input)
-            # No priority devices step - go directly to battery config
-            return await self.async_step_battery_config()
+            # No priority devices step - go directly to protocol selection
+            return await self.async_step_protocol_options()
 
         # Build schema based on current configuration
         schema = {}
@@ -210,6 +215,40 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={
                 "power_sensor_description": f"Select Grid power sensor for balanced charging/discharging ({UnitOfPower.WATT} required for power control)",
+            },
+        )
+
+    async def async_step_protocol_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the protocol mode and whether SunSpec should be validated."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            self._protocol_mode = user_input.get(CONF_PROTOCOL_MODE, "legacy")
+            self._verify_sunspec = bool(user_input.get(CONF_VERIFY_SUNSPEC, False))
+            self._data[CONF_PROTOCOL_MODE] = self._protocol_mode
+            self._data[CONF_VERIFY_SUNSPEC] = self._verify_sunspec
+            return await self.async_step_battery_config()
+
+        return self.async_show_form(
+            step_id="protocol_options",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_PROTOCOL_MODE,
+                        default=self._protocol_mode,
+                    ): vol.In(["legacy", "sunspec"]),
+                    vol.Required(
+                        CONF_VERIFY_SUNSPEC,
+                        default=self._verify_sunspec,
+                    ): bool,
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "protocol_description": "Select the Modbus protocol to use for communication",
+                "verify_sunspec_description": "Perform a short SunSpec availability check before using SunSpec",
             },
         )
 
@@ -293,8 +332,10 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     battery_configs["bess_a"][CONF_BATTERY_IS_MASTER] = True
 
                 if validation_passed:
-                    # Store nested configuration using new constant
                     self._data[CONF_BATTERIES] = battery_configs
+                    self._data[CONF_PROTOCOL_MODE] = self._protocol_mode
+                    self._data[CONF_VERIFY_SUNSPEC] = self._verify_sunspec
+                    self._data[CONF_EFFECTIVE_PROTOCOL_MODE] = self._protocol_mode
 
                     # Handle completion based on flow type
                     if self.context.get("source") == "reconfigure":
@@ -382,13 +423,10 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not part or not part.isdigit():
                     # Not a valid IPv4, try hostname validation below
                     return False
-                    break  # type: ignore[unreachable]
                 octet = int(part)
                 if not (0 <= octet <= 255):
                     return False
-            else:
-                # All parts validated successfully as IPv4
-                return True
+            return True
 
         # Allow hostnames only
         hostname_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"
@@ -416,6 +454,8 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._limit_power = self._data.get(CONF_LIMIT_POWER, False)
         self._sm_connected = self._data.get(CONF_SM_CONNECTED, True)
         self._balanced_loading = self._data.get(CONF_BALANCED_LOADING, False)
+        self._protocol_mode = self._data.get(CONF_PROTOCOL_MODE, "legacy")
+        self._verify_sunspec = bool(self._data.get(CONF_VERIFY_SUNSPEC, False))
 
         # Start reconfiguration from battery count to allow adding/removing batteries.
         return await self.async_step_user(user_input)

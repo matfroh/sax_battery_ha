@@ -8,6 +8,7 @@ from custom_components.sax_battery.protocol_detector import (
     SUNSPEC_ID_WORD_0,
     SUNSPEC_ID_WORD_1,
     detect_protocol_mode,
+    validate_sunspec_availability,
 )
 from custom_components.sax_battery.protocol_mode import ProtocolMode
 
@@ -91,3 +92,18 @@ async def test_detect_protocol_mode_falls_back_to_legacy() -> None:
     assert result.detected_device_id == 64
     assert result.detection_path == "fallback_legacy"
     assert result.reason == "sunspec_probe_failed"
+
+
+@pytest.mark.asyncio
+async def test_validate_sunspec_availability_uses_short_probe() -> None:
+    """A short SunSpec validation should succeed when the common header is present."""
+    api = _FakeModbusAPI(
+        responses={(0, 4, 100): [SUNSPEC_ID_WORD_0, SUNSPEC_ID_WORD_1, 1, 15]}
+    )
+
+    result = await validate_sunspec_availability(api, battery_id="bess_a")
+
+    assert result.mode == ProtocolMode.SUNSPEC
+    assert result.detected_device_id == 100
+    assert result.detection_path == "validate_sunspec"
+    assert api.calls == [(0, 4, 100)]
