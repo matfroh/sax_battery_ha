@@ -78,11 +78,36 @@ def _get_coordinator_diagnostics(coordinator: Any) -> dict[str, Any]:
     Security:
         OWASP A05: Handles missing attributes gracefully
     """
+    protocol_mode = getattr(coordinator, "protocol_mode", None)
+    protocol_mode_value: str | None = None
+    if isinstance(protocol_mode, str):
+        protocol_mode_value = protocol_mode
+    else:
+        mode_value = getattr(protocol_mode, "value", None)
+        if isinstance(mode_value, str):
+            protocol_mode_value = mode_value
+
     diag: dict[str, Any] = {
         "battery_id": getattr(coordinator, "battery_id", "unknown"),
         "is_master": getattr(coordinator, "is_master", False),
         "last_update_success": getattr(coordinator, "last_update_success", None),
         "update_interval": str(getattr(coordinator, "update_interval", None)),
+        "protocol_mode": protocol_mode_value,
+        "detected_device_id": getattr(
+            coordinator,
+            "detected_device_id",
+            getattr(coordinator, "detected_device_id", None),
+        ),
+        "protocol_detection_path": getattr(
+            coordinator,
+            "protocol_detection_path",
+            None,
+        ),
+        "protocol_detection_reason": getattr(
+            coordinator,
+            "protocol_detection_reason",
+            None,
+        ),
     }
 
     # Last update time
@@ -117,6 +142,18 @@ def _get_coordinator_diagnostics(coordinator: Any) -> dict[str, Any]:
     soc_manager = getattr(coordinator, "soc_manager", None)
     if soc_manager and hasattr(soc_manager, "get_diagnostics"):
         diag["soc_manager"] = soc_manager.get_diagnostics()
+
+    data_provider = getattr(coordinator, "data_provider", None)
+    if data_provider and hasattr(data_provider, "get_diagnostics"):
+        diag["data_provider"] = data_provider.get_diagnostics()
+
+    sunspec_control_refresh = getattr(
+        coordinator,
+        "_sunspec_control_refresh_diag",
+        None,
+    )
+    if isinstance(sunspec_control_refresh, dict):
+        diag["sunspec_control_refresh"] = dict(sunspec_control_refresh)
 
     return diag
 
@@ -178,6 +215,8 @@ async def async_get_config_entry_diagnostics(
             batteries_diag[battery_id] = {"error": "Failed to collect diagnostics"}
 
     diagnostics["batteries"] = batteries_diag
+
+    diagnostics["protocol_detection"] = integration_data.get("protocol_detection")
 
     # 5. Power manager diagnostics (if enabled)
     power_manager = integration_data.get("power_manager")

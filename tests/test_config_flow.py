@@ -452,9 +452,10 @@ class TestSAXBatteryConfigFlowExtended:
         """Test reconfigure step with valid entry ID and user input.
 
         This test follows the actual multi-step reconfigure flow:
-        1. async_step_reconfigure(None) -> control_options
-        2. async_step_control_options(input) -> battery_config
-        3. async_step_battery_config(input) -> abort (reconfigure_successful)
+        1. async_step_reconfigure(None) -> user (battery count)
+        2. async_step_user(input) -> control_options
+        3. async_step_control_options(input) -> battery_config
+        4. async_step_battery_config(input) -> abort (reconfigure_successful)
         """
         # Create a mock config entry with complete data
         mock_entry = MagicMock()
@@ -483,13 +484,18 @@ class TestSAXBatteryConfigFlowExtended:
                 hass.config_entries, "async_update_entry"
             ) as mock_update_entry,
         ):
-            # Step 1: Start reconfigure flow (goes to control_options)
+            # Step 1: Start reconfigure flow (goes to user step)
             result = await flow.async_step_reconfigure(None)
 
             assert result.get("type") == FlowResultType.FORM
+            assert result.get("step_id") == "user"
+
+            # Step 2: Keep current battery count and proceed
+            result = await flow.async_step_user({CONF_BATTERY_COUNT: 2})
+            assert result.get("type") == FlowResultType.FORM
             assert result.get("step_id") == "control_options"
 
-            # Step 2: Provide control options (pilot disabled, no sensors step)
+            # Step 3: Provide control options (pilot disabled, no sensors step)
             control_options_input = {
                 CONF_CONTROL_POWER: False,
                 CONF_LIMIT_POWER: True,
@@ -501,7 +507,7 @@ class TestSAXBatteryConfigFlowExtended:
             assert result.get("type") == FlowResultType.FORM
             assert result.get("step_id") == "battery_config"
 
-            # Step 3: Battery config step with correct per-battery input
+            # Step 4: Battery config step with correct per-battery input
             battery_config_input = {
                 "bess_a_host": "192.168.1.100",
                 "bess_a_port": 502,
@@ -555,9 +561,89 @@ class TestSAXBatteryConfigFlowExtended:
             assert flow._control_power is True
             assert flow._limit_power is True
 
-            # Should proceed to control options step
+            # Should proceed to user step to allow battery_count changes
             assert result.get("type") == FlowResultType.FORM
-            assert result.get("step_id") == "control_options"
+            assert result.get("step_id") == "user"
+
+    async def test_user_step_aborts_when_single_instance_exists(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Test that adding a second hub entry is blocked."""
+        existing_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={CONF_BATTERY_COUNT: 1},
+            entry_id="existing_sax_entry",
+        )
+        existing_entry.add_to_hass(hass)
+
+        flow = SAXBatteryConfigFlow()
+        flow.hass = hass
+
+        result = await flow.async_step_user(None)
+
+        assert result.get("type") == FlowResultType.ABORT
+        assert result.get("reason") == "single_instance_allowed"
+
+    async def test_battery_config_rejects_duplicate_host_in_same_form(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Test duplicate host/IP validation inside one battery configuration."""
+        flow = SAXBatteryConfigFlow()
+        flow.hass = hass
+        flow._battery_count = 2
+
+        result = await flow.async_step_battery_config(
+            {
+                "bess_a_host": "192.168.1.100",
+                "bess_a_port": DEFAULT_PORT,
+                "bess_b_host": "192.168.1.100",
+                "bess_b_port": DEFAULT_PORT,
+                CONF_MASTER_BATTERY: "bess_a",
+            }
+        )
+
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
+        errors = result.get("errors")
+        assert errors is not None
+        assert errors.get("bess_b_host") == "duplicate_host"
+
+    async def test_battery_config_rejects_host_used_by_other_entry(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Test duplicate host/IP validation against existing configured entries."""
+        existing_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_BATTERY_COUNT: 1,
+                CONF_BATTERIES: {
+                    "bess_a": {
+                        CONF_BATTERY_HOST: "192.168.1.100",
+                        CONF_BATTERY_PORT: DEFAULT_PORT,
+                    }
+                },
+            },
+            entry_id="existing_entry",
+        )
+        existing_entry.add_to_hass(hass)
+
+        flow = SAXBatteryConfigFlow()
+        flow.hass = hass
+        flow._battery_count = 1
+        flow.context = {"source": "reconfigure", "entry_id": "different_entry"}
+
+        result = await flow.async_step_battery_config(
+            {
+                "bess_a_host": "192.168.1.100",
+                "bess_a_port": DEFAULT_PORT,
+            }
+        )
+
+        assert result.get("type") == FlowResultType.FORM
+        assert result.get("step_id") == "battery_config"
+        errors = result.get("errors")
+        assert errors is not None
+        assert errors.get("bess_a_host") == "duplicate_host"
 
     async def test_reconfigure_with_entry_domain_mismatch(
         self, hass: HomeAssistant

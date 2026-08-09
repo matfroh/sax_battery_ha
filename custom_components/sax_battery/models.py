@@ -23,14 +23,18 @@ from .const import (
     CONF_SM_CONNECTED,
     DEFAULT_DEVICE_INFO,
     DOMAIN,
+    PILOT_ITEMS,
+)
+from .const_legacy import (
     MODBUS_BATTERY_BMS_ITEMS,
     MODBUS_BATTERY_SMARTMETER_ITEMS,
     MODBUS_BATTERY_SWITCH_ITEMS,
-    PILOT_ITEMS,
 )
+from .const_sunspec import get_canonical_sunspec_items_by_name
 from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
+from .protocol_mode import ProtocolMode
 from .utils import create_register_access_config, get_battery_realtime_items
 
 _LOGGER = logging.getLogger(__name__)
@@ -225,7 +229,14 @@ class SAXBatteryData:
     def get_modbus_items_for_battery(self, battery_id: str) -> list[ModbusItem]:
         """Get modbus items for a specific battery."""
         battery = self.batteries.get(battery_id)
-        return battery.get_modbus_items() if battery else []
+        if not battery:
+            return []
+
+        items = battery.get_modbus_items()
+        if self._get_protocol_mode_for_battery(battery_id) != ProtocolMode.SUNSPEC:
+            return items
+
+        return self._merge_sunspec_items(items, battery.is_master)
 
     def get_sax_items_for_battery(self, battery_id: str) -> list[SAXItem]:
         """Get SAX items for a specific battery."""
@@ -461,23 +472,15 @@ class SAXBatteryData:
             return None
 
         # Map item type to Home Assistant platform prefix
-        if item.mtype in [
-            TypeConstants.NUMBER_WO,
-            TypeConstants.NUMBER_RO,
-            TypeConstants.NUMBER,
-        ]:
-            entity_id = f"number.{unique_id}"
-        elif item.mtype in [TypeConstants.SENSOR, TypeConstants.SENSOR_CALC]:
-            entity_id = f"sensor.{unique_id}"
-        elif item.mtype == TypeConstants.SWITCH:
-            entity_id = f"switch.{unique_id}"
-        else:
-            _LOGGER.warning(
-                "Unknown item type '%s' for item '%s', cannot generate entity_id",
-                item.mtype,
-                item.name,
-            )
-            return None
+        platform_prefix = {
+            TypeConstants.NUMBER_WO: "number",
+            TypeConstants.NUMBER_RO: "number",
+            TypeConstants.NUMBER: "number",
+            TypeConstants.SENSOR: "sensor",
+            TypeConstants.SENSOR_CALC: "sensor",
+            TypeConstants.SWITCH: "switch",
+        }[item.mtype]
+        entity_id = f"{platform_prefix}.{unique_id}"
 
         _LOGGER.debug(
             "Generated entity_id '%s' for item '%s' (battery_id=%s, type=%s)",
@@ -554,3 +557,42 @@ class SAXBatteryData:
         # Item not found
         _LOGGER.debug("Item '%s' not found in any battery", search_name)
         return None
+
+    def _get_protocol_mode_for_battery(self, battery_id: str) -> ProtocolMode:
+        """Return the active protocol mode for a battery if the coordinator is available."""
+        coordinator = self.coordinators.get(battery_id)
+        protocol_mode = getattr(coordinator, "protocol_mode", None)
+
+        if isinstance(protocol_mode, ProtocolMode):
+            return protocol_mode
+
+        if isinstance(protocol_mode, str):
+            normalized_mode = protocol_mode.strip().lower()
+            if normalized_mode == ProtocolMode.SUNSPEC.value:
+                return ProtocolMode.SUNSPEC
+            if normalized_mode == ProtocolMode.LEGACY.value:
+                return ProtocolMode.LEGACY
+
+        value = getattr(protocol_mode, "value", None)
+        if isinstance(value, str):
+            normalized_mode = value.strip().lower()
+            if normalized_mode == ProtocolMode.SUNSPEC.value:
+                return ProtocolMode.SUNSPEC
+            if normalized_mode == ProtocolMode.LEGACY.value:
+                return ProtocolMode.LEGACY
+
+        return ProtocolMode.LEGACY
+
+    def _merge_sunspec_items(
+        self,
+        legacy_items: list[ModbusItem],
+        is_master: bool,
+    ) -> list[ModbusItem]:
+        """Merge SunSpec-backed item definitions into the active inventory."""
+        merged_items: dict[str, ModbusItem] = {item.name: item for item in legacy_items}
+
+        for item in get_canonical_sunspec_items_by_name().values():
+            if is_master or item.address <= 40014:
+                merged_items[item.name] = item
+
+        return list(merged_items.values())

@@ -9,7 +9,7 @@ import pytest
 from custom_components.sax_battery.const import (
     CONF_MIN_SOC,
     DESCRIPTION_SAX_MAX_CHARGE,
-    DESCRIPTION_SAX_MIN_SOC,
+    DESCRIPTION_SAX_MIN_SOC_LIMIT,
     PILOT_ITEMS,
     SAX_MAX_CHARGE,
     SAX_MIN_SOC,
@@ -73,7 +73,7 @@ def percentage_number_item_unique():
         name=SAX_MIN_SOC,
         mtype=TypeConstants.NUMBER,
         device=DeviceConstants.BESS,
-        entitydescription=DESCRIPTION_SAX_MIN_SOC,
+        entitydescription=DESCRIPTION_SAX_MIN_SOC_LIMIT,
     )
 
 

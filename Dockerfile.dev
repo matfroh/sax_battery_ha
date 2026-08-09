@@ -27,6 +27,7 @@ RUN \
   # SAX Battery extras
   graphviz \
   libgammu-dev \
+  poppler-utils \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 

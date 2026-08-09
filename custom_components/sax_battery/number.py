@@ -32,7 +32,6 @@ from .const import (
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
     LIMIT_REFRESH_INTERVAL,
-    MODBUS_BATTERY_POWER_CONTROL_ITEMS,
     REFRESH_REGISTERS,
     SAX_COMBINED_SOC,
     SAX_MAX_CHARGE,
@@ -43,6 +42,7 @@ from .const import (
     SAX_NOMINAL_POWER,
     WRITE_ONLY_REGISTERS,
 )
+from .const_legacy import MODBUS_BATTERY_POWER_CONTROL_ITEMS
 from .coordinator import SAXBatteryCoordinator
 from .entity_utils import filter_items_by_type, filter_sax_items_by_type
 from .enums import TypeConstants

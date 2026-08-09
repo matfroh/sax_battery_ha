@@ -29,14 +29,16 @@ from .const import (
     CONF_SM_CONNECTED,
     DEFAULT_PORT,
     DOMAIN,
-    MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
 )
+from .const_legacy import MODBUS_BATTERY_POWER_LIMIT_ITEMS
 from .coordinator import SAXBatteryCoordinator
 from .modbusobject import ModbusAPI
 from .models import SAXBatteryData
 from .power_manager import PowerManager
+from .protocol_detector import detect_protocol_mode
+from .protocol_mode import ProtocolMode
 from .txid_error_tracker import setup_handler as _setup_txid_handler
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,6 +68,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
 
         # Initialize coordinators for each battery
         coordinators: dict[str, SAXBatteryCoordinator] = {}
+        protocol_detection: dict[str, dict[str, Any]] = {}
         master_coordinator: SAXBatteryCoordinator | None = None  # Define outside block
 
         for battery_id, battery_config in batteries_config.items():
@@ -76,6 +79,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
                 hass, entry, sax_data, battery_id, battery_config
             )
             coordinators[battery_id] = coordinator
+            protocol_detection[battery_id] = {
+                "mode": coordinator.protocol_mode.value,
+                "detected_device_id": coordinator.detected_device_id,
+                "detection_path": coordinator.protocol_detection_path,
+                "detection_reason": coordinator.protocol_detection_reason,
+            }
 
             # Track master coordinator
             if battery_config.get(CONF_BATTERY_IS_MASTER, False):
@@ -89,6 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
             "coordinators": coordinators,
             "sax_data": sax_data,
             "config": entry.data,
+            "protocol_detection": protocol_detection,
         }
 
         # Update sax_data with coordinators for cross-battery calculations
@@ -739,6 +749,9 @@ async def _setup_battery_coordinator(
     if not await modbus_api.connect():
         raise ConfigEntryNotReady(f"Could not connect to {battery_id} at {host}:{port}")
 
+    # Detect protocol mode with safe fallback to legacy
+    detection = await detect_protocol_mode(modbus_api=modbus_api, battery_id=battery_id)
+
     # Create coordinator
     coordinator = SAXBatteryCoordinator(
         hass=hass,
@@ -747,7 +760,30 @@ async def _setup_battery_coordinator(
         modbus_api=modbus_api,
         config_entry=entry,
         battery_config=battery_config,
+        protocol_mode=detection.mode,
+        detected_device_id=detection.detected_device_id,
+        detection_path=detection.detection_path,
+        detection_reason=detection.reason,
     )
+
+    _LOGGER.info(
+        "%s: Protocol mode=%s, device_id=%s (%s)",
+        battery_id,
+        detection.mode.value,
+        detection.detected_device_id,
+        detection.reason,
+    )
+
+    # In SunSpec mode, load startup metadata once during setup/reload.
+    if detection.mode == ProtocolMode.SUNSPEC:
+        try:
+            await coordinator.async_initialize_sunspec_metadata()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning(
+                "%s: Failed to initialize SunSpec metadata during setup: %s",
+                battery_id,
+                err,
+            )
 
     # Initial data fetch
     try:

@@ -20,12 +20,8 @@ from typing import TYPE_CHECKING
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
-from .const import (
-    DOMAIN,
-    MODBUS_BATTERY_POWER_LIMIT_ITEMS,
-    SAX_COMBINED_SOC,
-    SAX_MAX_DISCHARGE,
-)
+from .const import DOMAIN, SAX_COMBINED_SOC, SAX_MAX_DISCHARGE
+from .const_legacy import MODBUS_BATTERY_POWER_LIMIT_ITEMS
 from .items import ModbusItem
 
 if TYPE_CHECKING:

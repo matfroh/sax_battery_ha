@@ -14,6 +14,8 @@ from custom_components.sax_battery.const import (
     CONF_MASTER_BATTERY,
     DESCRIPTION_SAX_SMARTMETER_TOTAL_POWER,
     DOMAIN,
+)
+from custom_components.sax_battery.const_legacy import (
     MODBUS_BATTERY_POWER_CONTROL_ITEMS,
     MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     MODBUS_BATTERY_REALTIME_ITEMS,

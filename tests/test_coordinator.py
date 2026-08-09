@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,6 +21,7 @@ from custom_components.sax_battery.const import (
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem
+from custom_components.sax_battery.protocol_mode import ProtocolMode
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -202,6 +204,153 @@ class TestSAXBatteryCoordinator:
             assert isinstance(
                 sax_battery_coordinator_instance.last_update_success_time, datetime
             )
+
+    async def test_poll_device_batch_uses_data_provider(
+        self,
+        sax_battery_coordinator_instance,
+        mock_modbus_api_coord_unique,
+    ) -> None:
+        """Device batch polling should consume provider values instead of item reads."""
+        item = ModbusItem(
+            name="sax_temperature",
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.BESS,
+            address=20,
+            battery_device_id=1,
+            factor=1.0,
+        )
+        mock_modbus_api_coord_unique.is_connected.return_value = True
+        sax_battery_coordinator_instance.data_provider.get_realtime_values = AsyncMock(
+            return_value={"sax_temperature": 25}
+        )
+
+        with patch.object(
+            item, "async_read_value", AsyncMock(return_value=99)
+        ) as mock_read:
+            result = await sax_battery_coordinator_instance._poll_device_batch(
+                DeviceConstants.BESS,
+                [item],
+            )
+
+        assert result == {"sax_temperature": 25}
+        sax_battery_coordinator_instance.data_provider.get_realtime_values.assert_awaited_once_with(
+            [item]
+        )
+        mock_read.assert_not_called()
+
+    async def test_poll_device_batch_sunspec_uses_block_group_methods(
+        self,
+        sax_battery_coordinator_instance,
+        mock_modbus_api_coord_unique,
+    ) -> None:
+        """SunSpec polling should use block-group provider methods."""
+        item = ModbusItem(
+            name="sax_temperature",
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.BESS,
+            address=20,
+            battery_device_id=1,
+            factor=1.0,
+        )
+
+        mock_modbus_api_coord_unique.is_connected.return_value = True
+        sax_battery_coordinator_instance.protocol_mode = ProtocolMode.SUNSPEC
+        sax_battery_coordinator_instance.data_provider.get_startup_metadata = AsyncMock(
+            return_value={}
+        )
+        sax_battery_coordinator_instance.data_provider.get_battery_sensor_values = (
+            AsyncMock(return_value={"sax_temperature": 25})
+        )
+        sax_battery_coordinator_instance.data_provider.get_battery_state_values = (
+            AsyncMock(return_value={})
+        )
+        sax_battery_coordinator_instance.data_provider.get_smart_meter_values = (
+            AsyncMock(return_value={})
+        )
+        sax_battery_coordinator_instance.data_provider.get_control_values = AsyncMock(
+            return_value={}
+        )
+        sax_battery_coordinator_instance.data_provider.get_realtime_values = AsyncMock(
+            return_value={}
+        )
+
+        result = await sax_battery_coordinator_instance._poll_device_batch(
+            DeviceConstants.BESS,
+            [item],
+        )
+
+        assert result == {"sax_temperature": 25}
+        sax_battery_coordinator_instance.data_provider.get_battery_sensor_values.assert_awaited_once_with(
+            [item]
+        )
+        sax_battery_coordinator_instance.data_provider.get_startup_metadata.assert_not_awaited()
+        sax_battery_coordinator_instance.data_provider.get_realtime_values.assert_not_called()
+
+    async def test_poll_device_batch_sunspec_uses_cached_values_when_block_not_due(
+        self,
+        sax_battery_coordinator_instance,
+        mock_modbus_api_coord_unique,
+    ) -> None:
+        """SunSpec polling should keep cached values when cadence skips a block."""
+        item = ModbusItem(
+            name="sax_sunspec_power_setpoint",
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            address=40049,
+            battery_device_id=100,
+            factor=1.0,
+        )
+
+        mock_modbus_api_coord_unique.is_connected.return_value = True
+        sax_battery_coordinator_instance.protocol_mode = ProtocolMode.SUNSPEC
+        sax_battery_coordinator_instance.data = {"sax_sunspec_power_setpoint": 42}
+        sax_battery_coordinator_instance._sunspec_block_last_poll[
+            "battery_controls"
+        ] = time.monotonic()
+
+        sax_battery_coordinator_instance.data_provider.get_startup_metadata = AsyncMock(
+            return_value={}
+        )
+        sax_battery_coordinator_instance.data_provider.get_battery_sensor_values = (
+            AsyncMock(return_value={})
+        )
+        sax_battery_coordinator_instance.data_provider.get_battery_state_values = (
+            AsyncMock(return_value={})
+        )
+        sax_battery_coordinator_instance.data_provider.get_smart_meter_values = (
+            AsyncMock(return_value={})
+        )
+        sax_battery_coordinator_instance.data_provider.get_control_values = AsyncMock(
+            return_value={}
+        )
+
+        result = await sax_battery_coordinator_instance._poll_device_batch(
+            DeviceConstants.SYS,
+            [item],
+        )
+
+        assert result == {"sax_sunspec_power_setpoint": 42}
+        sax_battery_coordinator_instance.data_provider.get_control_values.assert_not_awaited()
+
+    async def test_initialize_sunspec_metadata_caches_values(
+        self,
+        sax_battery_coordinator_instance,
+    ) -> None:
+        """SunSpec metadata initialization should cache startup block values."""
+        sax_battery_coordinator_instance.protocol_mode = ProtocolMode.SUNSPEC
+        sax_battery_coordinator_instance.data_provider.get_startup_metadata = AsyncMock(
+            return_value={"sax_soc": 77}
+        )
+
+        await sax_battery_coordinator_instance.async_initialize_sunspec_metadata()
+
+        assert sax_battery_coordinator_instance._sunspec_metadata_values == {
+            "sax_soc": 77
+        }
+        assert (
+            "device_metadata"
+            in sax_battery_coordinator_instance._sunspec_block_last_poll
+        )
 
     async def test_write_switch_value_success(
         self,
@@ -459,78 +608,62 @@ class TestSAXBatteryCoordinator:
         sax_battery_coordinator_instance,
         mock_modbus_api_coord_unique,
     ) -> None:
-        """Test _poll_device_batch with successful polling - examining actual implementation."""
-        # Create mock items with proper async_read_value setup
+        """Test _poll_device_batch with successful provider-backed polling."""
         item1 = MagicMock(spec=ModbusItem)
         item1.name = "item1"
         item1.mtype = TypeConstants.SENSOR
-        item1.is_read_only.return_value = True
-        item1.async_read_value = AsyncMock(return_value=42.0)
+        item1.address = 10
 
         item2 = MagicMock(spec=ModbusItem)
         item2.name = "item2"
         item2.mtype = TypeConstants.SENSOR
-        item2.is_read_only.return_value = True
-        item2.async_read_value = AsyncMock(return_value=84.0)
+        item2.address = 11
 
         items = [item1, item2]
+        mock_modbus_api_coord_unique.is_connected.return_value = True
+        sax_battery_coordinator_instance.data_provider.get_realtime_values = AsyncMock(
+            return_value={"item1": 42.0, "item2": 84.0}
+        )
 
-        # Mock the _poll_single_item method to verify it's called correctly
-        with patch.object(
-            sax_battery_coordinator_instance,
-            "_poll_single_item",
-            side_effect=[42.0, 84.0],
-        ) as mock_poll_single:
-            # Test polling
-            result = await sax_battery_coordinator_instance._poll_device_batch(
-                DeviceConstants.BESS, items
-            )
+        result = await sax_battery_coordinator_instance._poll_device_batch(
+            DeviceConstants.BESS, items
+        )
 
-            # Verify the method was called and returns a dict
-            assert isinstance(result, dict)
-
-            # Verify _poll_single_item was called for each item
-            assert mock_poll_single.call_count == 2
-            mock_poll_single.assert_any_call(item1)
-            mock_poll_single.assert_any_call(item2)
+        assert result == {"item1": 42.0, "item2": 84.0}
+        sax_battery_coordinator_instance.data_provider.get_realtime_values.assert_awaited_once_with(
+            items
+        )
 
     async def test_poll_device_batch_with_exceptions(
         self,
         sax_battery_coordinator_instance,
         mock_modbus_api_coord_unique,
     ) -> None:
-        """Test _poll_device_batch with polling exceptions - examining actual implementation."""
-        # Create mock items - one succeeds, one fails
+        """Test _poll_device_batch handles provider exceptions gracefully."""
         item1 = MagicMock(spec=ModbusItem)
         item1.name = "item1"
         item1.mtype = TypeConstants.SENSOR
-        item1.is_read_only.return_value = True
-        item1.async_read_value = AsyncMock(return_value=42.0)
+        item1.address = 10
 
         item2 = MagicMock(spec=ModbusItem)
         item2.name = "item2"
         item2.mtype = TypeConstants.SENSOR
-        item2.is_read_only.return_value = True
-        item2.async_read_value = AsyncMock(side_effect=ModbusException("Read failed"))
+        item2.address = 11
 
         items = [item1, item2]
+        mock_modbus_api_coord_unique.is_connected.return_value = True
+        sax_battery_coordinator_instance.data_provider.get_realtime_values = AsyncMock(
+            side_effect=ModbusException("Read failed")
+        )
 
-        # Mock the _poll_single_item method to return expected results
-        with patch.object(
-            sax_battery_coordinator_instance,
-            "_poll_single_item",
-            side_effect=[42.0, None],  # Success, then None for exception
-        ) as mock_poll_single:
-            # Test polling
-            result = await sax_battery_coordinator_instance._poll_device_batch(
-                DeviceConstants.BESS, items
-            )
+        result = await sax_battery_coordinator_instance._poll_device_batch(
+            DeviceConstants.BESS, items
+        )
 
-            # Verify the method handles exceptions gracefully and returns a dict
-            assert isinstance(result, dict)
-
-            # Verify _poll_single_item was called for both items despite one failing
-            assert mock_poll_single.call_count == 2
+        assert result == {}
+        sax_battery_coordinator_instance.data_provider.get_realtime_values.assert_awaited_once_with(
+            items
+        )
 
     async def test_poll_single_item_success(
         self,
@@ -660,6 +793,107 @@ class TestSAXBatteryCoordinator:
             not in sax_battery_coordinator_instance._pending_writes
         )
         mock_modbus_api_coord_unique.write_registers.assert_awaited()
+
+    async def test_process_write_queue_refreshes_sunspec_control_values(
+        self,
+        sax_battery_coordinator_instance,
+        mock_modbus_api_coord_unique,
+        real_number_item_coord_unique,
+    ) -> None:
+        """Successful SunSpec writes should trigger a control-block refresh."""
+        coordinator = sax_battery_coordinator_instance
+        coordinator.protocol_mode = ProtocolMode.SUNSPEC
+        mock_modbus_api_coord_unique.write_registers = AsyncMock(return_value=True)
+        coordinator.data_provider.refresh_control_values = AsyncMock(
+            return_value={"refreshed_control": 321}
+        )
+
+        coordinator._pending_writes[real_number_item_coord_unique.name] = 123
+        await coordinator._write_queue.put(
+            (real_number_item_coord_unique, 123, "normal", {})
+        )
+
+        data: dict[str, Any] = {}
+        await coordinator._process_write_queue(data)
+
+        assert data[real_number_item_coord_unique.name] == 123
+        assert data["refreshed_control"] == 321
+        coordinator.data_provider.refresh_control_values.assert_awaited_once()
+
+    async def test_periodic_sunspec_control_refresh_updates_data_when_due(
+        self,
+        sax_battery_coordinator_instance,
+    ) -> None:
+        """Periodic SunSpec control refresh should run when interval is due."""
+        coordinator = sax_battery_coordinator_instance
+        coordinator.protocol_mode = ProtocolMode.SUNSPEC
+
+        control_item = ModbusItem(
+            name="sax_sunspec_power_setpoint",
+            mtype=TypeConstants.SENSOR,
+            device=DeviceConstants.SYS,
+            address=40049,
+            battery_device_id=100,
+            factor=1.0,
+        )
+        coordinator.sax_data.get_modbus_items_for_battery.return_value = [control_item]
+        coordinator.data_provider.get_control_values = AsyncMock(
+            return_value={"sax_sunspec_power_setpoint": 88}
+        )
+
+        data: dict[str, Any] = {}
+        await coordinator._refresh_sunspec_control_values_on_cadence(data)
+
+        assert data["sax_sunspec_power_setpoint"] == 88
+        coordinator.data_provider.get_control_values.assert_awaited_once_with(
+            [control_item]
+        )
+        assert "battery_controls" in coordinator._sunspec_block_last_poll
+
+    async def test_periodic_sunspec_control_refresh_skips_when_not_due(
+        self,
+        sax_battery_coordinator_instance,
+    ) -> None:
+        """Periodic SunSpec control refresh should not run before interval elapses."""
+        coordinator = sax_battery_coordinator_instance
+        coordinator.protocol_mode = ProtocolMode.SUNSPEC
+        coordinator._sunspec_block_last_poll["battery_controls"] = time.monotonic()
+        coordinator.data_provider.get_control_values = AsyncMock(
+            return_value={"sax_sunspec_power_setpoint": 88}
+        )
+
+        data: dict[str, Any] = {}
+        await coordinator._refresh_sunspec_control_values_on_cadence(data)
+
+        assert data == {}
+        coordinator.data_provider.get_control_values.assert_not_awaited()
+        assert coordinator._sunspec_control_refresh_diag["skipped_not_due_count"] == 1
+        assert (
+            coordinator._sunspec_control_refresh_diag["last_result"]
+            == "skipped_not_due"
+        )
+
+    async def test_periodic_sunspec_control_refresh_records_failure(
+        self,
+        sax_battery_coordinator_instance,
+    ) -> None:
+        """Periodic SunSpec control refresh should record diagnostics on failure."""
+        coordinator = sax_battery_coordinator_instance
+        coordinator.protocol_mode = ProtocolMode.SUNSPEC
+        coordinator.sax_data.get_modbus_items_for_battery.return_value = []
+        coordinator.data_provider.get_control_values = AsyncMock(
+            side_effect=RuntimeError("refresh_failed")
+        )
+
+        data: dict[str, Any] = {}
+        await coordinator._refresh_sunspec_control_values_on_cadence(data)
+
+        assert data == {}
+        assert coordinator._sunspec_control_refresh_diag["attempt_count"] == 1
+        assert coordinator._sunspec_control_refresh_diag["last_result"] == "failed"
+        assert (
+            coordinator._sunspec_control_refresh_diag["last_error"] == "refresh_failed"
+        )
 
     async def test_async_write_switch_value_queues_register_value(
         self,

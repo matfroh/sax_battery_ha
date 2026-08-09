@@ -166,6 +166,30 @@ def mock_coordinator_diagnostics(
     }
     coordinator.modbus_api = mock_modbus_api_diagnostics
     coordinator.soc_manager = mock_soc_manager_diagnostics
+    coordinator.data_provider = MagicMock()
+    coordinator.data_provider.get_diagnostics.return_value = {
+        "provider_type": "sunspec",
+        "detected_device_id": 100,
+        "cached_blocks": ["battery_sensor_data"],
+        "required_blocks_failed": [],
+        "optional_blocks_failed": ["smartmeter_data"],
+        "session_degraded": False,
+        "smartmeter_unavailable": True,
+        "blocks": {
+            "battery_sensor_data": {
+                "last_refresh_success": True,
+                "cached_register_count": 32,
+            }
+        },
+    }
+    coordinator._sunspec_control_refresh_diag = {
+        "attempt_count": 3,
+        "skipped_not_due_count": 4,
+        "last_attempt_time": "2026-02-08T10:00:00",
+        "last_success_time": "2026-02-08T10:00:00",
+        "last_result": "success",
+        "last_error": None,
+    }
 
     return coordinator
 
@@ -298,6 +322,38 @@ class TestGetCoordinatorDiagnostics:
         assert result["soc_manager"]["enabled"] is True
         assert result["soc_manager"]["min_soc"] == 15
 
+    def test_data_provider_diagnostics_included(
+        self, mock_coordinator_diagnostics
+    ) -> None:
+        """Test data provider diagnostics are included."""
+        result = _get_coordinator_diagnostics(mock_coordinator_diagnostics)
+
+        assert "data_provider" in result
+        assert result["data_provider"]["provider_type"] == "sunspec"
+        assert result["data_provider"]["detected_device_id"] == 100
+
+    def test_data_provider_aggregate_block_health_included(
+        self, mock_coordinator_diagnostics
+    ) -> None:
+        """Test aggregate optional-vs-required block health is exposed."""
+        result = _get_coordinator_diagnostics(mock_coordinator_diagnostics)
+
+        provider_diag = result["data_provider"]
+        assert provider_diag["session_degraded"] is False
+        assert provider_diag["smartmeter_unavailable"] is True
+        assert provider_diag["required_blocks_failed"] == []
+        assert provider_diag["optional_blocks_failed"] == ["smartmeter_data"]
+
+    def test_sunspec_control_refresh_diagnostics_included(
+        self, mock_coordinator_diagnostics
+    ) -> None:
+        """Test periodic SunSpec control refresh diagnostics are included."""
+        result = _get_coordinator_diagnostics(mock_coordinator_diagnostics)
+
+        assert "sunspec_control_refresh" in result
+        assert result["sunspec_control_refresh"]["attempt_count"] == 3
+        assert result["sunspec_control_refresh"]["last_result"] == "success"
+
     def test_handles_missing_circuit_breaker(self) -> None:
         """Test graceful handling when circuit breaker is absent."""
         coordinator = MagicMock()
@@ -313,6 +369,7 @@ class TestGetCoordinatorDiagnostics:
         del coordinator._statistics
         del coordinator.modbus_api
         del coordinator.soc_manager
+        del coordinator.data_provider
 
         result = _get_coordinator_diagnostics(coordinator)
 
@@ -335,6 +392,7 @@ class TestGetCoordinatorDiagnostics:
         del coordinator._statistics
         del coordinator.modbus_api
         del coordinator.soc_manager
+        del coordinator.data_provider
 
         result = _get_coordinator_diagnostics(coordinator)
 
@@ -427,6 +485,33 @@ class TestAsyncGetConfigEntryDiagnostics:
         assert "circuit_breaker" in battery_a
         assert "modbus" in battery_a
         assert "soc_manager" in battery_a
+
+    @pytest.mark.asyncio
+    async def test_battery_diagnostics_include_provider_aggregate_health(
+        self,
+        mock_hass_diagnostics,
+        mock_entry_diagnostics,
+        mock_coordinator_diagnostics,
+    ) -> None:
+        """Test provider aggregate health fields are surfaced in diagnostics."""
+        mock_hass_diagnostics.data = {
+            DOMAIN: {
+                mock_entry_diagnostics.entry_id: {
+                    "coordinators": {
+                        "bess_a": mock_coordinator_diagnostics,
+                    },
+                },
+            },
+        }
+
+        result = await async_get_config_entry_diagnostics(
+            mock_hass_diagnostics, mock_entry_diagnostics
+        )
+
+        provider_diag = result["batteries"]["bess_a"]["data_provider"]
+        assert provider_diag["session_degraded"] is False
+        assert provider_diag["smartmeter_unavailable"] is True
+        assert provider_diag["optional_blocks_failed"] == ["smartmeter_data"]
 
     @pytest.mark.asyncio
     async def test_multi_battery_diagnostics(

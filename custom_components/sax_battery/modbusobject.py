@@ -333,6 +333,125 @@ class ModbusAPI:
             # Always clean up the reference
             self._modbus_client = None
 
+    async def read_register_block(
+        self,
+        address: int,
+        count: int,
+        device_id: int,
+    ) -> list[int] | None:
+        """Read a raw register block for startup protocol detection.
+
+        Args:
+            address: Internal Modbus register address
+            count: Number of registers to read
+            device_id: Modbus device/unit ID
+
+        Returns:
+            List of register values, or None on failure
+
+        Security:
+            OWASP A05: Input validation and bounded low-level probing
+        """
+        # Security: Validate probe request
+        if address < 0 or address > 65535:
+            _LOGGER.error("Invalid block read address: %s", address)
+            return None
+
+        if count <= 0 or count > 125:
+            _LOGGER.error("Invalid block read count: %s", count)
+            return None
+
+        if device_id <= 0 or device_id > 255:
+            _LOGGER.error("Invalid block read device_id: %s", device_id)
+            return None
+
+        if not self.is_connected() and not await self.connect():
+            _LOGGER.debug(
+                "Block read connect failed for %s",
+                self.battery_id,
+            )
+            return None
+
+        async with self._operation_lock:
+            try:
+                if not self._modbus_client:
+                    return None
+
+                result = await self._modbus_client.read_holding_registers(
+                    address=address,
+                    count=count,
+                    device_id=device_id,
+                )
+
+                if result.isError() or not result.registers:
+                    self._record_operation_failure(
+                        "modbus",
+                        f"raw block read error at {address} (device_id={device_id})",
+                        register_address=address,
+                    )
+                    return None
+
+                self._record_operation_success(address)
+                return list(result.registers)
+
+            except (ConnectionException, ModbusIOException) as exc:
+                self._record_operation_failure(
+                    "network",
+                    str(exc),
+                    register_address=address,
+                )
+                return None
+
+            except ModbusException as exc:
+                self._record_operation_failure(
+                    "modbus",
+                    str(exc),
+                    register_address=address,
+                )
+                return None
+
+            except (OSError, TimeoutError) as exc:
+                error_type = "timeout" if isinstance(exc, TimeoutError) else "network"
+                self._record_operation_failure(
+                    error_type,
+                    str(exc),
+                    register_address=address,
+                )
+                return None
+
+    def decode_register_block_value(
+        self,
+        registers: list[int],
+        modbus_item: ModbusItem,
+    ) -> int | float | None:
+        """Decode a raw register slice using the item's datatype and scaling."""
+        if not registers:
+            return None
+
+        if not self._modbus_client:
+            _LOGGER.debug(
+                "%s: Cannot decode registers for %s without an active modbus client",
+                self.battery_id,
+                modbus_item.name,
+            )
+            return None
+
+        converted_result = self._modbus_client.convert_from_registers(
+            registers,
+            modbus_item.data_type,
+        )
+
+        if not isinstance(converted_result, (int, float)):
+            return None
+
+        if modbus_item.factor != 1.0:
+            converted_result *= modbus_item.factor
+
+        if modbus_item.offset != 0:
+            converted_result -= modbus_item.offset
+
+        return converted_result
+
     async def read_holding_registers(
         self, count: int, modbus_item: ModbusItem
     ) -> int | float | None:

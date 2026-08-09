@@ -13,10 +13,12 @@ from .const import (
     CONF_CONTROL_POWER,
     CONF_LIMIT_POWER,
     CONF_MASTER_BATTERY,
+    WRITE_ONLY_REGISTERS,
+)
+from .const_legacy import (
     MODBUS_BATTERY_POWER_CONTROL_ITEMS,
     MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     MODBUS_BATTERY_REALTIME_ITEMS,
-    WRITE_ONLY_REGISTERS,
 )
 from .items import ModbusItem, SAXItem
 

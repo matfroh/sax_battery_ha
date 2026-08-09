@@ -36,10 +36,10 @@ from .const import (
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
     DOMAIN,
-    MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
 )
+from .const_legacy import MODBUS_BATTERY_POWER_LIMIT_ITEMS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +73,14 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
+        # Allow only one SAX hub config entry. Additional batteries must be added
+        # by reconfiguring the existing entry.
+        if (
+            self.context.get("source") != "reconfigure"
+            and self._async_current_entries()
+        ):
+            return self.async_abort(reason="single_instance_allowed")
+
         if user_input is not None:
             # Store battery count and move to control options
             self._battery_count = user_input[CONF_BATTERY_COUNT]
@@ -85,9 +93,10 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_BATTERY_COUNT, default=1): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=3)
-                    ),
+                    vol.Required(
+                        CONF_BATTERY_COUNT,
+                        default=self._battery_count or 1,
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=3)),
                 }
             ),
             errors=errors,
@@ -214,6 +223,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             battery_count = self._battery_count or 1
             battery_configs: dict[str, dict[str, Any]] = {}
             validation_passed = True
+            seen_hosts: set[str] = set()
 
             for i in range(1, battery_count + 1):
                 battery_id = BATTERY_IDS[i - 1]  # Use consistent battery IDs
@@ -233,6 +243,19 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors[host_key] = "invalid_host_format"
                     validation_passed = False
                     continue
+
+                normalized_host = host.lower()
+                if normalized_host in seen_hosts:
+                    errors[host_key] = "duplicate_host"
+                    validation_passed = False
+                    continue
+
+                if self._is_host_used_by_other_entry(normalized_host):
+                    errors[host_key] = "duplicate_host"
+                    validation_passed = False
+                    continue
+
+                seen_hosts.add(normalized_host)
 
                 try:
                     port_int = int(port)
@@ -394,8 +417,39 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._sm_connected = self._data.get(CONF_SM_CONNECTED, True)
         self._balanced_loading = self._data.get(CONF_BALANCED_LOADING, False)
 
-        # Start reconfiguration from control options
-        return await self.async_step_control_options()
+        # Start reconfiguration from battery count to allow adding/removing batteries.
+        return await self.async_step_user(user_input)
+
+    def _is_host_used_by_other_entry(self, host: str) -> bool:
+        """Return True if host is already used by another config entry."""
+        current_entry_id = self.context.get("entry_id")
+
+        for entry in self._async_current_entries():
+            if current_entry_id and entry.entry_id == current_entry_id:
+                continue
+
+            # New nested format.
+            batteries = entry.data.get(CONF_BATTERIES, {})
+            if isinstance(batteries, dict):
+                for config in batteries.values():
+                    if not isinstance(config, dict):
+                        continue
+                    existing_host = config.get(CONF_BATTERY_HOST, "")
+                    if (
+                        isinstance(existing_host, str)
+                        and existing_host.strip().lower() == host
+                    ):
+                        return True
+
+            # Legacy format fallback.
+            battery_count = int(entry.data.get(CONF_BATTERY_COUNT, 1))
+            for i in range(1, battery_count + 1):
+                battery_id = BATTERY_IDS[i - 1]
+                legacy_host = entry.data.get(f"{battery_id}_host", "")
+                if isinstance(legacy_host, str) and legacy_host.strip().lower() == host:
+                    return True
+
+        return False
 
 
 class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):

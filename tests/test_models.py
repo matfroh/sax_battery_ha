@@ -5,18 +5,24 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from custom_components.sax_battery.const import (
-    MODBUS_BATTERY_POWER_LIMIT_ITEMS,
+    SAX_CAPACITY,
     SAX_COMBINED_SOC,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
     SAX_MIN_SOC,
     SAX_POWER,
+    SAX_SMARTMETER_CURRENT_L1,
+    SAX_SMARTMETER_ENERGY_CONSUMED,
     SAX_SMARTMETER_ENERGY_PRODUCED,
+    SAX_SMARTMETER_SWITCHING_STATE,
+    SAX_SMARTMETER_TOTAL_POWER,
     SAX_SOC,
 )
+from custom_components.sax_battery.const_legacy import MODBUS_BATTERY_POWER_LIMIT_ITEMS
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants
 from custom_components.sax_battery.items import ModbusItem, SAXItem
 from custom_components.sax_battery.models import BatteryModel, SAXBatteryData
+from custom_components.sax_battery.protocol_mode import ProtocolMode
 
 
 class TestBatteryModel:
@@ -164,6 +170,59 @@ class TestSAXBatteryData:
         # Non-existent battery should return empty list
         nonexistent_items = sax_data.get_modbus_items_for_battery("bess_z")
         assert len(nonexistent_items) == 0
+
+    def test_sax_battery_data_get_modbus_items_for_battery_sunspec_master(
+        self, mock_hass, mock_config_entry_single_battery
+    ) -> None:
+        """SunSpec mode should merge in SunSpec-backed items for the master battery."""
+        sax_data = SAXBatteryData(mock_hass, mock_config_entry_single_battery)
+        sax_data.coordinators = {
+            "bess_a": MagicMock(protocol_mode=ProtocolMode.SUNSPEC)
+        }
+
+        master_items = sax_data.get_modbus_items_for_battery("bess_a")
+        item_names = {item.name for item in master_items}
+
+        assert SAX_SOC in item_names
+        assert SAX_POWER in item_names
+        assert SAX_CAPACITY in item_names
+
+        item_by_name = {item.name: item for item in master_items}
+        assert item_by_name[SAX_SMARTMETER_ENERGY_PRODUCED].address == 40096
+        assert item_by_name[SAX_SMARTMETER_ENERGY_CONSUMED].address == 40097
+        assert item_by_name[SAX_SMARTMETER_SWITCHING_STATE].address == 40099
+        assert item_by_name[SAX_SMARTMETER_CURRENT_L1].address == 40100
+        assert item_by_name[SAX_SMARTMETER_TOTAL_POWER].address == 40110
+
+    def test_sax_battery_data_get_modbus_items_for_battery_string_sunspec_mode(
+        self, mock_hass, mock_config_entry_single_battery
+    ) -> None:
+        """String-based SunSpec mode should merge canonical SunSpec items."""
+        sax_data = SAXBatteryData(mock_hass, mock_config_entry_single_battery)
+        sax_data.coordinators = {"bess_a": MagicMock(protocol_mode="sunspec")}
+
+        master_items = sax_data.get_modbus_items_for_battery("bess_a")
+        item_names = {item.name for item in master_items}
+
+        assert SAX_SOC in item_names
+        assert SAX_POWER in item_names
+        assert SAX_CAPACITY in item_names
+
+    def test_sax_battery_data_get_modbus_items_for_battery_sunspec_slave(
+        self, mock_hass, mock_config_entry_dual_battery
+    ) -> None:
+        """SunSpec mode should not add master-only extended items to slave batteries."""
+        sax_data = SAXBatteryData(mock_hass, mock_config_entry_dual_battery)
+        sax_data.coordinators = {
+            "bess_b": MagicMock(protocol_mode=ProtocolMode.SUNSPEC)
+        }
+
+        slave_items = sax_data.get_modbus_items_for_battery("bess_b")
+        item_names = {item.name for item in slave_items}
+
+        assert SAX_SOC in item_names
+        assert SAX_POWER in item_names
+        assert SAX_CAPACITY not in item_names
 
     def test_sax_battery_data_get_sax_items_for_battery(
         self, mock_hass, mock_config_entry_dual_battery

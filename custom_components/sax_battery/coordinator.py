@@ -28,6 +28,7 @@ from .const import (
     CONF_MIN_SOC,
     DEFAULT_MIN_SOC,
     DOMAIN,
+    LIMIT_REFRESH_INTERVAL,
     SAX_COMBINED_SOC,
     SAX_NOMINAL_FACTOR,
     SAX_NOMINAL_POWER,
@@ -35,10 +36,12 @@ from .const import (
     SAX_STATUS,
 )
 from .coordinator_statistics import CoordinatorStatistics
+from .data_provider import DataProvider, LegacyDataProvider, SunSpecDataProvider
 from .enums import DeviceConstants, TypeConstants
 from .items import ModbusItem, SAXItem
 from .modbusobject import ModbusAPI
 from .models import SAXBatteryData
+from .protocol_mode import ProtocolMode
 from .soc_manager import SOCManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,12 +67,17 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def __init__(
         self,
+        *,
         hass: HomeAssistant,
         battery_id: str,
         sax_data: SAXBatteryData,
         modbus_api: ModbusAPI,
         config_entry: ConfigEntry,
         battery_config: dict[str, Any],
+        protocol_mode: ProtocolMode = ProtocolMode.LEGACY,
+        detected_device_id: int = 64,
+        detection_path: str = "fallback_legacy",
+        detection_reason: str = "default",
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -85,6 +93,21 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.sax_data = sax_data
         self.modbus_api = modbus_api
         self.battery_config = battery_config
+        self.protocol_mode = protocol_mode
+        self.detected_device_id = detected_device_id
+        self.data_provider: DataProvider = self._create_data_provider(protocol_mode)
+        self._sunspec_block_last_poll: dict[str, float] = {}
+        self._sunspec_metadata_values: dict[str, Any] = {}
+        self._sunspec_control_refresh_diag: dict[str, Any] = {
+            "attempt_count": 0,
+            "skipped_not_due_count": 0,
+            "last_attempt_time": None,
+            "last_success_time": None,
+            "last_result": None,
+            "last_error": None,
+        }
+        self.protocol_detection_path = detection_path
+        self.protocol_detection_reason = detection_reason
 
         # Initialize timestamp for tracking last successful update
         self.last_update_success_time: datetime | None = None
@@ -151,6 +174,15 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             limit_power_enabled,
         )
 
+    def _create_data_provider(self, protocol_mode: ProtocolMode) -> DataProvider:
+        """Create the appropriate data provider for the detected protocol."""
+        if protocol_mode == ProtocolMode.SUNSPEC:
+            return SunSpecDataProvider(
+                modbus_api=self.modbus_api,
+                detected_device_id=self.detected_device_id,
+            )
+        return LegacyDataProvider(modbus_api=self.modbus_api)
+
     @property
     def circuit_breaker(self) -> CircuitBreaker:
         """Return the circuit breaker instance for diagnostics."""
@@ -183,6 +215,9 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Security: Initialize with proper type annotation
         data: dict[str, Any] = {}
 
+        if self.protocol_mode == ProtocolMode.SUNSPEC and self._sunspec_metadata_values:
+            data.update(self._sunspec_metadata_values)
+
         # Start cycle time measurement
         self._cycle_start_time = time.monotonic()
 
@@ -199,6 +234,9 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             # STEP 1: Process write queue first (before reads)
             await self._process_write_queue(data)
+
+            # STEP 1b: Periodic SunSpec control refresh even without writes
+            await self._refresh_sunspec_control_values_on_cadence(data)
 
             # Get entity registry to check enabled state
             entity_registry = er.async_get(self.hass)
@@ -387,6 +425,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             data[SAX_NOMINAL_FACTOR] = factor
                             self._pending_writes.pop(SAX_NOMINAL_POWER, None)
                             self._pending_writes.pop(SAX_NOMINAL_FACTOR, None)
+                            await self._refresh_sunspec_control_values(data)
                         else:
                             _LOGGER.warning(
                                 "Atomic write failed: power=%sW, factor=%s%%",
@@ -409,6 +448,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             )
                             data[item.name] = value
                             self._pending_writes.pop(item.name, None)
+                            await self._refresh_sunspec_control_values(data)
                         else:
                             _LOGGER.warning(
                                 "Write failed: %s=%s",
@@ -425,6 +465,58 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             item.name if "item" in locals() else "unknown",  # pyright: ignore[reportPossiblyUnboundVariable]
                             err,
                         )
+
+    async def _refresh_sunspec_control_values(self, data: dict[str, Any]) -> None:
+        """Refresh the SunSpec control block after successful writes when applicable."""
+        if self.protocol_mode != ProtocolMode.SUNSPEC:
+            return
+
+        refreshed_values = await self.data_provider.refresh_control_values(
+            self._get_all_modbus_items()
+        )
+        if refreshed_values:
+            data.update(refreshed_values)
+
+    async def _refresh_sunspec_control_values_on_cadence(
+        self,
+        data: dict[str, Any],
+    ) -> None:
+        """Refresh SunSpec controls on interval to keep setpoints synchronized."""
+        if self.protocol_mode != ProtocolMode.SUNSPEC or not self.is_master:
+            return
+
+        if not self._is_sunspec_block_due(
+            "battery_controls", LIMIT_REFRESH_INTERVAL * 60
+        ):
+            self._sunspec_control_refresh_diag["skipped_not_due_count"] += 1
+            self._sunspec_control_refresh_diag["last_result"] = "skipped_not_due"
+            return
+
+        self._sunspec_control_refresh_diag["attempt_count"] += 1
+        self._sunspec_control_refresh_diag["last_attempt_time"] = (
+            datetime.now().isoformat()
+        )
+
+        try:
+            control_values = await self.data_provider.get_control_values(
+                self._get_all_modbus_items()
+            )
+            self._mark_sunspec_block_polled("battery_controls")
+            if control_values:
+                data.update(control_values)
+            self._sunspec_control_refresh_diag["last_success_time"] = (
+                datetime.now().isoformat()
+            )
+            self._sunspec_control_refresh_diag["last_result"] = "success"
+            self._sunspec_control_refresh_diag["last_error"] = None
+        except Exception as err:  # noqa: BLE001
+            self._sunspec_control_refresh_diag["last_result"] = "failed"
+            self._sunspec_control_refresh_diag["last_error"] = str(err)
+            _LOGGER.warning(
+                "%s: Periodic SunSpec control refresh failed: %s",
+                self.battery_id,
+                err,
+            )
 
     def _get_all_modbus_items(self) -> list[ModbusItem]:
         """Get all ModbusItems for this battery for statistics."""
@@ -492,17 +584,28 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             _LOGGER.debug("Polling %d items from device %s", len(items), device.value)
 
-            # Performance: Use list comprehension for concurrent polling
-            polling_tasks = [self._poll_single_item(item) for item in items]
-            results = await asyncio.gather(*polling_tasks, return_exceptions=True)
+            if self.protocol_mode == ProtocolMode.SUNSPEC:
+                provider_values = await self._poll_sunspec_blocks_by_cadence(items)
+            else:
+                provider_values = await self.data_provider.get_realtime_values(items)
 
-            # Collect results
-            for item, result in zip(items, results, strict=True):
-                # Check if read failed
+            if not self.modbus_api.last_operation_status.success:
+                self._statistics.collect_modbus_error(
+                    self.modbus_api.last_operation_status
+                )
+
+            for item in items:
+                if item.name in provider_values:
+                    batch_data[item.name] = provider_values[item.name]
+                    continue
+
+                if self.protocol_mode == ProtocolMode.SUNSPEC and self.data is not None:
+                    cached_value = self.data.get(item.name)
+                    if cached_value is not None:
+                        batch_data[item.name] = cached_value
+                        continue
+
                 if not self.modbus_api.last_operation_status.success:
-                    self._statistics.collect_modbus_error(
-                        self.modbus_api.last_operation_status
-                    )
                     _LOGGER.debug(
                         "%s: Failed to read %s (address %d): %s",
                         self.battery_id,
@@ -510,18 +613,67 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         item.address,
                         self.modbus_api.last_operation_status.error_message,
                     )
-                    continue  # Skip this item
-                if isinstance(result, Exception):
-                    _LOGGER.debug("Failed to poll %s: %s", item.name, result)
-                    batch_data[item.name] = None
-                else:
-                    batch_data[item.name] = result
+
+                batch_data[item.name] = None
 
             return batch_data  # noqa: TRY300
 
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Error polling device batch %s: %s", device.value, exc)
             return batch_data
+
+    async def _poll_sunspec_blocks_by_cadence(
+        self, items: list[ModbusItem]
+    ) -> dict[str, Any]:
+        """Poll SunSpec blocks through provider group methods with cadence gates."""
+        provider_values: dict[str, Any] = {}
+
+        sensor_values = await self.data_provider.get_battery_sensor_values(items)
+        if sensor_values:
+            provider_values.update(sensor_values)
+            self._mark_sunspec_block_polled("battery_sensor_data")
+
+        state_values = await self.data_provider.get_battery_state_values(items)
+        if state_values:
+            provider_values.update(state_values)
+            self._mark_sunspec_block_polled("battery_states")
+
+        if self._is_sunspec_block_due("smartmeter_data", BATTERY_POLL_SLAVE_INTERVAL):
+            smart_meter_values = await self.data_provider.get_smart_meter_values(items)
+            if smart_meter_values:
+                provider_values.update(smart_meter_values)
+                self._mark_sunspec_block_polled("smartmeter_data")
+
+        return provider_values
+
+    async def async_initialize_sunspec_metadata(self) -> None:
+        """Load and cache SunSpec startup metadata during setup/reload."""
+        if self.protocol_mode != ProtocolMode.SUNSPEC:
+            return
+
+        metadata_values = await self.data_provider.get_startup_metadata(
+            self._get_all_modbus_items()
+        )
+        if not metadata_values:
+            return
+
+        self._sunspec_metadata_values = metadata_values
+        self._mark_sunspec_block_polled("device_metadata")
+
+    def _is_sunspec_block_due(self, block_name: str, interval_seconds: int) -> bool:
+        """Return whether a SunSpec block should be polled based on last read time."""
+        if interval_seconds == 0:
+            return block_name not in self._sunspec_block_last_poll
+
+        last_poll = self._sunspec_block_last_poll.get(block_name)
+        if last_poll is None:
+            return True
+
+        return (time.monotonic() - last_poll) >= interval_seconds
+
+    def _mark_sunspec_block_polled(self, block_name: str) -> None:
+        """Record a successful poll timestamp for a SunSpec block."""
+        self._sunspec_block_last_poll[block_name] = time.monotonic()
 
     async def _poll_single_item(self, item: ModbusItem) -> Any:
         """Poll a single ModbusItem.
@@ -716,21 +868,14 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     continue
 
                 # Determine platform from item type
-                if item.mtype in (TypeConstants.SENSOR, TypeConstants.SENSOR_CALC):
-                    platform = "sensor"
-                elif item.mtype == TypeConstants.SWITCH:
-                    platform = "switch"
-                elif item.mtype in (
-                    TypeConstants.NUMBER,
-                    TypeConstants.NUMBER_WO,
-                    TypeConstants.NUMBER_RO,
-                ):
-                    platform = "number"
-                else:
-                    _LOGGER.warning(
-                        "Unknown item type %s for %s", item.mtype, item.name
-                    )
-                    continue
+                platform = {
+                    TypeConstants.SENSOR: "sensor",
+                    TypeConstants.SENSOR_CALC: "sensor",
+                    TypeConstants.SWITCH: "switch",
+                    TypeConstants.NUMBER: "number",
+                    TypeConstants.NUMBER_WO: "number",
+                    TypeConstants.NUMBER_RO: "number",
+                }[item.mtype]
 
                 # Check if entity exists in registry
                 entity_id = entity_registry.async_get_entity_id(

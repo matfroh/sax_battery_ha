@@ -4,6 +4,11 @@ description: "Code review guidelines and what to focus on during reviews"
 
 # Code Review Guidelines
 
+## Execution Workflow Rules
+
+- Use skills `ruff_check`, `tests_check`, and `mypy_check` when running linting, tests, and type checks during review workflows.
+- In shell commands, the first statement must be `source "$VIRTUAL_ENV/bin/activate"` to activate the existing virtual environment.
+
 ## What NOT to Comment On
 
 **When reviewing code, do NOT comment on:**
