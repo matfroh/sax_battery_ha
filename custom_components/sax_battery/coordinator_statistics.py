@@ -373,29 +373,29 @@ class CoordinatorStatistics:
             }
         else:
             self._cached_stats = {
-            "average": mean(self._circuit_breaker.cycle_times),
-            "min": min(self._circuit_breaker.cycle_times),
-            "max": max(self._circuit_breaker.cycle_times),
-            "stddev": (
-                stdev(self._circuit_breaker.cycle_times)
-                if len(self._circuit_breaker.cycle_times) > 1
-                else 0.0
-            ),
-            "last": self._last_cycle_duration_fn() or 0.0,
-            "errors_per_hour": self.calculate_errors_per_hour(),
+                "average": mean(self._circuit_breaker.cycle_times),
+                "min": min(self._circuit_breaker.cycle_times),
+                "max": max(self._circuit_breaker.cycle_times),
+                "stddev": (
+                    stdev(self._circuit_breaker.cycle_times)
+                    if len(self._circuit_breaker.cycle_times) > 1
+                    else 0.0
+                ),
+                "last": self._last_cycle_duration_fn() or 0.0,
+                "errors_per_hour": self.calculate_errors_per_hour(),
                 "bms_unavailability_per_hour": self.calculate_bms_unavailability_per_hour(),
                 "txid_errors_per_hour": self.calculate_txid_errors_per_hour(),
-            "circuit_breaker_open": (1.0 if self._circuit_breaker.is_open else 0.0),
-            "modbus_errors": error_counts.get("modbus", 0),
-            "network_errors": error_counts.get("network", 0),
-            "timeout_errors": error_counts.get("timeout", 0),
-            "failed_registers": failed_registers,
-            "last_error_time": (
-                self._circuit_breaker.error_history[-1][0].isoformat()
-                if self._circuit_breaker.error_history
-                else None
-            ),
-        }
+                "circuit_breaker_open": (1.0 if self._circuit_breaker.is_open else 0.0),
+                "modbus_errors": error_counts.get("modbus", 0),
+                "network_errors": error_counts.get("network", 0),
+                "timeout_errors": error_counts.get("timeout", 0),
+                "failed_registers": failed_registers,
+                "last_error_time": (
+                    self._circuit_breaker.error_history[-1][0].isoformat()
+                    if self._circuit_breaker.error_history
+                    else None
+                ),
+            }
 
         self._cache_generation = self._data_generation
         return self._cached_stats

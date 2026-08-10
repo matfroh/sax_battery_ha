@@ -56,12 +56,6 @@ CYCLE_TIME_HISTORY_SIZE = 100  # Number of cycle times to keep for statistics
 ERROR_HISTORY_SIZE = 1000  # Number of error events to keep for diagnostics
 CYCLE_STATS_LOG_INTERVAL = 240  # Log cycle statistics every N updates (~1 hour)
 
-# Performance monitoring constants
-CYCLE_TIME_HISTORY_SIZE = 100  # Number of cycle times to keep for statistics
-ERROR_HISTORY_SIZE = 1000  # Number of error events to keep for diagnostics
-CYCLE_STATS_LOG_INTERVAL = 240  # Log cycle statistics every N updates (~1 hour)
-
-
 class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """SAX Battery data update coordinator."""
 

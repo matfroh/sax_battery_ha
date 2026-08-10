@@ -109,7 +109,7 @@ That's it! Within a minute, you'll see your battery charge level, power usage, a
 
 1. **Add Custom Repository**
    - Open HACS in Home Assistant
-   - Go to `HACS > Integrations > â‹® > Custom repositories`
+   - Go to `HACS > Integrations > ⋮ > Custom repositories`
    - Add repository URL: `https://github.com/matfroh/sax_battery_ha`
    - Select category: **Integration**
    - Click **Add**
@@ -168,7 +168,7 @@ Before you begin:
 
 2. **Select Number of Batteries**
 
-   Choose how many batteries you want to configure (1â€“3).
+   Choose how many batteries you want to configure (1–3).
 
    ![Number of batteries](assets/conf-no-batteries.png)
 
@@ -729,7 +729,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Star this repo** â­ if you find it useful!
+**Star this repo** ⭐ if you find it useful!
 
 [releases-shield]: https://img.shields.io/github/v/release/matfroh/sax_battery_ha?style=flat-square
 [releases]: https://github.com/matfroh/sax_battery_ha/releases

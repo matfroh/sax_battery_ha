@@ -16,14 +16,16 @@ from custom_components.sax_battery.const import (
     DOMAIN,
     LIMIT_MAX_CHARGE_PER_BATTERY,
     LIMIT_MAX_DISCHARGE_PER_BATTERY,
-    MODBUS_BATTERY_POWER_CONTROL_ITEMS,
-    MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     PILOT_ITEMS,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
     SAX_MIN_SOC,
     SAX_NOMINAL_FACTOR,
     SAX_NOMINAL_POWER,
+)
+from custom_components.sax_battery.const_legacy import (
+    MODBUS_BATTERY_POWER_CONTROL_ITEMS,
+    MODBUS_BATTERY_POWER_LIMIT_ITEMS,
     WRITE_ONLY_REGISTERS,
 )
 from custom_components.sax_battery.enums import DeviceConstants, TypeConstants

@@ -319,7 +319,7 @@ class SOCManager:
                 entity_id,
             )
 
-            return True # noqa: TRY300
+            return True  # noqa: TRY300
 
         except HomeAssistantError as exc:
             # Specific exception: Service call failed

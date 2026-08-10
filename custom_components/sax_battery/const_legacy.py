@@ -83,33 +83,47 @@ from .items import ModbusItem
 
 # Battery items write-only versions: Power limits
 MODBUS_BATTERY_POWER_CONTROL_ITEMS: list[ModbusItem] = [
-    ModbusItem(battery_device_id=64,  address=40042, name=SAX_NOMINAL_POWER, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_POWER, translation_key="bms_nominal_power",
+    ModbusItem(battery_device_id=64,  address=41, name=SAX_NOMINAL_POWER, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_POWER, translation_key="bms_nominal_power",
     ),
-    ModbusItem(battery_device_id=64, address=40043, name=SAX_NOMINAL_FACTOR, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1000.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_FACTOR, translation_key="bms_nominal_factor",
+    ModbusItem(battery_device_id=64, address=42, name=SAX_NOMINAL_FACTOR, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1000.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_NOMINAL_FACTOR, translation_key="bms_nominal_factor",
     ),
 ]
 
 # Battery items write-only versions: Power control
 MODBUS_BATTERY_POWER_LIMIT_ITEMS: list[ModbusItem] = [
-    ModbusItem(battery_device_id=64, address=40044, name=SAX_MAX_DISCHARGE, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE, translation_key="bms_max_discharge",
+    ModbusItem(battery_device_id=64, address=43, name=SAX_MAX_DISCHARGE, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_DISCHARGE, translation_key="bms_max_discharge",
     ),
-    ModbusItem(battery_device_id=64, address=40045, name=SAX_MAX_CHARGE, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_CHARGE, translation_key="bms_max_charge",
+    ModbusItem(battery_device_id=64, address=44, name=SAX_MAX_CHARGE, enabled_by_default=False, mtype=TypeConstants.NUMBER_WO, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_MAX_CHARGE, translation_key="bms_max_charge",
     ),
 ]
 
+# Single source of truth for write-only and periodic-refresh register addresses.
+WRITE_ONLY_REGISTERS: set[int] = {
+    item.address
+    for item in (
+        *MODBUS_BATTERY_POWER_CONTROL_ITEMS,
+        *MODBUS_BATTERY_POWER_LIMIT_ITEMS,
+    )
+}
+
+# Power manager handles control items; periodic refresh applies to limit items.
+REFRESH_REGISTERS: set[int] = {
+    item.address for item in MODBUS_BATTERY_POWER_LIMIT_ITEMS
+}
+
 # Battery items - switch
 MODBUS_BATTERY_SWITCH_ITEMS: list[ModbusItem] = [
-    ModbusItem(battery_device_id=64, address=40046, name=SAX_STATUS, mtype=TypeConstants.SWITCH, data_type=ModbusClientMixin.DATATYPE.UINT16, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_STATUS_SWITCH, translation_key="bess_status",
+    ModbusItem(battery_device_id=64, address=45, name=SAX_STATUS, mtype=TypeConstants.SWITCH, data_type=ModbusClientMixin.DATATYPE.UINT16, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_STATUS_SWITCH, translation_key="bess_status",
     ),
 ]
 
 # Battery items read-only versions
 MODBUS_BATTERY_REALTIME_ITEMS: list[ModbusItem] = [
-    ModbusItem(battery_device_id=64, address=40047, name=SAX_SOC, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_SOC, translation_key="bess_soc",
+    ModbusItem(battery_device_id=64, address=46, name=SAX_SOC, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_SOC, translation_key="bess_soc",
     ),
-    ModbusItem(battery_device_id=64, address=40048, name=SAX_POWER, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, offset=16384, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_POWER, translation_key="bess_power",
+    ModbusItem(battery_device_id=64, address=47, name=SAX_POWER, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, offset=16384, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_POWER, translation_key="bess_power",
     ),
-    ModbusItem(battery_device_id=64, address=40049, name=SAX_POWER_SM, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, offset=16384, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_POWER_SM, translation_key="bess_power_sm",
+    ModbusItem(battery_device_id=64, address=48, name=SAX_POWER_SM, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, offset=16384, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_POWER_SM, translation_key="bess_power_sm",
     ),
 ]
 
