@@ -1,0 +1,8 @@
+reset_energy_sensors:
+  name: Reset energy sensors
+  description: >
+    Resets all SAX Battery energy sensors to zero. The cumulative discharged and
+    charged sensors are cleared immediately. The four period sensors (daily/monthly)
+    will re-baseline on the next source update, so they start accumulating from 0
+    for the current period.
+  fields: {}

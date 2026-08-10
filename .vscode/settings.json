@@ -1,4 +1,5 @@
 {
+  "intellicode.enabled": false,
   "chat.modeFilesLocations": {
     "chatmodes": true
   },
@@ -19,13 +20,10 @@
     "*.yaml": "home-assistant",
     "*.chatmode.md": "markdown",
     "*.instructions.md": "markdown",
-    "*.prompt.md": "markdown",
+    "*.prompt.md": "markdown"
   },
   "editor.formatOnSave": true,
-  "python.testing.pytestArgs": [
-    "tests"
-  ],
-  "python.defaultInterpreterPath": "/home/vscode/.local/ha-venv/bin/python",
+  "python.testing.pytestArgs": ["tests"],
   "python.terminal.activateEnvironment": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
@@ -36,20 +34,30 @@
   "python.linting.ruffEnabled": true,
   "python.formatting.provider": "ruff",
   "[python]": {
-    "editor.formatOnSave": true,
+    "editor.formatOnSave": false,
     "editor.codeActionsOnSave": {
       "source.organizeImports": "explicit"
     }
   },
   "cSpell.words": [
+    "caplog",
     "codeowners",
+    "Cooldown",
+    "ECONNRESET",
     "entitydescription",
-    "mformat",
+    "EPIPE",
+    "hostnames",
     "mtype",
     "Mult",
     "mypy",
+    "pylint",
     "pymodbus",
-    "STATUSANZEIGE"
+    "pyproject",
+    "pytest",
+    "roundtrips",
+    "setpoint",
+    "STATUSANZEIGE",
+    "venv"
   ],
   "workbench.editor.restoreViewState": false,
   "workbench.editor.enablePreview": true,
@@ -62,9 +70,7 @@
   },
   "json.schemas": [
     {
-      "fileMatch": [
-        "homeassistant/components/*/manifest.json"
-      ],
+      "fileMatch": ["homeassistant/components/*/manifest.json"],
       // This value differs between working with devcontainer and locally, therefor this value should NOT be in sync!
       "url": "./scripts/json_schemas/manifest_schema.json"
     },
@@ -78,5 +84,5 @@
   "yaml.schemas": {
     "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.{yml,yaml}",
     "https://json.schemastore.org/dependabot-2.0.json": ".github/dependabot.yml"
-  },
+  }
 }
