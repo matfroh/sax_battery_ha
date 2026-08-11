@@ -12,12 +12,10 @@ from custom_components.sax_battery.data_provider import (
 )
 from custom_components.sax_battery.entity_keys import (
     SAX_CAPACITY,
+    SAX_CHARGE_POWER,
+    SAX_DISCHARGE_POWER,
+    SAX_MAX_SOC,
     SAX_SMARTMETER_AC_CURRENT_SUM,
-    SAX_SMARTMETER_CURRENT_L1,
-    SAX_SMARTMETER_ENERGY_CONSUMED,
-    SAX_SMARTMETER_ENERGY_PRODUCED,
-    SAX_SMARTMETER_SWITCHING_STATE,
-    SAX_SMARTMETER_TOTAL_POWER,
     SAX_SOC,
     SAX_SUNSPEC_POWER_SETPOINT,
     SAX_TEMPERATURE,
@@ -53,28 +51,35 @@ class _FakeModbusAPI:
         registers = [0] * count
         if address == 40000:
             registers[0] = 75
+            registers[11] = 61
         if address == 40015:
             registers[0] = 830
             registers[1] = 215
+            registers[26] = 215
+            registers[27] = 0
         if address == 40047:
             registers[2] = 777
+            registers[5] = -2
         if address == 40095:
-            registers[1] = 123
-            registers[2] = 456
-            registers[4] = 3
-            registers[5] = 321
-            registers[15] = 789
+            registers[2] = 123
+            registers[3] = 456
+            registers[4] = 321
+            registers[5] = 95
+            registers[7] = 78
         return registers
 
     def decode_register_block_value(
         self,
         registers: list[int],
         modbus_item: ModbusItem,
+        scale_factor_value: int | None = None,
     ) -> int | float | None:
         if not registers:
             return None
         value: int | float = registers[0]
-        if modbus_item.factor != 1.0:
+        if scale_factor_value is not None:
+            value *= 10**scale_factor_value
+        elif modbus_item.factor != 1.0:
             value *= modbus_item.factor
         return value
 
@@ -156,8 +161,8 @@ def test_sunspec_provider_uses_detected_device_id() -> None:
 
     result = asyncio.run(provider.get_realtime_values([item]))
 
-    assert result == {SAX_SOC: 75}
-    assert api.block_calls == [(40000, 15, 100)]
+    assert result == {SAX_SOC: 78}
+    assert api.block_calls == [(40095, 20, 100)]
     assert api.calls == []
 
 
@@ -182,8 +187,8 @@ def test_sunspec_provider_reads_documented_block_once_for_multiple_items() -> No
         provider.get_realtime_values([item_capacity, item_temperature])
     )
 
-    assert result == {SAX_CAPACITY: 830, SAX_TEMPERATURE: 215}
-    assert api.block_calls == [(40015, 32, 100)]
+    assert result == {SAX_CAPACITY: 123, SAX_TEMPERATURE: 215}
+    assert api.block_calls == [(40015, 32, 100), (40095, 20, 100)]
     assert api.calls == []
 
 
@@ -220,65 +225,65 @@ def test_sunspec_provider_exposes_block_refresh_diagnostics() -> None:
 
     assert diagnostics["provider_type"] == "sunspec"
     assert diagnostics["detected_device_id"] == 100
-    assert diagnostics["cached_blocks"] == ["device_metadata"]
-    assert diagnostics["blocks"]["device_metadata"]["last_refresh_success"] is True
-    assert diagnostics["blocks"]["device_metadata"]["cached_register_count"] == 15
-    assert diagnostics["blocks"]["device_metadata"]["last_refresh_time"] is not None
+    assert diagnostics["cached_blocks"] == ["battery_states"]
+    assert diagnostics["blocks"]["battery_states"]["last_refresh_success"] is True
+    assert diagnostics["blocks"]["battery_states"]["cached_register_count"] == 20
+    assert diagnostics["blocks"]["battery_states"]["last_refresh_time"] is not None
 
 
 def test_sunspec_provider_reads_state_block_once_for_multiple_items() -> None:
     """SunSpec provider should use one state-block read for documented 40095+ items."""
     api = _FakeModbusAPI()
     provider = SunSpecDataProvider(modbus_api=api, detected_device_id=100)
-    item_energy_produced = ModbusItem(
-        name=SAX_SMARTMETER_ENERGY_PRODUCED,
+    item_capacity = ModbusItem(
+        name=SAX_CAPACITY,
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.SM,
+        device=DeviceConstants.BESS,
     )
-    item_energy_produced.modbus_api = api
-    item_energy_consumed = ModbusItem(
-        name=SAX_SMARTMETER_ENERGY_CONSUMED,
+    item_capacity.modbus_api = api
+    item_charge_power = ModbusItem(
+        name=SAX_CHARGE_POWER,
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.SM,
+        device=DeviceConstants.BESS,
     )
-    item_energy_consumed.modbus_api = api
-    item_switching_state = ModbusItem(
-        name=SAX_SMARTMETER_SWITCHING_STATE,
+    item_charge_power.modbus_api = api
+    item_discharge_power = ModbusItem(
+        name=SAX_DISCHARGE_POWER,
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.SM,
+        device=DeviceConstants.BESS,
     )
-    item_switching_state.modbus_api = api
-    item_current_l1 = ModbusItem(
-        name=SAX_SMARTMETER_CURRENT_L1,
+    item_discharge_power.modbus_api = api
+    item_max_soc = ModbusItem(
+        name=SAX_MAX_SOC,
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.SM,
+        device=DeviceConstants.BESS,
     )
-    item_current_l1.modbus_api = api
-    item_total_power = ModbusItem(
-        name=SAX_SMARTMETER_TOTAL_POWER,
+    item_max_soc.modbus_api = api
+    item_soc = ModbusItem(
+        name=SAX_SOC,
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.SM,
+        device=DeviceConstants.BESS,
     )
-    item_total_power.modbus_api = api
+    item_soc.modbus_api = api
 
     result = asyncio.run(
         provider.get_realtime_values(
             [
-                item_energy_produced,
-                item_energy_consumed,
-                item_switching_state,
-                item_current_l1,
-                item_total_power,
+                item_capacity,
+                item_charge_power,
+                item_discharge_power,
+                item_max_soc,
+                item_soc,
             ]
         )
     )
 
     assert result == {
-        SAX_SMARTMETER_ENERGY_PRODUCED: 1230.0,
-        SAX_SMARTMETER_ENERGY_CONSUMED: 4560.0,
-        SAX_SMARTMETER_SWITCHING_STATE: 3,
-        SAX_SMARTMETER_CURRENT_L1: 32.1,
-        SAX_SMARTMETER_TOTAL_POWER: 789,
+        SAX_CAPACITY: 123,
+        SAX_CHARGE_POWER: 456,
+        SAX_DISCHARGE_POWER: 321,
+        SAX_MAX_SOC: 95,
+        SAX_SOC: 78,
     }
     assert api.block_calls == [(40095, 20, 100)]
 
@@ -288,7 +293,7 @@ def test_sunspec_provider_get_startup_metadata_uses_metadata_block() -> None:
     api = _FakeModbusAPI()
     provider = SunSpecDataProvider(modbus_api=api, detected_device_id=100)
     item = ModbusItem(
-        name=SAX_SOC,
+        name="sunspec_version_master",
         mtype=TypeConstants.SENSOR,
         device=DeviceConstants.BESS,
     )
@@ -296,7 +301,7 @@ def test_sunspec_provider_get_startup_metadata_uses_metadata_block() -> None:
 
     result = asyncio.run(provider.get_startup_metadata([item]))
 
-    assert result == {SAX_SOC: 75}
+    assert result == {"sunspec_version_master": 61}
     assert api.block_calls == [(40000, 15, 100)]
 
 
@@ -321,7 +326,7 @@ def test_sunspec_provider_get_battery_sensor_values_uses_sensor_block() -> None:
         provider.get_battery_sensor_values([item_capacity, item_temperature])
     )
 
-    assert result == {SAX_CAPACITY: 830, SAX_TEMPERATURE: 215}
+    assert result == {SAX_TEMPERATURE: 215}
     assert api.block_calls == [(40015, 32, 100)]
 
 
@@ -382,16 +387,16 @@ def test_sunspec_provider_retries_transient_block_read_failures() -> None:
     """SunSpec provider should recover when a documented block read fails once."""
     api = _FlakyBlockModbusAPI({40015})
     provider = SunSpecDataProvider(modbus_api=api, detected_device_id=100)
-    item_capacity = ModbusItem(
-        name=SAX_CAPACITY,
+    item_temperature = ModbusItem(
+        name=SAX_TEMPERATURE,
         mtype=TypeConstants.SENSOR,
         device=DeviceConstants.BESS,
     )
-    item_capacity.modbus_api = api
+    item_temperature.modbus_api = api
 
-    result = asyncio.run(provider.get_battery_sensor_values([item_capacity]))
+    result = asyncio.run(provider.get_battery_sensor_values([item_temperature]))
 
-    assert result == {SAX_CAPACITY: 830}
+    assert result == {SAX_TEMPERATURE: 215}
     assert api.block_calls == [(40015, 32, 100), (40015, 32, 100)]
 
 
@@ -421,7 +426,7 @@ def test_sunspec_provider_diagnostics_marks_required_block_degraded() -> None:
     api = _AlwaysFailBlockModbusAPI({40015})
     provider = SunSpecDataProvider(modbus_api=api, detected_device_id=100)
     item = ModbusItem(
-        name=SAX_CAPACITY,
+        name=SAX_TEMPERATURE,
         mtype=TypeConstants.SENSOR,
         device=DeviceConstants.BESS,
     )
@@ -440,13 +445,13 @@ def test_sunspec_provider_get_battery_state_values_uses_state_block() -> None:
     api = _FakeModbusAPI()
     provider = SunSpecDataProvider(modbus_api=api, detected_device_id=100)
     item = ModbusItem(
-        name=SAX_SMARTMETER_TOTAL_POWER,
+        name=SAX_SOC,
         mtype=TypeConstants.SENSOR,
-        device=DeviceConstants.SM,
+        device=DeviceConstants.BESS,
     )
     item.modbus_api = api
 
     result = asyncio.run(provider.get_battery_state_values([item]))
 
-    assert result == {SAX_SMARTMETER_TOTAL_POWER: 789}
+    assert result == {SAX_SOC: 78}
     assert api.block_calls == [(40095, 20, 100)]

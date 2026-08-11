@@ -423,6 +423,7 @@ class ModbusAPI:
         self,
         registers: list[int],
         modbus_item: ModbusItem,
+        scale_factor_value: int | None = None,
     ) -> int | float | None:
         """Decode a raw register slice using the item's datatype and scaling."""
         if not registers:
@@ -444,7 +445,9 @@ class ModbusAPI:
         if not isinstance(converted_result, (int, float)):
             return None
 
-        if modbus_item.factor != 1.0:
+        if scale_factor_value is not None:
+            converted_result *= 10**scale_factor_value
+        elif modbus_item.factor != 1.0:
             converted_result *= modbus_item.factor
 
         if modbus_item.offset != 0:

@@ -88,10 +88,34 @@ def decode_sunspec_block_values(
         if register_index < 0 or register_index >= len(block_values):
             continue
 
-        decoded_value = modbus_api.decode_register_block_value(
-            [block_values[register_index]],
-            sunspec_item,
-        )
+        scale_factor_value: int | None = None
+        scale_factor_ref = getattr(sunspec_item, "scale_factor_ref", None)
+        if (
+            scale_factor_ref
+            and isinstance(scale_factor_ref, str)
+            and scale_factor_ref.startswith("R")
+        ):
+            try:
+                scale_factor_address = int(scale_factor_ref[1:])
+            except ValueError:
+                scale_factor_address = None
+
+            if scale_factor_address is not None:
+                scale_factor_index = scale_factor_address - block.start_address
+                if 0 <= scale_factor_index < len(block_values):
+                    scale_factor_value = block_values[scale_factor_index]
+
+        try:
+            decoded_value = modbus_api.decode_register_block_value(
+                [block_values[register_index]],
+                sunspec_item,
+                scale_factor_value,
+            )
+        except TypeError:
+            decoded_value = modbus_api.decode_register_block_value(
+                [block_values[register_index]],
+                sunspec_item,
+            )
         if decoded_value is not None:
             values[logical_item.name] = decoded_value
 

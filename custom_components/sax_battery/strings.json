@@ -156,6 +156,16 @@
             "bess_temperature": {
                 "name": "Temperature"
             },
+            "bess_state": {
+                "name": "State",
+                "state": {
+                    "1": "Off",
+                    "2": "Standby",
+                    "3": "Waiting",
+                    "4": "On",
+                    "7": "SM-Error"
+                }
+            },
             "bms_ac_power_total": {
                 "name": "AC Power Total"
             },

@@ -75,7 +75,9 @@ class ModbusItem(BaseItem):
     data_type: ModbusClientMixin.DATATYPE = ModbusClientMixin.DATATYPE.UINT16
     enabled_by_default: bool = True
     factor: float = 1.0
+    scale_factor_ref: str | None = None
     offset: int = 0
+    state_map: dict[int, str] | None = None
     _modbus_api: Any = field(default=None, init=False)
 
     @property
@@ -230,6 +232,11 @@ class ModbusItem(BaseItem):
         """Get human-readable name for switch state value."""
         if not isinstance(value, int):
             return "unknown"  # type:ignore[unreachable]
+
+        if self.state_map:
+            state_name = self.state_map.get(value)
+            if state_name is not None:
+                return state_name
 
         state_map = {
             self.get_switch_off_value(): "off",

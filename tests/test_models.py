@@ -6,15 +6,15 @@ from unittest.mock import MagicMock
 
 from custom_components.sax_battery.const import (
     SAX_CAPACITY,
+    SAX_CHARGE_POWER,
     SAX_COMBINED_SOC,
+    SAX_DISCHARGE_POWER,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
+    SAX_MAX_SOC,
     SAX_MIN_SOC,
     SAX_POWER,
     SAX_SMARTMETER_CURRENT_L1,
-    SAX_SMARTMETER_ENERGY_CONSUMED,
-    SAX_SMARTMETER_ENERGY_PRODUCED,
-    SAX_SMARTMETER_SWITCHING_STATE,
     SAX_SMARTMETER_TOTAL_POWER,
     SAX_SOC,
 )
@@ -188,11 +188,13 @@ class TestSAXBatteryData:
         assert SAX_CAPACITY in item_names
 
         item_by_name = {item.name: item for item in master_items}
-        assert item_by_name[SAX_SMARTMETER_ENERGY_PRODUCED].address == 40096
-        assert item_by_name[SAX_SMARTMETER_ENERGY_CONSUMED].address == 40097
-        assert item_by_name[SAX_SMARTMETER_SWITCHING_STATE].address == 40099
-        assert item_by_name[SAX_SMARTMETER_CURRENT_L1].address == 40100
-        assert item_by_name[SAX_SMARTMETER_TOTAL_POWER].address == 40110
+        assert item_by_name[SAX_SMARTMETER_CURRENT_L1].address == 40057
+        assert item_by_name[SAX_SMARTMETER_TOTAL_POWER].address == 40072
+        assert item_by_name[SAX_CAPACITY].address == 40097
+        assert item_by_name[SAX_CHARGE_POWER].address == 40098
+        assert item_by_name[SAX_DISCHARGE_POWER].address == 40099
+        assert item_by_name[SAX_MAX_SOC].address == 40100
+        assert item_by_name[SAX_SOC].address == 40102
 
     def test_sax_battery_data_get_modbus_items_for_battery_string_sunspec_mode(
         self, mock_hass, mock_config_entry_single_battery
@@ -717,9 +719,9 @@ class TestSAXBatteryDataGetUniqueId:
 
         expected_results: dict[str, dict[str, str | None]] = {
             # Smartmeter sensor (SM device)
-            SAX_SMARTMETER_ENERGY_PRODUCED: {
+            SAX_SMARTMETER_TOTAL_POWER: {
                 "battery_id": "bess_a",
-                "unique_id": "sax_sm_energy_produced_sm",
+                "unique_id": "sax_sm_total_power_sm",
             },
             # WO registers (cluster device)
             SAX_MAX_DISCHARGE: {
