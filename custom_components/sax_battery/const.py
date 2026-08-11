@@ -14,13 +14,13 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntityDescription
 from homeassistant.const import (
-    PERCENTAGE,
     EntityCategory,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
     UnitOfFrequency,
     UnitOfPower,
+    UnitOfRatio,
     UnitOfTemperature,
     UnitOfTime,
 )
@@ -115,6 +115,7 @@ from .entity_keys import (
     SAX_VOLTAGE_L2_L3,
     SAX_VOLTAGE_L3,
     SAX_VOLTAGE_L3_L1,
+    SUNSPEC_EVENT,
     TXID_ERROR_RATE,
 )
 from .enums import DeviceConstants, TypeConstants
@@ -240,7 +241,7 @@ DESCRIPTION_SAX_MAX_DISCHARGE = NumberEntityDescription(
 
 DESCRIPTION_SAX_NOMINAL_POWER = NumberEntityDescription(
     key=SAX_NOMINAL_POWER,
-    name="Nominal Power",
+    name="Sax Nominal Power",
     mode=NumberMode.SLIDER,
     native_unit_of_measurement=UnitOfPower.WATT,
     native_min_value=0,
@@ -252,7 +253,7 @@ DESCRIPTION_SAX_NOMINAL_POWER = NumberEntityDescription(
 
 DESCRIPTION_SAX_NOMINAL_FACTOR = NumberEntityDescription(
     key=SAX_NOMINAL_FACTOR,
-    name="Power Factor (cos φ)",  # Dimensionless (0.0-1.0 range displayed)
+    name="Sax Power Factor (cos φ)",  # Dimensionless (0.0-1.0 range displayed)
     mode=NumberMode.BOX,
     native_unit_of_measurement="",
     native_min_value=0,
@@ -261,26 +262,36 @@ DESCRIPTION_SAX_NOMINAL_FACTOR = NumberEntityDescription(
     entity_category=EntityCategory.DIAGNOSTIC,
 )
 
-DESCRIPTION_SAX_SUNSPEC_POWER_SETPOINT = SensorEntityDescription(
+DESCRIPTION_SAX_SUNSPEC_POWER_SETPOINT = NumberEntityDescription(
     key=SAX_SUNSPEC_POWER_SETPOINT,
-    name="SunSpec Power Setpoint",
-    state_class=SensorStateClass.MEASUREMENT,
-    native_unit_of_measurement=PERCENTAGE,
+    name="Sax SunSpec Power Setpoint",
+    mode=NumberMode.BOX,
+    native_min_value=-100,
+    native_max_value=100,  # User sees 0.0-1.0 range
+    native_step=0.01,  # 0.01 step for user interface
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
     entity_category=EntityCategory.DIAGNOSTIC,
 )
 
-DESCRIPTION_SAX_SUNSPEC_SETPOINT_TIMEOUT = SensorEntityDescription(
+DESCRIPTION_SAX_SUNSPEC_SETPOINT_TIMEOUT = NumberEntityDescription(
     key=SAX_SUNSPEC_SETPOINT_TIMEOUT,
     name="SunSpec Setpoint Timeout",
-    state_class=SensorStateClass.MEASUREMENT,
+    mode=NumberMode.BOX,
     native_unit_of_measurement=UnitOfTime.SECONDS,
+    native_min_value=0,
+    native_max_value=300,  # Example max value, adjust as needed
+    native_step=1,
     entity_category=EntityCategory.DIAGNOSTIC,
 )
 
-DESCRIPTION_SAX_SUNSPEC_CONTROL_MODE = SensorEntityDescription(
+DESCRIPTION_SAX_SUNSPEC_CONTROL_MODE = NumberEntityDescription(
     key=SAX_SUNSPEC_CONTROL_MODE,
-    name="SunSpec Control Mode",
-    state_class=SensorStateClass.MEASUREMENT,
+    name="Sax SunSpec Control Mode",
+    mode=NumberMode.BOX,
+    native_unit_of_measurement="",
+    native_min_value=0,
+    native_max_value=1,  # Example max value, adjust as needed
+    native_step=1,
     entity_category=EntityCategory.DIAGNOSTIC,
 )
 
@@ -336,7 +347,7 @@ DESCRIPTION_SAX_SOC = SensorEntityDescription(
     name="Sax SOC",
     device_class=SensorDeviceClass.BATTERY,
     state_class=SensorStateClass.MEASUREMENT,
-    native_unit_of_measurement=PERCENTAGE,
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
 )
 
 DESCRIPTION_SAX_MIN_SOC_LIMIT = NumberEntityDescription(
@@ -344,7 +355,7 @@ DESCRIPTION_SAX_MIN_SOC_LIMIT = NumberEntityDescription(
     name="Sax Minimum SOC",
     mode=NumberMode.BOX,
     device_class=NumberDeviceClass.BATTERY,
-    native_unit_of_measurement=PERCENTAGE,
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
     native_min_value=0,
     native_max_value=100,
     entity_category=EntityCategory.CONFIG,
@@ -354,7 +365,7 @@ DESCRIPTION_SAX_MAX_SOC_CHARGING = NumberEntityDescription(
     key=SAX_MAX_SOC_CHARGING,
     name="Max SOC for Charging",
     mode=NumberMode.BOX,
-    native_unit_of_measurement=PERCENTAGE,
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
     native_min_value=0,
     native_max_value=100,
     native_step=5,
@@ -511,7 +522,7 @@ DESCRIPTION_SAX_POWER_FACTOR = SensorEntityDescription(
     key=SAX_POWER_FACTOR,
     name="Storage Power Factor",
     state_class=SensorStateClass.MEASUREMENT,
-    native_unit_of_measurement=PERCENTAGE,
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
 )
 
 DESCRIPTION_SAX_TEMPERATURE = SensorEntityDescription(
@@ -565,7 +576,7 @@ DESCRIPTION_SAX_MAX_SOC = SensorEntityDescription(
     name="Storage Maximum SoC",
     device_class=SensorDeviceClass.BATTERY,
     state_class=SensorStateClass.MEASUREMENT,
-    native_unit_of_measurement=PERCENTAGE,
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
 )
 
 DESCRIPTION_SAX_MIN_SOC = SensorEntityDescription(
@@ -573,7 +584,7 @@ DESCRIPTION_SAX_MIN_SOC = SensorEntityDescription(
     name="Storage Minimum SoC",
     device_class=SensorDeviceClass.BATTERY,
     state_class=SensorStateClass.MEASUREMENT,
-    native_unit_of_measurement=PERCENTAGE,
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
 )
 
 DESCRIPTION_SAX_CURRENT_SOC = SensorEntityDescription(
@@ -581,14 +592,14 @@ DESCRIPTION_SAX_CURRENT_SOC = SensorEntityDescription(
     name="Storage Current SoC",
     device_class=SensorDeviceClass.BATTERY,
     state_class=SensorStateClass.MEASUREMENT,
-    native_unit_of_measurement=PERCENTAGE,
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
 )
 
 DESCRIPTION_SAX_DEPTH_OF_DISCHARGE = SensorEntityDescription(
     key=SAX_DEPTH_OF_DISCHARGE,
     name="Storage Depth of Discharge",
     state_class=SensorStateClass.MEASUREMENT,
-    native_unit_of_measurement=PERCENTAGE,
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
 )
 
 # Additional sensor descriptions...
@@ -904,7 +915,7 @@ DESCRIPTION_SAX_COMBINED_SOC = SensorEntityDescription(
     name="Sax Combined SOC",
     device_class=SensorDeviceClass.BATTERY,
     state_class=SensorStateClass.MEASUREMENT,
-    native_unit_of_measurement=PERCENTAGE,
+    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
     suggested_display_precision=0,
 )
 
@@ -959,6 +970,13 @@ DESCRIPTION_SAX_ENERGY_CHARGED_MONTHLY = SensorEntityDescription(
     native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
     suggested_display_precision=0,
 )
+
+DESCRIPTION_SAX_EVENT = SensorEntityDescription(
+    key=SUNSPEC_EVENT,
+    device_class=None,
+    state_class=SensorStateClass.MEASUREMENT,
+)
+
 
 DESCRIPTION_COORDINATOR_CYCLE_TIME = SensorEntityDescription(
     key=COORDINATOR_CYCLE_TIME,

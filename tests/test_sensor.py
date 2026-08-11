@@ -54,9 +54,9 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import (
-    PERCENTAGE,
     STATE_UNAVAILABLE,
     UnitOfEnergy,
+    UnitOfRatio,
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
@@ -368,7 +368,7 @@ class TestSAXBatteryModbusSensor:
         )
 
         assert sensor.native_value == 85
-        assert sensor.native_unit_of_measurement == PERCENTAGE
+        assert sensor.native_unit_of_measurement == UnitOfRatio.PERCENTAGE
         assert sensor.device_class == SensorDeviceClass.BATTERY
         assert sensor.name == "SOC"
 

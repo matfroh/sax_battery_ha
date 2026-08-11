@@ -135,6 +135,13 @@
             },
             "bms_power_control_setpoint": {
                 "name": "Power Control Setpoint"
+            },
+            "sunspec_control_mode": {
+                "name": "SunSpec Control Mode",
+                "state": {
+                    "1": "setpoint setting",
+                    "0": "SM zero balance mode"
+                }
             }
         },
         "sensor": {
@@ -164,6 +171,18 @@
                     "3": "Waiting",
                     "4": "On",
                     "7": "SM-Error"
+                }
+            },
+            "bess_event": {
+                "name": "Event",
+                "state": {
+                    "0": "Normal operation",
+                    "4": "Isolated Error",
+                    "8": "f>> (NA)",
+                    "9": "f<< (NA)",
+                    "10": "U>> (NA)",
+                    "11": "U<< (NA)",
+                    "15": "Hardware error"
                 }
             },
             "bms_ac_power_total": {

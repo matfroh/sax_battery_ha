@@ -14,6 +14,7 @@ from .const import (
     DESCRIPTION_SAX_CHARGE_POWER,
     DESCRIPTION_SAX_DEPTH_OF_DISCHARGE,
     DESCRIPTION_SAX_DISCHARGE_POWER,
+    DESCRIPTION_SAX_EVENT,
     DESCRIPTION_SAX_GRID_FREQUENCY,
     DESCRIPTION_SAX_MAX_SOC,
     DESCRIPTION_SAX_MIN_SOC,
@@ -48,6 +49,7 @@ from .const import (
     DESCRIPTION_SAX_SMARTMETER_VOLTAGE_L3_L1,
     DESCRIPTION_SAX_SOC,
     DESCRIPTION_SAX_STATE,
+    DESCRIPTION_SAX_SUNSPEC_CONTROL_MODE,
     DESCRIPTION_SAX_SUNSPEC_REFERENCE_POWER,
     DESCRIPTION_SAX_SUNSPEC_SETPOINT_SCALE_FACTOR,
     DESCRIPTION_SAX_TEMPERATURE,
@@ -208,7 +210,7 @@ SUNSPEC_INVERTER_MODEL_ITEMS: list[ModbusItem] = [
     ModbusItem(battery_device_id=100, address=40041, name=SAX_TEMPERATURE, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, scale_factor_ref="R40042", factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_TEMPERATURE, translation_key="bess_temperature", ),
     ModbusItem(battery_device_id=100, address=40042, name="sunspec_sf_temperatur", mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.BESS, ),
     ModbusItem(battery_device_id=100, address=40043, name=SAX_STATE, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, state_map={1: "Off", 2: "Standby", 3: "Waiting", 4: "On", 7: "SM-Error"}, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_STATE, translation_key="bess_state", ),
-    ModbusItem(battery_device_id=100, address=40044, name=SUNSPEC_EVENT, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.BESS, ),
+    ModbusItem(battery_device_id=100, address=40044, name=SUNSPEC_EVENT, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_EVENT, translation_key="bess_event", ),
     ModbusItem(battery_device_id=100, address=40045, name=SAX_PV_POWER, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, scale_factor_ref="R40046", factor=1.0, device=DeviceConstants.BESS, entitydescription=DESCRIPTION_SAX_PV_POWER, translation_key="bess_pv_power", ),
     ModbusItem(battery_device_id=100, address=40046, name="sunspec_sf_pv_power", mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.BESS, ),
 ]
@@ -217,7 +219,7 @@ SUNSPEC_INVERTER_MODEL_ITEMS: list[ModbusItem] = [
 SUNSPEC_IMMEDIATE_CONTROL_ITEMS: list[ModbusItem] = [
     ModbusItem(battery_device_id=100, address=40049, name=SAX_SUNSPEC_POWER_SETPOINT, mtype=TypeConstants.NUMBER, data_type=ModbusClientMixin.DATATYPE.INT16, scale_factor_ref="R40052", factor=1.0, device=DeviceConstants.SYS, translation_key="sunspec_power_setpoint", ),
     ModbusItem(battery_device_id=100, address=40050, name=SAX_SUNSPEC_SETPOINT_TIMEOUT, mtype=TypeConstants.NUMBER, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, translation_key="sunspec_setpoint_timeout", ),
-    ModbusItem(battery_device_id=100, address=40051, name=SAX_SUNSPEC_CONTROL_MODE, mtype=TypeConstants.NUMBER, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, translation_key="sunspec_control_mode", ),
+    ModbusItem(battery_device_id=100, address=40051, name=SAX_SUNSPEC_CONTROL_MODE, mtype=TypeConstants.NUMBER, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_SUNSPEC_CONTROL_MODE, translation_key="sunspec_control_mode", ),
     ModbusItem(battery_device_id=100, address=40052, name=SAX_SUNSPEC_SETPOINT_SCALE_FACTOR, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.INT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_SUNSPEC_SETPOINT_SCALE_FACTOR, translation_key="sunspec_setpoint_scale_factor", ),
     ModbusItem(battery_device_id=100, address=40053, name=SAX_SUNSPEC_REFERENCE_POWER, mtype=TypeConstants.SENSOR, data_type=ModbusClientMixin.DATATYPE.UINT16, factor=1.0, device=DeviceConstants.SYS, entitydescription=DESCRIPTION_SAX_SUNSPEC_REFERENCE_POWER, translation_key="sunspec_reference_power", ),
 ]
