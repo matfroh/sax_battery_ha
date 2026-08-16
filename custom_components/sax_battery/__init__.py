@@ -32,6 +32,8 @@ from .const import (
     CONF_VERIFY_SUNSPEC,
     DEFAULT_PORT,
     DOMAIN,
+    PROTOCOL_MODE_LEGACY,
+    PROTOCOL_MODE_SUNSPEC,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
 )
@@ -752,13 +754,13 @@ async def _setup_battery_coordinator(
     if not await modbus_api.connect():
         raise ConfigEntryNotReady(f"Could not connect to {battery_id} at {host}:{port}")
 
-    configured_mode = entry.data.get(CONF_PROTOCOL_MODE, "legacy")
+    configured_mode = entry.data.get(CONF_PROTOCOL_MODE, PROTOCOL_MODE_LEGACY)
     verify_sunspec = bool(entry.data.get(CONF_VERIFY_SUNSPEC, False))
     effective_mode = configured_mode
     detection_reason = "configured_legacy"
     detection_path = "configured_legacy"
 
-    if configured_mode == "sunspec" and verify_sunspec:
+    if configured_mode == PROTOCOL_MODE_SUNSPEC and verify_sunspec:
         detection = await validate_sunspec_availability(
             modbus_api=modbus_api,
             battery_id=battery_id,
@@ -773,13 +775,13 @@ async def _setup_battery_coordinator(
             detection_path=detection_path,
             reason=detection_reason,
         )
-        if configured_mode == "sunspec":
+        if configured_mode == PROTOCOL_MODE_SUNSPEC:
             _LOGGER.info(
                 "%s: SunSpec was selected but validation is disabled; using legacy mode",
                 battery_id,
             )
 
-    if configured_mode == "sunspec" and verify_sunspec:
+    if configured_mode == PROTOCOL_MODE_SUNSPEC and verify_sunspec:
         _LOGGER.info(
             "%s: Effective protocol mode=%s (reason=%s)",
             battery_id,

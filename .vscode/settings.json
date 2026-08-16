@@ -57,6 +57,7 @@
     "roundtrips",
     "setpoint",
     "STATUSANZEIGE",
+    "SUNSPEC",
     "venv"
   ],
   "workbench.editor.restoreViewState": false,

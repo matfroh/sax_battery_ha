@@ -247,6 +247,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
             description_placeholders={
+                # Add minimum versions for SunSpec Mode (legacy master: 23.60 , legacy gateway: <0.54)
                 "protocol_description": "Select the Modbus protocol to use for communication",
                 "verify_sunspec_description": "Perform a short SunSpec availability check before using SunSpec",
             },

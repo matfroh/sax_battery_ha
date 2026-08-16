@@ -149,6 +149,8 @@ CONF_BALANCED_LOADING = "balanced_loading"
 
 # Protocol selection configuration
 CONF_PROTOCOL_MODE = "protocol_mode"
+PROTOCOL_MODE_LEGACY = "legacy"
+PROTOCOL_MODE_SUNSPEC = "sunspec"
 CONF_VERIFY_SUNSPEC = "verify_sunspec"
 CONF_EFFECTIVE_PROTOCOL_MODE = "effective_protocol_mode"
 

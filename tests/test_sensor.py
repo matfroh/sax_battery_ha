@@ -971,6 +971,7 @@ class TestSensorPlatformSetup:
         mock_coordinator.battery_id = "bess_a"
         mock_coordinator.battery_config = mock_battery_config_sensor_platform
         mock_coordinator.sax_data = MagicMock()
+        mock_coordinator.config_entry = mock_config_entry_sensor_platform
         mock_coordinator.sax_data.get_device_info.return_value = {
             "name": "Test Battery"
         }
@@ -1087,6 +1088,7 @@ class TestSensorPlatformSetup:
             CONF_BATTERY_IS_MASTER: True,
         }
         mock_coordinator.sax_data = MagicMock()
+        mock_coordinator.config_entry = mock_config_entry_sensor_platform
         mock_coordinator.sax_data.get_device_info.return_value = {
             "name": "Test Battery"
         }

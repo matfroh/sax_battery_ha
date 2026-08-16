@@ -34,11 +34,13 @@ from .const import (
     BMS_UNAVAILABILITY_RATE,
     CONF_BATTERY_IS_MASTER,
     CONF_BATTERY_PHASE,
+    CONF_PROTOCOL_MODE,
     COORDINATOR_CIRCUIT_BREAKER,
     COORDINATOR_CYCLE_TIME,
     COORDINATOR_ERROR_RATE,
     DIAGNOSTIC_ITEMS,
     DOMAIN,
+    PROTOCOL_MODE_LEGACY,
     SAX_COMBINED_SOC,
     SAX_CUMULATIVE_ENERGY_CHARGED,
     SAX_CUMULATIVE_ENERGY_DISCHARGED,
@@ -307,9 +309,26 @@ class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEnt
             self.entity_description = self._modbus_item.entitydescription  # type: ignore[assignment]
 
         # Set entity registry enabled state from ModbusItem
-        self._attr_entity_registry_enabled_default = getattr(
-            self._modbus_item, "enabled_by_default", True
-        )
+        # CONF_PROTOCOL_MODE == legacy shall not enable modbus_item with battery_device_id==100
+
+        if coordinator.config_entry is None or coordinator.config_entry.data is None:
+            _LOGGER.warning(
+                "Coordinator config_entry.data is None for battery %s; "
+                "defaulting entity registry enabled state to False",
+                battery_id,
+            )
+            self._attr_entity_registry_enabled_default = False
+        else:
+            config_data = coordinator.config_entry.data
+            if (
+                config_data.get(CONF_PROTOCOL_MODE) == PROTOCOL_MODE_LEGACY
+                and self._battery_id == "100"
+            ):
+                self._attr_entity_registry_enabled_default = False
+            else:
+                self._attr_entity_registry_enabled_default = getattr(
+                    self._modbus_item, "enabled_by_default", True
+                )
 
         if (
             hasattr(self, "entity_description")
