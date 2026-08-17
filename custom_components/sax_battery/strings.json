@@ -70,6 +70,18 @@
                     "priority_devices": "Select devices that should have priority over battery usage (e.g., EV charger, heat pump)"
                 }
             },
+            "protocol_options": {
+                "title": "Protocol Options",
+                "description": "Select the communication protocol and verification settings for your SAX Battery system.",
+                "data": {
+                    "protocol_mode": "Communication Protocol Mode",
+                    "verify_sunspec": "Verify SunSpec Compliance",
+                },
+                "data_description": {
+                    "protocol_mode": "Choose between 'legacy' or 'sunspec' communication protocols. 'sunspec' is recommended for newer batteries.",
+                    "verify_sunspec": "Enable to verify SunSpec compliance during communication. This may help with compatibility issues."
+                }
+            },
             "battery_config": {
                 "title": "Battery Connection Settings",
                 "description": "Configure network settings for {battery_count} SAX batteries. Battery A (L1), Battery B (L2), Battery C (L3)",
@@ -92,7 +104,16 @@
                     "master_battery": "Select which battery acts as master (polls smart meter)"
                 }
             }
+        },
+    "selector": {
+      "protocol_mode_selection": {
+        "options": {
+          "legacy": "Legacy Mode (FW master: 23.60 , gateway:  ≤0.54)",
+          "sunspec": "SunSpec Mode (FW master: 23.61 , gateway: ≥0.54)"
         }
+      }
+    }
+
     },
     "options": {
         "step": {

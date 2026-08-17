@@ -39,6 +39,8 @@ from .const import (
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
     DOMAIN,
+    PROTOCOL_MODE_LEGACY,
+    PROTOCOL_MODE_SUNSPEC,
     SAX_MAX_CHARGE,
     SAX_MAX_DISCHARGE,
 )
@@ -61,7 +63,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._limit_power: bool = False
         self._sm_connected: bool = True
         self._balanced_loading: bool = False
-        self._protocol_mode: str = "legacy"
+        self._protocol_mode: str = PROTOCOL_MODE_LEGACY
         self._verify_sunspec: bool = False
 
     @staticmethod
@@ -225,7 +227,9 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            self._protocol_mode = user_input.get(CONF_PROTOCOL_MODE, "legacy")
+            self._protocol_mode = user_input.get(
+                CONF_PROTOCOL_MODE, PROTOCOL_MODE_LEGACY
+            )
             self._verify_sunspec = bool(user_input.get(CONF_VERIFY_SUNSPEC, False))
             self._data[CONF_PROTOCOL_MODE] = self._protocol_mode
             self._data[CONF_VERIFY_SUNSPEC] = self._verify_sunspec
@@ -235,10 +239,16 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="protocol_options",
             data_schema=vol.Schema(
                 {
+                    # Add minimum versions for SunSpec Mode (legacy master: 23.60 , legacy gateway: <0.54)
                     vol.Required(
-                        CONF_PROTOCOL_MODE,
-                        default=self._protocol_mode,
-                    ): vol.In(["legacy", "sunspec"]),
+                        CONF_PROTOCOL_MODE, default=self._protocol_mode
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[PROTOCOL_MODE_LEGACY, PROTOCOL_MODE_SUNSPEC],
+                            mode=selector.SelectSelectorMode.LIST,  # Renders as radio buttons or a clean list
+                            translation_key="protocol_mode_selection",  # Links to strings.json
+                        )
+                    ),
                     vol.Required(
                         CONF_VERIFY_SUNSPEC,
                         default=self._verify_sunspec,
@@ -247,7 +257,6 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
             description_placeholders={
-                # Add minimum versions for SunSpec Mode (legacy master: 23.60 , legacy gateway: <0.54)
                 "protocol_description": "Select the Modbus protocol to use for communication",
                 "verify_sunspec_description": "Perform a short SunSpec availability check before using SunSpec",
             },
