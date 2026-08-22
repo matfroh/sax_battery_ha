@@ -593,6 +593,78 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "smartmeter_current_l2": "Smart Meter Current L2",
             "smartmeter_current_l3": "Smart Meter Current L3",
             "smartmeter_total_power": "Smart Meter Total Power",
+            # SunSpec interface (slave 100)
+            "sunspec_version_master": "SunSpec Version Master",
+            "sunspec_version_gateway": "SunSpec Version Gateway",
+            "sunspec_pv_power_raw": "SunSpec PV Power Raw",
+            "sunspec_pv_power_sf": "SunSpec PV Power Scale Factor",
+            "sunspec_pv_power": "SunSpec PV Power",
+            "sunspec_max_power_reference": "SunSpec Max Power Reference",
+            "sunspec_grid_frequency_raw": "SunSpec Grid Frequency Raw",
+            "sunspec_grid_frequency_sf": "SunSpec Grid Frequency Scale Factor",
+            "sunspec_grid_frequency": "SunSpec Grid Frequency",
+            "sunspec_grid_power_sum_raw": "SunSpec Grid Power Sum Raw",
+            "sunspec_grid_power_l1_raw": "SunSpec Grid Power L1 Raw",
+            "sunspec_grid_power_l2_raw": "SunSpec Grid Power L2 Raw",
+            "sunspec_grid_power_l3_raw": "SunSpec Grid Power L3 Raw",
+            "sunspec_grid_power_sf": "SunSpec Grid Power Scale Factor",
+            "sunspec_grid_power_sum": "SunSpec Grid Power Sum",
+            "sunspec_grid_power_l1": "SunSpec Grid Power L1",
+            "sunspec_grid_power_l2": "SunSpec Grid Power L2",
+            "sunspec_grid_power_l3": "SunSpec Grid Power L3",
+            "sunspec_grid_current_sum_raw": "SunSpec Grid Current Sum Raw",
+            "sunspec_grid_current_l1_raw": "SunSpec Grid Current L1 Raw",
+            "sunspec_grid_current_l2_raw": "SunSpec Grid Current L2 Raw",
+            "sunspec_grid_current_l3_raw": "SunSpec Grid Current L3 Raw",
+            "sunspec_grid_current_sf": "SunSpec Grid Current Scale Factor",
+            "sunspec_grid_current_sum": "SunSpec Grid Current Sum",
+            "sunspec_grid_current_l1": "SunSpec Grid Current L1",
+            "sunspec_grid_current_l2": "SunSpec Grid Current L2",
+            "sunspec_grid_current_l3": "SunSpec Grid Current L3",
+            "sunspec_grid_voltage_ln_avg_raw": "SunSpec Grid Voltage L-N Avg Raw",
+            "sunspec_grid_voltage_l1_raw": "SunSpec Grid Voltage L1 Raw",
+            "sunspec_grid_voltage_l2_raw": "SunSpec Grid Voltage L2 Raw",
+            "sunspec_grid_voltage_l3_raw": "SunSpec Grid Voltage L3 Raw",
+            "sunspec_grid_voltage_ll_avg_raw": "SunSpec Grid Voltage L-L Avg Raw",
+            "sunspec_grid_voltage_sf": "SunSpec Grid Voltage Scale Factor",
+            "sunspec_grid_voltage_ln_avg": "SunSpec Grid Voltage L-N Avg",
+            "sunspec_grid_voltage_l1": "SunSpec Grid Voltage L1",
+            "sunspec_grid_voltage_l2": "SunSpec Grid Voltage L2",
+            "sunspec_grid_voltage_l3": "SunSpec Grid Voltage L3",
+            "sunspec_grid_voltage_ll_avg": "SunSpec Grid Voltage L-L Avg",
+            "sunspec_grid_apparent_power_sum_raw": (
+                "SunSpec Grid Apparent Power Sum Raw"
+            ),
+            "sunspec_grid_apparent_power_sf": "SunSpec Grid Apparent Power Scale Factor",
+            "sunspec_grid_apparent_power_sum": "SunSpec Grid Apparent Power Sum",
+            "sunspec_grid_reactive_power_sum_raw": (
+                "SunSpec Grid Reactive Power Sum Raw"
+            ),
+            "sunspec_grid_reactive_power_sf": "SunSpec Grid Reactive Power Scale Factor",
+            "sunspec_grid_reactive_power_sum": "SunSpec Grid Reactive Power Sum",
+            "sunspec_grid_power_factor_sum_raw": "SunSpec Grid Power Factor Sum Raw",
+            "sunspec_grid_power_factor_l1_raw": "SunSpec Grid Power Factor L1 Raw",
+            "sunspec_grid_power_factor_l2_raw": "SunSpec Grid Power Factor L2 Raw",
+            "sunspec_grid_power_factor_l3_raw": "SunSpec Grid Power Factor L3 Raw",
+            "sunspec_grid_power_factor_sf": "SunSpec Grid Power Factor Scale Factor",
+            "sunspec_grid_power_factor_sum": "SunSpec Grid Power Factor Sum",
+            "sunspec_grid_power_factor_l1": "SunSpec Grid Power Factor L1",
+            "sunspec_grid_power_factor_l2": "SunSpec Grid Power Factor L2",
+            "sunspec_grid_power_factor_l3": "SunSpec Grid Power Factor L3",
+            "sunspec_capacity_raw": "SunSpec Capacity Raw",
+            "sunspec_capacity_sf": "SunSpec Capacity Scale Factor",
+            "sunspec_capacity": "SunSpec Capacity",
+            "sunspec_available_charge_power_raw": (
+                "SunSpec Available Charge Power Raw"
+            ),
+            "sunspec_available_discharge_power_raw": (
+                "SunSpec Available Discharge Power Raw"
+            ),
+            "sunspec_charge_discharge_power_sf": (
+                "SunSpec Charge Discharge Power Scale Factor"
+            ),
+            "sunspec_available_charge_power": "SunSpec Available Charge Power",
+            "sunspec_available_discharge_power": "SunSpec Available Discharge Power",
         }
         return name_mapping.get(key, key.replace("_", " ").title())
 
@@ -660,6 +732,86 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
                 UnitOfElectricCurrent.AMPERE,
             ),
             "smartmeter_total_power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            # SunSpec interface (slave 100) - derived, scale-corrected values
+            "sunspec_pv_power": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_max_power_reference": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_grid_frequency": (
+                SensorDeviceClass.FREQUENCY,
+                UnitOfFrequency.HERTZ,
+            ),
+            "sunspec_grid_power_sum": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_grid_power_l1": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_grid_power_l2": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_grid_power_l3": (SensorDeviceClass.POWER, UnitOfPower.WATT),
+            "sunspec_grid_current_sum": (
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
+            "sunspec_grid_current_l1": (
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
+            "sunspec_grid_current_l2": (
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
+            "sunspec_grid_current_l3": (
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
+            "sunspec_grid_voltage_ln_avg": (
+                SensorDeviceClass.VOLTAGE,
+                UnitOfElectricPotential.VOLT,
+            ),
+            "sunspec_grid_voltage_l1": (
+                SensorDeviceClass.VOLTAGE,
+                UnitOfElectricPotential.VOLT,
+            ),
+            "sunspec_grid_voltage_l2": (
+                SensorDeviceClass.VOLTAGE,
+                UnitOfElectricPotential.VOLT,
+            ),
+            "sunspec_grid_voltage_l3": (
+                SensorDeviceClass.VOLTAGE,
+                UnitOfElectricPotential.VOLT,
+            ),
+            "sunspec_grid_voltage_ll_avg": (
+                SensorDeviceClass.VOLTAGE,
+                UnitOfElectricPotential.VOLT,
+            ),
+            "sunspec_grid_apparent_power_sum": (
+                SensorDeviceClass.APPARENT_POWER,
+                "VA",
+            ),
+            "sunspec_grid_reactive_power_sum": (
+                SensorDeviceClass.REACTIVE_POWER,
+                "var",
+            ),
+            "sunspec_grid_power_factor_sum": (
+                SensorDeviceClass.POWER_FACTOR,
+                None,
+            ),
+            "sunspec_grid_power_factor_l1": (
+                SensorDeviceClass.POWER_FACTOR,
+                None,
+            ),
+            "sunspec_grid_power_factor_l2": (
+                SensorDeviceClass.POWER_FACTOR,
+                None,
+            ),
+            "sunspec_grid_power_factor_l3": (
+                SensorDeviceClass.POWER_FACTOR,
+                None,
+            ),
+            "sunspec_capacity": (SensorDeviceClass.ENERGY, UnitOfEnergy.WATT_HOUR),
+            "sunspec_available_charge_power": (
+                SensorDeviceClass.POWER,
+                UnitOfPower.WATT,
+            ),
+            "sunspec_available_discharge_power": (
+                SensorDeviceClass.POWER,
+                UnitOfPower.WATT,
+            ),
         }
         return mapping.get(lookup_key, (None, None))
 
@@ -674,7 +826,10 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
 
         if lookup_key in ["energy_produced", "energy_consumed", "cycles"]:
             return SensorStateClass.TOTAL_INCREASING
-        if lookup_key == "capacity":  # Capacity should be TOTAL, not MEASUREMENT
+        if lookup_key in (
+            "capacity",
+            "sunspec_capacity",
+        ):  # Capacity should be TOTAL, not MEASUREMENT
             return SensorStateClass.TOTAL
         if lookup_key in [
             "soc",
@@ -702,6 +857,30 @@ class SAXBatterySensor(CoordinatorEntity, SensorEntity):
             "smartmeter_current_l2",
             "smartmeter_current_l3",
             "smartmeter_total_power",
+            "sunspec_pv_power",
+            "sunspec_max_power_reference",
+            "sunspec_grid_frequency",
+            "sunspec_grid_power_sum",
+            "sunspec_grid_power_l1",
+            "sunspec_grid_power_l2",
+            "sunspec_grid_power_l3",
+            "sunspec_grid_current_sum",
+            "sunspec_grid_current_l1",
+            "sunspec_grid_current_l2",
+            "sunspec_grid_current_l3",
+            "sunspec_grid_voltage_ln_avg",
+            "sunspec_grid_voltage_l1",
+            "sunspec_grid_voltage_l2",
+            "sunspec_grid_voltage_l3",
+            "sunspec_grid_voltage_ll_avg",
+            "sunspec_grid_apparent_power_sum",
+            "sunspec_grid_reactive_power_sum",
+            "sunspec_grid_power_factor_sum",
+            "sunspec_grid_power_factor_l1",
+            "sunspec_grid_power_factor_l2",
+            "sunspec_grid_power_factor_l3",
+            "sunspec_available_charge_power",
+            "sunspec_available_discharge_power",
         ]:
             return SensorStateClass.MEASUREMENT
         return None
