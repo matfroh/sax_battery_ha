@@ -8,3 +8,4 @@ pip>=26.1.0
 wheel
 pylint
 pyright
+pysunspec2

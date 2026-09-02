@@ -1,8 +1,4 @@
 {
-  "intellicode.enabled": false,
-  "chat.modeFilesLocations": {
-    "chatmodes": true
-  },
   "chat.promptFilesLocations": {
     "prompts": true
   },
@@ -23,16 +19,12 @@
     "*.prompt.md": "markdown"
   },
   "editor.formatOnSave": true,
-  "python.testing.pytestArgs": ["tests"],
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
   "python.terminal.activateEnvironment": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "python.analysis.diagnosticSeverityOverrides": {
-    "reportIncompatibleMethodOverride": false
-  },
-  "python.linting.enabled": true,
-  "python.linting.ruffEnabled": true,
-  "python.formatting.provider": "ruff",
   "[python]": {
     "editor.formatOnSave": false,
     "editor.codeActionsOnSave": {
@@ -47,6 +39,7 @@
     "entitydescription",
     "EPIPE",
     "hostnames",
+    "IPPORT",
     "mtype",
     "Mult",
     "mypy",
@@ -63,15 +56,14 @@
   "workbench.editor.restoreViewState": false,
   "workbench.editor.enablePreview": true,
   "workbench.editor.enablePreviewFromQuickOpen": false,
-  "awesome-copilot.mcp.enabled": true,
-  "awesome-copilot.mcp.configFile": "${workspaceFolder}/.github/mcp-config.json",
-  "awesome-copilot.mcp.timeout": 30000,
   "[json]": {
     "editor.formatOnSave": false
   },
   "json.schemas": [
     {
-      "fileMatch": ["homeassistant/components/*/manifest.json"],
+      "fileMatch": [
+        "homeassistant/components/*/manifest.json"
+      ],
       // This value differs between working with devcontainer and locally, therefor this value should NOT be in sync!
       "url": "./scripts/json_schemas/manifest_schema.json"
     },
