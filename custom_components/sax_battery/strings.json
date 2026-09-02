@@ -1,0 +1,376 @@
+{
+    "title": "SAX Battery",
+    "config": {
+        "abort": {
+            "reconfigure_successful": "Configuration updated successfully.",
+            "reconfigure_entry_not_found": "Configuration entry not found.",
+            "single_instance_allowed": "Only one SAX Battery hub can be configured. Use reconfigure to add more batteries."
+        },
+        "error": {
+            "cannot_connect": "Failed to connect to battery",
+            "invalid_auth": "Invalid authentication",
+            "invalid_host": "Invalid IP address or hostname",
+            "invalid_host_format": "Invalid host format - must be valid IPv4 address or hostname",
+            "duplicate_host": "This IP address or hostname is already used by another battery",
+            "invalid_port": "Invalid port number - must be between 1 and 65535",
+            "invalid_master": "Selected master battery is not configured",
+            "invalid_min_soc": "Minimum SOC must be between 0 and 100",
+            "invalid_interval": "Update interval must be between 5 and 300 seconds",
+            "unknown": "Unexpected error"
+        },
+        "step": {
+            "user": {
+                "title": "SAX Battery Configuration",
+                "description": "Set up your SAX Battery system to integrate with Home Assistant.",
+                "data": {
+                    "battery_count": "Select your number of batteries (1 to 3)"
+                }
+            },
+            "control_options": {
+                "title": "Control Options",
+                "description": "Configure how you want Home Assistant to interact with your SAX Battery system. You can continue without selecting any of these options, this will just add the sensors. The added options here require you to contact SAX's customer service.",
+                "data": {
+                    "control_power": "Control battery from Home Assistant replacing the SAX smartmeter (you need registers 41 and 42 set to write)",
+                    "limit_power": "Enable power limitations (you need registers 43 and 44 to be writable). Once setup, you can create automations that send the proper values to this number entity with your own rules"
+                },
+                "data_description": {
+                    "control_power": "Enable mode to control battery charge/discharge power (registers 41, 42)",
+                    "limit_power": "Enable power limits to set max charge/discharge (registers 43, 44)"
+                }
+            },
+            "power_options": {
+                "title": "Power Management Options",
+                "description": "Configure power management options. Select whether a SAX smart meter is connected via RS485 and configure intelligent balanced loading.",
+                "data": {
+                    "sm_connected": "SAX smart meter connected via RS485",
+                    "balanced_loading": "Enable intelligent balanced loading"
+                },
+                "data_description": {
+                    "sm_connected": "Enable if the SAX smart meter is connected to the battery via RS485. When disabled, an external grid power sensor can be configured for balanced loading",
+                    "balanced_loading": "Enable balanced loading using an external grid power sensor. Negative grid power (production/export to grid) indicates surplus power available for charging — this typically means solar photovoltaic (PV) energy is available. Positive grid power (consumption/import from grid) means no surplus is available. Manual grid charging is always available independently"
+                }
+            },
+            "sensors": {
+                "title": "Power Monitoring Sensors",
+                "description": "Select the sensors that monitor your home's power usage for intelligent battery control.",
+                "data": {
+                    "power_sensor": "Grid power sensor (W)"
+                },
+                "data_description": {
+                    "power_sensor": "Select the grid power sensor entity. Negative values (W) indicate power production/export to grid (typically from solar PV), positive values indicate power consumption/import from grid"
+                }
+            },
+            "priority_devices": {
+                "title": "Priority Devices Setup",
+                "description": "Select devices that will get priority over the battery. If power above 50W is detected battery will neither charge nor discharge. This is typically an EV charger.",
+                "data": {
+                    "priority_devices": "Priority Devices, if enabled, battery will not discharge or charge"
+                },
+                "data_description": {
+                    "priority_devices": "Select devices that should have priority over battery usage (e.g., EV charger, heat pump)"
+                }
+            },
+            "protocol_options": {
+                "title": "Protocol Options",
+                "description": "Select the communication protocol and verification settings for your SAX Battery system.",
+                "data": {
+                    "protocol_mode": "Communication Protocol Mode",
+                    "verify_sunspec": "Verify SunSpec Compliance",
+                },
+                "data_description": {
+                    "protocol_mode": "Choose between 'legacy' or 'sunspec' communication protocols. 'sunspec' is recommended for newer batteries.",
+                    "verify_sunspec": "Enable to verify SunSpec compliance during communication. This may help with compatibility issues."
+                }
+            },
+            "battery_config": {
+                "title": "Battery Connection Settings",
+                "description": "Configure network settings for {battery_count} SAX batteries. Battery A (L1), Battery B (L2), Battery C (L3)",
+                "data": {
+                    "battery_a_host": "Battery A IP Address",
+                    "battery_a_port": "Battery A Port",
+                    "battery_b_host": "Battery B IP Address",
+                    "battery_b_port": "Battery B Port",
+                    "battery_c_host": "Battery C IP Address",
+                    "battery_c_port": "Battery C Port",
+                    "master_battery": "Master Battery"
+                },
+                "data_description": {
+                    "battery_a_host": "IP address or hostname for Battery A",
+                    "battery_a_port": "Modbus TCP port for Battery A (default: 502)",
+                    "battery_b_host": "IP address or hostname for Battery B",
+                    "battery_b_port": "Modbus TCP port for Battery B (default: 502)",
+                    "battery_c_host": "IP address or hostname for Battery C",
+                    "battery_c_port": "Modbus TCP port for Battery C (default: 502)",
+                    "master_battery": "Select which battery acts as master (polls smart meter)"
+                }
+            }
+        },
+    "selector": {
+      "protocol_mode_selection": {
+        "options": {
+          "legacy": "Legacy Mode (FW master: 23.60 , gateway:  ≤0.54)",
+          "sunspec": "SunSpec Mode (FW master: 23.61 , gateway: ≥0.54)"
+        }
+      }
+    }
+
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "SAX Battery Options",
+                "description": "Update your SAX Battery configuration settings.",
+                "data": {
+                    "control_power": "Control battery from Home Assistant",
+                    "limit_power": "Enable power limitations",
+                    "sm_connected": "SAX smart meter connected via RS485",
+                    "balanced_loading": "Enable intelligent balanced loading",
+                    "min_soc": "Minimum State of Charge (%)"
+                },
+                "data_description": {
+                    "control_power": "Enable or disable power control mode (registers 41,42)",
+                    "limit_power": "Enable or disable power limits (registers 43,44)",
+                    "sm_connected": "Enable if the SAX smart meter is connected to the battery via RS485. When disabled, an external grid power sensor can be configured for balanced loading",
+                    "balanced_loading": "Enable balanced loading using an external grid power sensor. Negative grid power (production/export) indicates surplus available for charging, typically from solar PV. Positive grid power (consumption/import) means no surplus"
+
+                }
+            }
+        }
+    },
+    "entity": {
+        "number": {
+            "bms_max_charge": {
+                "name": "Max Charge"
+            },
+            "bms_max_discharge": {
+                "name": "Max Discharge"
+            },
+            "bms_min_soc": {
+                "name": "Minimum SOC"
+            },
+            "bms_nominal_factor": {
+                "name": "Power Factor (cos φ)"
+            },
+            "bms_nominal_power": {
+                "name": "Nominal Power"
+            },
+            "bms_power_control_setpoint": {
+                "name": "Power Control Setpoint"
+            },
+            "sunspec_control_mode": {
+                "name": "SunSpec Control Mode",
+                "state": {
+                    "1": "setpoint setting",
+                    "0": "SM zero balance mode"
+                }
+            }
+        },
+        "sensor": {
+            "bess_capacity": {
+                "name": "Capacity"
+            },
+            "bess_cycles": {
+                "name": "Cycles"
+            },
+            "bess_power": {
+                "name": "Power"
+            },
+            "bess_power_sm": {
+                "name": "Power Smartmeter"
+            },
+            "bess_soc": {
+                "name": "SOC"
+            },
+            "bess_temperature": {
+                "name": "Temperature"
+            },
+            "bess_state": {
+                "name": "State",
+                "state": {
+                    "1": "Off",
+                    "2": "Standby",
+                    "3": "Waiting",
+                    "4": "On",
+                    "7": "SM-Error"
+                }
+            },
+            "bess_event": {
+                "name": "Event",
+                "state": {
+                    "0": "Normal operation",
+                    "4": "Isolated Error",
+                    "8": "f>> (NA)",
+                    "9": "f<< (NA)",
+                    "10": "U>> (NA)",
+                    "11": "U<< (NA)",
+                    "15": "Hardware error"
+                }
+            },
+            "bms_ac_power_total": {
+                "name": "AC Power Total"
+            },
+            "bms_apparent_power": {
+                "name": "Apparent Power"
+            },
+            "bms_combined_soc": {
+                "name": "Combined SOC"
+            },
+            "bms_cumulative_energy_charged": {
+                "name": "Cumulative Energy Charged"
+            },
+            "bms_cumulative_energy_discharged": {
+                "name": "Cumulative Energy Discharged"
+            },
+            "bms_energy_charged_daily": {
+                "name": "Energy Charged Daily"
+            },
+            "bms_energy_discharged_daily": {
+                "name": "Energy Discharged Daily"
+            },
+            "bms_energy_charged_monthly": {
+                "name": "Energy Charged Monthly"
+            },
+            "bms_energy_discharged_monthly": {
+                "name": "Energy Discharged Monthly"
+            },
+            "bms_current_l1": {
+                "name": "Current L1"
+            },
+            "bms_current_l2": {
+                "name": "Current L2"
+            },
+            "bms_current_l3": {
+                "name": "Current L3"
+            },
+            "bms_grid_frequency": {
+                "name": "Grid Frequency"
+            },
+            "bms_phase_currents_sum": {
+                "name": "Phase Currents Sum"
+            },
+            "bms_power_factor": {
+                "name": "Power Factor"
+            },
+            "bms_reactive_power": {
+                "name": "Reactive Power"
+            },
+            "bms_voltage_l1": {
+                "name": "Voltage L1"
+            },
+            "bms_voltage_l2": {
+                "name": "Voltage L2"
+            },
+            "bms_voltage_l3": {
+                "name": "Voltage L3"
+            },
+            "sm_current_l1": {
+                "name": "Current L1"
+            },
+            "sm_current_l2": {
+                "name": "Current L2"
+            },
+            "sm_current_l3": {
+                "name": "Current L3"
+            },
+            "sm_energy_consumed": {
+                "name": "Energy Consumed"
+            },
+            "sm_energy_produced": {
+                "name": "Energy Produced"
+            },
+            "sm_power_l1": {
+                "name": "Active Power L1"
+            },
+            "sm_power_l2": {
+                "name": "Active Power L2"
+            },
+            "sm_power_l3": {
+                "name": "Active Power L3"
+            },
+            "sm_switching_state": {
+                "name": "Switching State"
+            },
+            "sm_total_power": {
+                "name": "Total Power"
+            },
+            "sm_voltage_l1": {
+                "name": "Voltage L1"
+            },
+            "sm_voltage_l2": {
+                "name": "Voltage L2"
+            },
+            "sm_voltage_l3": {
+                "name": "Voltage L3"
+            },
+            "coordinator_cycle_time": {
+                "name": "Coordinator Cycle Time"
+            },
+            "coordinator_error_rate": {
+                "name": "Coordinator Error Rate"
+            },
+            "coordinator_circuit_breaker": {
+                "name": "Circuit Breaker"
+            },
+            "bms_unavailability_rate": {
+                "name": "BMS Unavailability Rate"
+            },
+            "txid_error_rate": {
+                "name": "Transaction ID Error Rate"
+            }
+        },
+        "switch": {
+            "bess_status": {
+                "name": "Battery Status",
+                "state": {
+                    "off": "Off",
+                    "on": "On"
+                },
+                "state_attributes": {
+                    "detailed_state": {
+                        "state": {
+                            "unknown": "Unknown",
+                            "off": "Off",
+                            "on": "On",
+                            "standby": "Standby",
+                            "connected": "Connected"
+                        }
+                    }
+                }
+            },
+            "bms_charge_from_pv": {
+                "name": "Charging from PV",
+                "state": {
+                    "off": "Disabled",
+                    "on": "Enabled"
+                },
+                "state_attributes": {
+                    "mode_conflict": {
+                        "name": "Mode Conflict",
+                        "state": {
+                            "none": "No conflict",
+                            "grid_disabled": "Grid charging was disabled",
+                            "pv_disabled": "PV charging was disabled"
+                        }
+                    }
+                }
+            },
+            "bms_charge_from_grid": {
+                "name": "Charging from Grid",
+                "state": {
+                    "off": "Disabled",
+                    "on": "Enabled"
+                },
+                "state_attributes": {
+                    "mode_conflict": {
+                        "name": "Mode Conflict",
+                        "state": {
+                            "none": "No conflict",
+                            "pv_disabled": "PV charging was disabled",
+                            "grid_disabled": "Grid charging was disabled"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

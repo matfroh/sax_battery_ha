@@ -1,4 +1,4 @@
 -r requirements_dev.txt
-pytest-homeassistant-custom-component==0.13.278
-
-
+pytest-homeassistant-custom-component==0.13.345
+pytest-timeout==2.4.0
+vulture==2.14

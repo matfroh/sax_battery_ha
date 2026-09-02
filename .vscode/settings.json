@@ -1,7 +1,4 @@
 {
-  "chat.modeFilesLocations": {
-    "chatmodes": true
-  },
   "chat.promptFilesLocations": {
     "prompts": true
   },
@@ -19,44 +16,46 @@
     "*.yaml": "home-assistant",
     "*.chatmode.md": "markdown",
     "*.instructions.md": "markdown",
-    "*.prompt.md": "markdown",
+    "*.prompt.md": "markdown"
   },
   "editor.formatOnSave": true,
   "python.testing.pytestArgs": [
     "tests"
   ],
-  "python.defaultInterpreterPath": "/home/vscode/.local/ha-venv/bin/python",
   "python.terminal.activateEnvironment": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "python.analysis.diagnosticSeverityOverrides": {
-    "reportIncompatibleMethodOverride": false
-  },
-  "python.linting.enabled": true,
-  "python.linting.ruffEnabled": true,
-  "python.formatting.provider": "ruff",
   "[python]": {
-    "editor.formatOnSave": true,
+    "editor.formatOnSave": false,
     "editor.codeActionsOnSave": {
       "source.organizeImports": "explicit"
     }
   },
   "cSpell.words": [
+    "caplog",
     "codeowners",
+    "Cooldown",
+    "ECONNRESET",
     "entitydescription",
-    "mformat",
+    "EPIPE",
+    "hostnames",
+    "IPPORT",
     "mtype",
     "Mult",
     "mypy",
+    "pylint",
     "pymodbus",
-    "STATUSANZEIGE"
+    "pyproject",
+    "pytest",
+    "roundtrips",
+    "setpoint",
+    "STATUSANZEIGE",
+    "SUNSPEC",
+    "venv"
   ],
   "workbench.editor.restoreViewState": false,
   "workbench.editor.enablePreview": true,
   "workbench.editor.enablePreviewFromQuickOpen": false,
-  "awesome-copilot.mcp.enabled": true,
-  "awesome-copilot.mcp.configFile": "${workspaceFolder}/.github/mcp-config.json",
-  "awesome-copilot.mcp.timeout": 30000,
   "[json]": {
     "editor.formatOnSave": false
   },
@@ -79,4 +78,12 @@
     "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.{yml,yaml}",
     "https://json.schemastore.org/dependabot-2.0.json": ".github/dependabot.yml"
   },
+  "chat.tools.terminal.autoApprove": {
+    "./scripts/run_tests.sh": true,
+    "./scripts/run_ruff.sh": true,
+    "/^cd /workspaces/sax_battery_ha && source \"\\$VIRTUAL_ENV/bin/activate\" && \\./scripts/run_ruff\\.sh$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
 }
