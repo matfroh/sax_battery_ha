@@ -30,7 +30,8 @@
         "description": "Select the sensors that monitor your home's power usage for intelligent battery control.",
         "data": {
           "power_sensor": "Power Consumption Sensor, in Watts, a negative value means consuming from the grid and positive value equals injection into the grid",
-          "pf_sensor": "Power Factor Sensor, called cos(phi) or PF"
+          "pf_sensor": "Power Factor Sensor, called cos(phi) or PF",
+          "invert_power_sensor": "Invert the sign of the power sensor. Enable this if your grid sensor is positive when consuming from the grid and negative when injecting (the usual Home Assistant convention, e.g. SMA, Fronius, Shelly). Leave off for SolarEdge meters."
         }
       },
       "priority_devices": {
@@ -77,6 +78,7 @@
           "enable_solar_charging": "Enable Solar Charging",
           "power_sensor": "Power Consumption Sensor",
           "pf_sensor": "Power Factor Sensor",
+          "invert_power_sensor": "Invert power sensor sign",
           "priority_devices": "Priority Devices",
           "master_battery": "Master Battery"
         }

@@ -16,6 +16,7 @@ from .const import (
     CONF_LIMIT_POWER,
     CONF_MASTER_BATTERY,
     CONF_MIN_SOC,
+    CONF_INVERT_POWER_SENSOR,
     CONF_PF_SENSOR,
     CONF_PILOT_FROM_HA,
     CONF_POWER_SENSOR,
@@ -156,6 +157,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_PF_SENSOR): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="sensor"),
                     ),
+                    vol.Required(CONF_INVERT_POWER_SENSOR, default=False): bool,
                 }
             )
 
