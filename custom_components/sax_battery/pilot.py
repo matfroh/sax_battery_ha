@@ -22,6 +22,7 @@ from .const import (
     CONF_MIN_SOC,
     CONF_PF_SENSOR,
     CONF_PILOT_FROM_HA,
+    CONF_INVERT_POWER_SENSOR,
     CONF_POWER_SENSOR,
     CONF_PRIORITY_DEVICES,
     DEFAULT_AUTO_PILOT_INTERVAL,
@@ -73,6 +74,7 @@ class SAXBatteryPilot:
         self._update_config_values()
         self.power_sensor_entity_id = self.entry.data.get(CONF_POWER_SENSOR)
         self.pf_sensor_entity_id = self.entry.data.get(CONF_PF_SENSOR)
+        self.invert_power_sensor = self.entry.data.get(CONF_INVERT_POWER_SENSOR, False)
         self.priority_devices = self.entry.data.get(CONF_PRIORITY_DEVICES, [])
         self.min_soc = self.entry.data.get(CONF_MIN_SOC, DEFAULT_MIN_SOC)
         self.update_interval = self.entry.data.get(
@@ -99,6 +101,7 @@ class SAXBatteryPilot:
         """Update configuration values from entry data."""
         self.power_sensor_entity_id = self.entry.data.get(CONF_POWER_SENSOR)
         self.pf_sensor_entity_id = self.entry.data.get(CONF_PF_SENSOR)
+        self.invert_power_sensor = self.entry.data.get(CONF_INVERT_POWER_SENSOR, False)
         self.priority_devices = self.entry.data.get(CONF_PRIORITY_DEVICES, [])
         # Get min_soc from coordinator if available, then check entry options, then fall back to entry data
         self.min_soc = (
@@ -294,6 +297,13 @@ class SAXBatteryPilot:
                     err,
                 )
                 return
+
+            # The pilot expects the grid sensor to be positive when injecting
+            # into the grid and negative when consuming from it (SolarEdge meter
+            # convention). Most Home Assistant grid sensors (SMA, Fronius,
+            # Shelly, ...) use the opposite sign, so allow flipping it here.
+            if self.invert_power_sensor:
+                total_power = -total_power
 
             # Get current PF value
             pf_state = self.hass.states.get(self.pf_sensor_entity_id)
