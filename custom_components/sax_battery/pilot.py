@@ -83,9 +83,10 @@ class SAXBatteryPilot:
         )
 
         # Calculated values
+        # Sign convention of SAX register 41: positive = discharge, negative = charge.
         self.calculated_power = 0.0
-        self.max_discharge_power = self.battery_count * 3600
-        self.max_charge_power = self.battery_count * 4500
+        self.max_charge_power = self.battery_count * 3600  # bounds the negative side
+        self.max_discharge_power = self.battery_count * 4500  # bounds the positive side
 
         # Modbus
         self.master_battery = sax_data.master_battery
@@ -373,11 +374,12 @@ class SAXBatteryPilot:
                     net_power,
                 )
 
+            # Positive = discharge, negative = charge (SAX register 41 convention).
             target_power = -net_power
 
-            # Apply limits
+            # Apply limits: negative side by max charge, positive side by max discharge
             target_power = max(
-                -self.max_discharge_power, min(self.max_charge_power, target_power)
+                -self.max_charge_power, min(self.max_discharge_power, target_power)
             )
 
             # Apply SOC constraints
@@ -677,8 +679,9 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
         self._pilot = pilot
         self._attr_unique_id = f"{DOMAIN}_pilot_power_{self._pilot.sax_data.device_id}"
         self._attr_name = "Battery Pilot Power"
-        self._attr_native_min_value = -self._pilot.max_discharge_power
-        self._attr_native_max_value = self._pilot.max_charge_power
+        # Positive = discharge, negative = charge (SAX register 41 convention)
+        self._attr_native_min_value = -self._pilot.max_charge_power
+        self._attr_native_max_value = self._pilot.max_discharge_power
         self._attr_native_step = 100
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_should_poll = True
@@ -706,9 +709,9 @@ class SAXBatteryPilotPowerEntity(NumberEntity):
     def icon(self) -> str | None:
         """Return the icon to use for the entity."""
         if self._pilot.calculated_power > 0:
-            return "mdi:battery-charging"
+            return "mdi:battery-minus"  # positive = discharge
         if self._pilot.calculated_power < 0:
-            return "mdi:battery-minus"
+            return "mdi:battery-charging"  # negative = charge
         return "mdi:battery"
 
     async def async_set_native_value(self, value: float) -> None:
