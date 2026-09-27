@@ -35,31 +35,38 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 FOLDER_PATH = SCRIPT_DIR / "sax_models"
 
 
-def deploy_custom_models(src_folder: str) -> None:
+def deploy_custom_models(src_folder: Path) -> None:
     """Locate the active sunspec2 package and inject custom SAX models into its internal JSON directory."""
-    if not os.path.exists(src_folder): # noqa:  PTH110
-        print(f"Error: Model directory '{src_folder}' not found.", file=sys.stderr) # noqa: T201
+    if not os.path.exists(src_folder):  # noqa:  PTH110
+        print(f"Error: Model directory '{src_folder}' not found.", file=sys.stderr)  # noqa: T201
         sys.exit(2)
 
     # Find where sunspec2 is installed in the current environment
-    sunspec_base_dir = os.path.dirname(sunspec2.__file__) # noqa: PTH120
-    target_json_dir = os.path.join(sunspec_base_dir, "models", "json") # noqa: PTH118
+    sunspec_base_dir = os.path.dirname(sunspec2.__file__)  # noqa: PTH120
+    target_json_dir = os.path.join(sunspec_base_dir, "models", "json")  # noqa: PTH118
 
-    if not os.path.exists(target_json_dir): # noqa: PTH110
-        print(f"Error: Target sunspec2 JSON path not found at {target_json_dir}", file=sys.stderr) # noqa: T201
+    if not os.path.exists(target_json_dir):  # noqa: PTH110
+        print(  # noqa: T201
+            f"Error: Target sunspec2 JSON path not found at {target_json_dir}",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
     # Copy files across
-    for file_name in os.listdir(src_folder): # noqa: PTH208
+    for file_name in os.listdir(src_folder):  # noqa: PTH208
         if file_name.endswith(".json"):
-            src_file = os.path.join(src_folder, file_name) # noqa: PTH118
-            dest_file = os.path.join(target_json_dir, file_name) # noqa: PTH118
+            src_file = os.path.join(src_folder, file_name)  # noqa: PTH118
+            dest_file = os.path.join(target_json_dir, file_name)  # noqa: PTH118
             try:
                 # Copy file to package site-packages directory
                 shutil.copy2(src_file, dest_file)
-            except Exception as e: # noqa: BLE001
-                print(f"Failed to deploy model file {file_name} to runtime: {e}", file=sys.stderr) # noqa: T201
+            except Exception as e:  # noqa: BLE001
+                print(  # noqa: T201
+                    f"Failed to deploy model file {file_name} to runtime: {e}",
+                    file=sys.stderr,
+                )
                 sys.exit(2)
+
 
 def prompt_with_default(prompt_text: str, default_value: str) -> str:
     """Prompt the user for input, providing a default value if no input is given."""

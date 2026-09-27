@@ -1,7 +1,9 @@
 {
   "name": "SAX Battery Dev",
-  "context": "..",
-  "dockerFile": "../Dockerfile.dev",
+  "build": {
+    "dockerfile": "../Dockerfile.dev",
+    "context": ".."
+  },
   "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && scripts/post-create.sh",
   "containerEnv": {
     "PYTHONASYNCIODEBUG": "1",
@@ -54,10 +56,9 @@
         "ryanluker.vscode-coverage-gutters",
         "streetsidesoftware.code-spell-checker",
         "keesschollaart.vscode-home-assistant",
-        "timheuer.awesome-copilot",
         "mechatroner.rainbow-csv"
       ],
-      // Please keep this file in sync with settings in home-assistant/.vscode/settings.default.json
+      // Please keep this file in sync with settings in home-assistant/.vscode/settings.default.jsonc
       "settings": {
         "python.experiments.optOutFrom": ["pythonTestAdapter"],
         "python.defaultInterpreterPath": "/home/vscode/.local/ha-venv/bin/python",
@@ -66,7 +67,7 @@
         "python.terminal.activateEnvironment": true,
         "python.testing.pytestArgs": ["--no-cov"],
         "pylint.importStrategy": "fromEnvironment",
-        // Pyright type checking is not compatible with mypy which this repository uses
+        // Pyright type checking is not compatible with mypy which Home Assistant uses for type checking
         "python.analysis.typeCheckingMode": "off",
         "ruff.nativeServer": "on",
         "ruff.formatting": "on",
@@ -119,9 +120,7 @@
         "yaml.schemas": {
           "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.{yml,yaml}",
           "https://json.schemastore.org/dependabot-2.0.json": ".github/dependabot.yml"
-        },
-        "awesome-copilot.mcp.enabled": true,
-        "awesome-copilot.mcp.configFile": "/workspaces/sax_battery_ha/.github/mcp-config.json"
+        }
       }
     }
   },

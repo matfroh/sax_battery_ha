@@ -23,6 +23,8 @@
   "python.terminal.activateEnvironment": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
+  // Pyright type checking is not compatible with mypy which Home Assistant uses for type checking
+  "python.analysis.typeCheckingMode": "off",                                            
   "[python]": {
     "editor.formatOnSave": false,
     "editor.codeActionsOnSave": {
@@ -61,7 +63,7 @@
   "json.schemas": [
     {
       "fileMatch": ["homeassistant/components/*/manifest.json"],
-      // This value differs between working with devcontainer and locally, therefor this value should NOT be in sync!
+      // This value differs between working with devcontainer and locally, therefore this value should NOT be in sync!
       "url": "./scripts/json_schemas/manifest_schema.json"
     },
     {
