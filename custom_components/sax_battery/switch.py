@@ -504,7 +504,10 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
         ):
             # Check config entry options for CONF_CONTROL_POWER
             control_power = (
-                self.coordinator.config_entry.options.get(CONF_CONTROL_POWER, False)
+                self.coordinator.config_entry.options.get(
+                    CONF_CONTROL_POWER,
+                    self.coordinator.config_entry.data.get(CONF_CONTROL_POWER, False),
+                )
                 if self.coordinator.config_entry
                 else False
             )
@@ -554,11 +557,12 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
             return grid_enabled
 
         # Default SAX item calculation
-        if hasattr(self.coordinator, "power_manager"):
+        power_manager = getattr(self.coordinator, "power_manager", None)
+        if power_manager is not None:
             if self._sax_item.name == "pv_charging":
-                return bool(self.coordinator.power_manager.get_pv_charging_enabled())
+                return bool(power_manager.get_pv_charging_enabled())
             if self._sax_item.name == "grid_charging":
-                return bool(self.coordinator.power_manager.get_grid_charging_enabled())
+                return bool(power_manager.get_grid_charging_enabled())
         return False
 
     @property

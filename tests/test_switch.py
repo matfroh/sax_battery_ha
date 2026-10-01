@@ -955,6 +955,27 @@ class TestSAXBatteryControlSwitch:
         # ✅ Verify switch state reflects change
         assert switch.is_on is True
 
+    async def test_control_switch_turn_on_starts_power_manager_mode(
+        self, mock_control_coordinator, mock_sax_item_control
+    ) -> None:
+        """Turning on PV charging must activate the attached power manager."""
+        mock_sax_item_control.name = SAX_CHARGE_FROM_PV_SWITCH
+        power_manager = MagicMock()
+        power_manager.set_pv_charging_mode = AsyncMock()
+        mock_control_coordinator.power_manager = power_manager
+        mock_control_coordinator.data = {}
+
+        switch = SAXBatteryControlSwitch(
+            coordinator=mock_control_coordinator,
+            sax_item=mock_sax_item_control,
+            coordinators={"bess_a": mock_control_coordinator},
+        )
+        switch.hass = MagicMock()
+
+        await switch.async_turn_on()
+
+        power_manager.set_pv_charging_mode.assert_awaited_once_with(True)
+
     async def test_control_switch_turn_off_pv_charging(
         self, mock_control_coordinator, mock_sax_item_control
     ) -> None:

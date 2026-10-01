@@ -95,6 +95,7 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.protocol_mode = protocol_mode
         self.detected_device_id = detected_device_id
         self.data_provider: DataProvider = self._create_data_provider(protocol_mode)
+        self.power_manager: Any | None = None
         self._sunspec_block_last_poll: dict[str, float] = {}
         self._sunspec_metadata_values: dict[str, Any] = {}
         self._sunspec_control_refresh_diag: dict[str, Any] = {

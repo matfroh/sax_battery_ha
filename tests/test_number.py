@@ -353,7 +353,7 @@ class TestSAXBatteryModbusNumberPowerSetpoint:
 
         # Mock _get_factor_entity to avoid entity registry lookup
         mock_factor_entity = MagicMock()
-        mock_factor_entity.native_value = 80.0  # 80% factor
+        mock_factor_entity.native_value = 0.8  # 80% factor in the UI scale
 
         with (
             patch.object(number, "async_write_ha_state"),
@@ -369,7 +369,7 @@ class TestSAXBatteryModbusNumberPowerSetpoint:
         )
         assert call_args[0][0] == mock_item  # First arg: ModbusItem
         assert call_args[0][1] == 2000.0  # Second arg: power
-        assert call_args[0][2] == 80  # Third arg: factor (int, not float)
+        assert call_args[0][2] == 800  # Third arg: register factor scale
 
         # Verify local cache updated
         assert number._local_value == 2000.0
@@ -422,7 +422,7 @@ class TestSAXBatteryModbusNumberPowerSetpoint:
         )
         assert call_args[0][0] == mock_item  # First arg: ModbusItem
         assert call_args[0][1] == 2000.0  # Second arg: power
-        assert call_args[0][2] == 100  # Third arg: factor (100% fallback, int)
+        assert call_args[0][2] == 1000  # Third arg: full-scale fallback
 
     async def test_power_setpoint_factor_write_cache_only(
         self,
@@ -455,15 +455,15 @@ class TestSAXBatteryModbusNumberPowerSetpoint:
         number.entity_id = "number.test_power_setpoint_factor"
 
         with patch.object(number, "async_write_ha_state"):
-            await number.async_set_native_value(80.0)
+            await number.async_set_native_value(0.8)
 
         # Verify NO hardware write
         mock_coordinator_modbus_base.async_write_power_control_value.assert_not_called()
         mock_coordinator_modbus_base.async_write_number_value.assert_not_called()
 
         # Verify cache updated
-        assert number._local_value == 80.0
-        assert number.native_value == 80.0
+        assert number._local_value == 0.8
+        assert number.native_value == 0.8
 
     async def test_power_setpoint_write_only_behavior(
         self,

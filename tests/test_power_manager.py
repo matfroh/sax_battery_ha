@@ -18,6 +18,7 @@ from custom_components.sax_battery.const import (
     PV_CHARGING_MODE,
     SAX_AC_POWER_TOTAL,
     SAX_COMBINED_SOC,
+    SAX_SMARTMETER_TOTAL_POWER,
 )
 from custom_components.sax_battery.coordinator import SAXBatteryCoordinator
 from custom_components.sax_battery.power_manager import PowerManager, PowerManagerState
@@ -47,6 +48,35 @@ class TestPowerManagerInitialization:
         assert power_manager.coordinator == mock_coordinator_master
         assert power_manager.battery_count == 1
         assert power_manager._running is False
+
+
+class TestPowerManagerLegacyBalancing:
+    """Test legacy power-control calculations."""
+
+    async def test_sm_balanced_power_uses_legacy_sign_convention(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator_master: SAXBatteryCoordinator,
+    ) -> None:
+        """Battery -1160W and meter 123W produce a 1037W target."""
+        entry = MockConfigEntry(domain=DOMAIN, data={})
+        entry.add_to_hass(hass)
+        manager = PowerManager(
+            hass=hass,
+            coordinator=mock_coordinator_master,
+            config_entry=entry,
+        )
+        mock_coordinator_master.data = {SAX_SMARTMETER_TOTAL_POWER: 123}
+
+        with (
+            patch.object(manager, "_get_battery_power", return_value=-1160),
+            patch.object(
+                manager, "update_power_setpoint", new_callable=AsyncMock
+            ) as update,
+        ):
+            await manager._update_sm_balanced_power()
+
+        update.assert_awaited_once_with(1037)
 
     def test_initialization_with_multi_battery(
         self,

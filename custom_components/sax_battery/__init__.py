@@ -139,6 +139,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SAXBatteryConfigEntry) -
                     coordinator=master_coordinator,
                     config_entry=entry,
                 )
+                master_coordinator.power_manager = power_manager
 
                 # Store power manager in integration data
                 hass.data[DOMAIN][entry.entry_id]["power_manager"] = power_manager

@@ -314,7 +314,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
         self._battery_id = battery_id
 
         # Local value cache for write-only registers
-        self._local_value: int | None = None
+        self._local_value: float | None = None
         self._is_write_only = (
             getattr(coordinator, "protocol_mode", ProtocolMode.LEGACY)
             != ProtocolMode.SUNSPEC
@@ -514,7 +514,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
         return False
 
     @property
-    def native_value(self) -> int | None:
+    def native_value(self) -> float | None:
         """Return the current value.
 
         For write-only registers (41-44), returns cached local value.
@@ -641,19 +641,29 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
         """
         _LOGGER.debug("%s: Setting value to %s", self.entity_id, value)
 
-        # Convert to int immediately for validation
-        int_value = int(round(value))
+        # Power-factor UI values are 0.0-1.0; register 42 uses 0-1000.
+        value_to_validate = (
+            round(value, 2)
+            if self._modbus_item.name == SAX_POWER_SETPOINT_FACTOR
+            else int(round(value))
+        )
 
         # Validate min/max bounds
-        if self.native_min_value is not None and int_value < self.native_min_value:
-            msg = f"Value {int_value} below minimum {self.native_min_value}"
+        if (
+            self.native_min_value is not None
+            and value_to_validate < self.native_min_value
+        ):
+            msg = f"Value {value_to_validate} below minimum {self.native_min_value}"
             raise HomeAssistantError(msg)
 
-        if self.native_max_value is not None and int_value > self.native_max_value:
-            msg = f"Value {int_value} above maximum {self.native_max_value}"
+        if (
+            self.native_max_value is not None
+            and value_to_validate > self.native_max_value
+        ):
+            msg = f"Value {value_to_validate} above maximum {self.native_max_value}"
             raise HomeAssistantError(msg)
 
-        original_value = int_value
+        original_value = value_to_validate
 
         # SOC constraint enforcement for power-related registers
         if (
@@ -678,14 +688,14 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
                     self.entity_id,
                     current_soc,
                     self.coordinator.soc_manager.min_soc,
-                    int_value,
+                    value_to_validate,
                 )
-                int_value = 0
+                value_to_validate = 0
 
         # Update local cache and UI BEFORE hardware write
         # This ensures UI shows the new value immediately, even if write is queued
         if self._is_write_only:
-            self._local_value = int_value
+            self._local_value = value_to_validate
             self.async_write_ha_state()  # Update UI immediately
 
         # Write to hardware via coordinator write queue
@@ -696,26 +706,26 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
                 SAX_POWER_SETPOINT_FACTOR,
             ):
                 await self._write_power_control_register(
-                    self._modbus_item.name, int_value
+                    self._modbus_item.name, value_to_validate
                 )
             else:
                 # Standard register write via coordinator (uses write queue)
                 await self.coordinator.async_write_number_value(
                     self._modbus_item,
-                    int_value,
+                    int(value_to_validate),
                 )
 
             _LOGGER.debug(
                 "Successfully wrote %s=%s to %s (original=%s)",
                 self._modbus_item.name,
-                int_value,
+                value_to_validate,
                 self._battery_id,
                 original_value,
             )
 
             # Notify power manager if this is a limit change
             if self._modbus_item.name in (SAX_MAX_DISCHARGE, SAX_MAX_CHARGE):
-                await self._notify_power_manager_update(int_value)
+                await self._notify_power_manager_update(value_to_validate)
 
         except Exception as err:
             # Restore original local cache value on write failure
@@ -730,7 +740,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
     async def _write_power_control_register(
         self,
         item_name: str,
-        value: int,
+        value: float,
     ) -> bool:
         """Write to power control registers (SAX_POWER_SETPOINT, SAX_POWER_SETPOINT_FACTOR).
 
@@ -787,9 +797,12 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
                     "%s: Could not find SAX_POWER_SETPOINT_FACTOR entity, using default 100%%",
                     self.entity_id,
                 )
-                factor_value = 100
+                factor_value = 1000
             else:
-                factor_value = factor_entity.native_value or 100
+                raw_factor = factor_entity.native_value or 1.0
+                factor_value = (
+                    round(raw_factor * 1000) if raw_factor <= 1 else int(raw_factor)
+                )
 
             _LOGGER.debug(
                 "%s: Writing power control: power=%.1fW, factor=%.1f%%",
@@ -802,7 +815,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
             try:
                 result = await self.coordinator.async_write_power_control_value(
                     self._modbus_item,
-                    value,
+                    int(value),
                     factor_value,
                 )
 
@@ -1085,7 +1098,7 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
             # Write cached value via coordinator queue
             await self.coordinator.async_write_number_value(
                 self._modbus_item,
-                self._local_value,
+                int(self._local_value),
             )
 
             _LOGGER.info(

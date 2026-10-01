@@ -515,13 +515,16 @@ class PowerManager:
             return None
 
     async def _update_sm_balanced_power(self) -> None:
-        """Update nominal power using SAX smart meter data.
+        """Update setpoint using SAX smart meter data.
 
         Uses SAX_SMARTMETER_TOTAL_POWER from coordinator data for balanced loading
         when the SAX smart meter is connected via RS485.
 
         Formula:
-            target_battery_power = current_battery_power - sm_total_power
+            target_battery_power = (-current_battery_power) - sm_total_power
+
+        SAX legacy battery power is positive while charging and negative while
+        discharging, whereas the smart-meter value is positive for import.
 
         Security:
             OWASP A05: Validates coordinator data availability
@@ -542,7 +545,7 @@ class PowerManager:
             _LOGGER.warning("Battery power not available, skipping SM balanced update")
             return
 
-        target_power = current_battery_power - sm_power_value
+        target_power = (-current_battery_power) - sm_power_value
 
         # Pre-clamp to per-battery hardware limits
         target_power = max(
