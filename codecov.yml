@@ -4,54 +4,49 @@ coverage:
   status:
     project:
       default:
-        informational: true
-      required:
-        target: auto
-        threshold: "1"
+        informational: true   # Show as informational, does not block PRs
+        target: auto          # Automatically determines target coverage
+        threshold: "1"        # Allows for a 1% drop without failing
         paths:
-          - custom_components/sax_battery/config_flow.py
-          - custom_components/sax_battery/const.py
-          - custom_components/sax_battery/coordinator.py
-          - custom_components/sax_battery/entity_keys.py
-          - custom_components/sax_battery/entity_utils.py
-          - custom_components/sax_battery/enums.py
-          - custom_components/sax_battery/items.py
-          - custom_components/sax_battery/modbusobject.py
-          - custom_components/sax_battery/models.py
-          - custom_components/sax_battery/number.py
-          - custom_components/sax_battery/pilot.py
-          - custom_components/sax_battery/sensor.py
-          - custom_components/sax_battery/switch.py
-          - custom_components/sax_battery/utils.py
-
+          - custom_components/sax_battery/
+      required:
+        target: 80            # Require 80% coverage for this project
+        threshold: 1          # Allow up to 1% drop before failing
+        paths:
+          - custom_components/sax_battery/
     patch:
       default:
-        informational: true
-      required:
-        target: 100
+        informational: false  # Mark patches as failing if coverage is not met
+        target: 100           # Patch coverage needs to be perfect
         threshold: 0
         paths:
-          - homeassistant/components/*/config_flow.py
-          - homeassistant/components/*/device_action.py
-          - homeassistant/components/*/device_condition.py
-          - homeassistant/components/*/device_trigger.py
-          - homeassistant/components/*/diagnostics.py
-          - homeassistant/components/*/group.py
-          - homeassistant/components/*/intent.py
-          - homeassistant/components/*/logbook.py
-          - homeassistant/components/*/media_source.py
-          - homeassistant/components/*/recorder.py
-          - homeassistant/components/*/scene.py
-  gcov:
-    enable: no
-#comment: false
-# To make partial tests possible,
-# we need to carry forward.
-#flag_management:
-#  default_rules:
-#    carryforward: false
-#  individual_flags:
-#    - name: full-suite
-#      paths:
-#        - ".*"
-#      carryforward: true
+          - custom_components/sax_battery/
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+
+ignore:
+  - "tests/"
+  - "**/test_*.py"
+  - "**/__init__.py"
+
+parsers:
+  python:
+    target: "custom_components/sax_battery/"
+
+github_checks:
+  annotations: true
+
+# Optionally: If you use coverage.py for Python, you can set this to ensure recognition.
+coverage:
+  precision: 2
+  round: down
+  range: "90...100"
+  notify:
+    after_n_builds: 1
+
+# Optionally: Carry forward flags from partial CI builds
+flag_management:
+  default_rules:
+    carryforward: true
