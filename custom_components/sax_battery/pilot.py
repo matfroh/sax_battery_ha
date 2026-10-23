@@ -305,27 +305,32 @@ class SAXBatteryPilot:
             if self.invert_power_sensor:
                 total_power = -total_power
 
-            # Get current PF value
+            # Get current PF value. The power factor only fills the secondary
+            # register (42); a missing or invalid reading must not block the
+            # power command, so fall back to unity (1.0) and keep regulating.
+            power_factor = 1.0
             pf_state = self.hass.states.get(self.pf_sensor_entity_id)
             if pf_state is None:
-                _LOGGER.warning("PF sensor %s not found", self.pf_sensor_entity_id)
-                return
-
-            if pf_state.state in (None, "unknown", "unavailable"):
                 _LOGGER.warning(
-                    "PF sensor %s state is %s", self.pf_sensor_entity_id, pf_state.state
+                    "PF sensor %s not found, using power factor 1.0",
+                    self.pf_sensor_entity_id,
                 )
-                return
-
-            try:
-                power_factor = float(pf_state.state)
-            except (ValueError, TypeError) as err:
-                _LOGGER.error(
-                    "Could not convert PF sensor state '%s' to float: %s",
+            elif pf_state.state in (None, "unknown", "unavailable"):
+                _LOGGER.warning(
+                    "PF sensor %s state is %s, using power factor 1.0",
+                    self.pf_sensor_entity_id,
                     pf_state.state,
-                    err,
                 )
-                return
+            else:
+                try:
+                    power_factor = float(pf_state.state)
+                except (ValueError, TypeError) as err:
+                    _LOGGER.error(
+                        "Could not convert PF sensor state '%s' to float, "
+                        "using power factor 1.0: %s",
+                        pf_state.state,
+                        err,
+                    )
 
             # Get priority device power consumption
             priority_power = 0.0
@@ -412,7 +417,7 @@ class SAXBatteryPilot:
         """Apply SOC constraints to a power value."""
         # Get current combined SOC from coordinator data
         combined_soc = (
-            self.sax_data.data.get("combined_soc", 0) if self.sax_data.data else 0
+            self.sax_data.data.get("combined_soc") if self.sax_data.data else None
         )
 
         # Get current min_soc from coordinator, options, or fallback to stored value
@@ -420,6 +425,19 @@ class SAXBatteryPilot:
             self.sax_data.min_soc if hasattr(self.sax_data, 'min_soc')
             else self.entry.options.get(CONF_MIN_SOC, self.min_soc)
         )
+
+        # SOC may be unknown (e.g. battery not yet read at startup). Without a
+        # valid SOC the constraints cannot be evaluated, so skip them this cycle
+        # rather than crashing on a None comparison.
+        if combined_soc is None or coordinator_min_soc is None:
+            _LOGGER.warning(
+                "SOC unavailable (combined_soc=%s, min_soc=%s), "
+                "skipping SOC constraints for power value %sW",
+                combined_soc,
+                coordinator_min_soc,
+                power_value,
+            )
+            return power_value
 
         # Log the input values
         _LOGGER.debug(

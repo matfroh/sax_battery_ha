@@ -241,7 +241,7 @@ class SAXBatteryHub:
                 )
                 return False
             except (ConnectionException, ModbusIOException, Exception) as e:  # noqa: BLE001
-                if "Request cancelled outside pymodbus" in str(e):
+                if "Request cancelled outside" in str(e):
                     # This is actually a successful write - SAX battery's normal response
                     _LOGGER.debug(
                         "Write completed successfully (got expected response) for battery %s",
@@ -414,7 +414,7 @@ class SAXBatteryHub:
 
         except (ConnectionException, ModbusIOException) as e:
             # Handle the special case of write operations
-            if "Request cancelled outside pymodbus" in str(e):
+            if "Request cancelled outside" in str(e):
                 # This is actually a successful write for SAX battery
                 _LOGGER.debug(
                     "Write operation completed successfully for battery %s (got expected response)",
