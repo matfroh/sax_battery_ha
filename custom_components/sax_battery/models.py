@@ -83,6 +83,7 @@ class BatteryModel(BaseModel):
     port: int = 502
     is_master: bool = False
     config_data: dict[str, Any] = field(default_factory=dict)
+    developer_mode: bool = False
 
     # def get_device_info(self) -> DeviceInfo:
     #     """Get device info for battery."""
@@ -115,7 +116,10 @@ class BatteryModel(BaseModel):
         if self.is_master:
             items.extend(MODBUS_BATTERY_BMS_ITEMS)
             # Only include smart meter items when SM is connected via RS485
-            sm_connected = self.config_data.get(CONF_SM_CONNECTED, True)
+            # (developer mode keeps them so enabled entities get polled)
+            sm_connected = bool(
+                self.config_data.get(CONF_SM_CONNECTED, True) or self.developer_mode
+            )
             if sm_connected:
                 items.extend(MODBUS_BATTERY_SMARTMETER_ITEMS)
             switch_item: ModbusItem = MODBUS_BATTERY_SWITCH_ITEMS[0]
@@ -149,9 +153,15 @@ class BatteryModel(BaseModel):
 class SAXBatteryData:
     """Main data structure for SAX Battery integration."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        developer_mode: bool = False,
+    ) -> None:
         """Initialize SAX Battery data."""
         self.hass = hass
+        self.developer_mode = developer_mode
         self.entry = entry
         self.batteries: dict[str, BatteryModel] = {}
         self.coordinators: dict[str, Any] = {}
@@ -195,6 +205,7 @@ class SAXBatteryData:
                     port=port,
                     is_master=is_master,
                     config_data=dict(self.entry.data),
+                    developer_mode=self.developer_mode,
                 )
 
                 self.batteries[battery_id] = battery
@@ -220,6 +231,7 @@ class SAXBatteryData:
                     port=port,
                     is_master=is_master,
                     config_data=dict(self.entry.data),
+                    developer_mode=self.developer_mode,
                 )
 
                 self.batteries[battery_id] = battery
@@ -241,7 +253,9 @@ class SAXBatteryData:
             return items
 
         sm_type = battery.config_data.get(CONF_SM_TYPE, DEFAULT_SM_TYPE)
-        return self._merge_sunspec_items(items, battery.is_master, sm_type)
+        return self._merge_sunspec_items(
+            items, battery.is_master, sm_type, self.developer_mode
+        )
 
     def get_sax_items_for_battery(self, battery_id: str) -> list[SAXItem]:
         """Get SAX items for a specific battery."""
@@ -519,14 +533,15 @@ class SAXBatteryData:
             _LOGGER.warning("Invalid item name: %s", name)
             return None
 
-        # Normalize name (ensure "sax_" prefix for consistency)
-        search_name = name if name.startswith("sax_") else f"sax_{name}"
+        # Some item keys carry the "sax_" prefix and some (e.g. ac_power_total) do not.
+        search_name = name
+        candidates = {name, f"sax_{name}"}
 
         # Performance: Search master battery first (has most items)
         if self.master_battery_id:
             # Search ModbusItems
             for modbusItem in self.get_modbus_items_for_battery(self.master_battery_id):
-                if modbusItem.name == search_name:
+                if modbusItem.name in candidates:
                     _LOGGER.debug(
                         "Found ModbusItem '%s' in master battery '%s'",
                         search_name,
@@ -536,7 +551,7 @@ class SAXBatteryData:
 
             # Search SAXItems (only master battery has these)
             for saxItem in self.get_sax_items_for_battery(self.master_battery_id):
-                if saxItem.name == search_name:
+                if saxItem.name in candidates:
                     _LOGGER.debug(
                         "Found SAXItem '%s' in master battery '%s'",
                         search_name,
@@ -551,7 +566,7 @@ class SAXBatteryData:
 
             # Search ModbusItems
             for item in battery.get_modbus_items():
-                if item.name == search_name:
+                if item.name in candidates:
                     _LOGGER.debug(
                         "Found ModbusItem '%s' in battery '%s'",
                         search_name,
@@ -593,6 +608,7 @@ class SAXBatteryData:
         legacy_items: list[ModbusItem],
         is_master: bool,
         sm_type: str = DEFAULT_SM_TYPE,
+        developer_mode: bool = False,
     ) -> list[ModbusItem]:
         """Return the role-appropriate SunSpec entity inventory.
 
@@ -607,7 +623,10 @@ class SAXBatteryData:
         if not is_master:
             return []
 
-        has_sax_smart_meter = sm_type in (SM_TYPE_ADW200, SM_TYPE_ADL400)
+        has_sax_smart_meter = developer_mode or sm_type in (
+            SM_TYPE_ADW200,
+            SM_TYPE_ADL400,
+        )
 
         return [
             replace(item, device=DeviceConstants.SYS)

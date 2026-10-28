@@ -35,6 +35,7 @@ from .const import (
     CONF_BATTERY_IS_MASTER,
     CONF_BATTERY_PHASE,
     CONF_PROTOCOL_MODE,
+    CONF_SM_CONNECTED,
     COORDINATOR_CIRCUIT_BREAKER,
     COORDINATOR_CYCLE_TIME,
     COORDINATOR_ERROR_RATE,
@@ -329,6 +330,14 @@ class SAXBatteryModbusSensor(CoordinatorEntity[SAXBatteryCoordinator], SensorEnt
                 self._attr_entity_registry_enabled_default = getattr(
                     self._modbus_item, "enabled_by_default", True
                 )
+                # Only applies when the entity is first registered, so users can enable it later
+                if (
+                    not config_data.get(CONF_SM_CONNECTED, True)
+                    and not coordinator.sax_data.developer_mode
+                    and self._attr_unique_id
+                    and "_sm_" in self._attr_unique_id
+                ):
+                    self._attr_entity_registry_enabled_default = False
 
         if (
             hasattr(self, "entity_description")

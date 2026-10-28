@@ -53,12 +53,53 @@ class TestPowerManagerInitialization:
 class TestPowerManagerLegacyBalancing:
     """Test legacy power-control calculations."""
 
+    async def test_developer_mode_balances_with_configured_power_sensor(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator_master: SAXBatteryCoordinator,
+    ) -> None:
+        """Developer mode only observes SM data; balancing uses the power sensor."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                "sm_connected": False,
+                "developer_mode": True,
+                "balanced_loading": True,
+                CONF_POWER_SENSOR: "sensor.grid_power",
+            },
+        )
+        entry.add_to_hass(hass)
+        hass.states.async_set("sensor.grid_power", "178")
+        manager = PowerManager(
+            hass=hass,
+            coordinator=mock_coordinator_master,
+            config_entry=entry,
+        )
+        manager._state.pv_charging_enabled = True
+        mock_coordinator_master.data = {
+            SAX_SMARTMETER_TOTAL_POWER: 100,
+            SAX_COMBINED_SOC: 50.0,
+        }
+
+        with (
+            patch.object(
+                manager, "_update_sm_balanced_power", new_callable=AsyncMock
+            ) as sm_update,
+            patch.object(
+                manager, "_update_grid_balance_mode", new_callable=AsyncMock
+            ) as grid_update,
+        ):
+            await manager._async_update_power(None)
+
+        sm_update.assert_not_awaited()
+        grid_update.assert_awaited_once()
+
     async def test_sm_balanced_power_uses_legacy_sign_convention(
         self,
         hass: HomeAssistant,
         mock_coordinator_master: SAXBatteryCoordinator,
     ) -> None:
-        """Battery -1160W and meter 123W produce a 1037W target."""
+        """Battery -1160W and meter 123W produce a -1037W target."""
         entry = MockConfigEntry(domain=DOMAIN, data={})
         entry.add_to_hass(hass)
         manager = PowerManager(
@@ -76,7 +117,7 @@ class TestPowerManagerLegacyBalancing:
         ):
             await manager._update_sm_balanced_power()
 
-        update.assert_awaited_once_with(1037)
+        update.assert_awaited_once_with(-1037)
 
     def test_initialization_with_multi_battery(
         self,
@@ -538,7 +579,8 @@ class TestGridBalanceMode:
         with patch.object(power_manager, "_get_battery_power", return_value=500.0):
             await power_manager._update_grid_balance_mode()
 
-        assert power_manager._state.target_power > 500.0
+        # battery discharging 500W + export 1000W -> charge 500W
+        assert power_manager._state.target_power == -500.0
 
     async def test_grid_balance_with_export(
         self,
@@ -570,7 +612,7 @@ class TestGridBalanceMode:
         with patch.object(power_manager, "_get_battery_power", return_value=1000.0):
             await power_manager._update_grid_balance_mode()
 
-        assert power_manager._state.target_power < 1000.0
+        assert power_manager._state.target_power == 1500.0
 
 
 class TestBatteryPowerLookup:
@@ -675,6 +717,25 @@ class TestPowerManagerProperties:
 
         power_manager._state.grid_charging_enabled = True
         assert power_manager.get_grid_charging_enabled is True
+
+    def test_config_update_keeps_pv_state_when_running(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator_master: SAXBatteryCoordinator,
+        mock_config_entry: ConfigEntry,
+    ) -> None:
+        """PV state must not be reset by a config update (switch unavailable)."""
+        power_manager = PowerManager(
+            hass=hass,
+            coordinator=mock_coordinator_master,
+            config_entry=mock_config_entry,
+        )
+        power_manager._running = True
+        power_manager._state.pv_charging_enabled = True
+
+        power_manager._update_config_values()
+
+        assert power_manager._state.pv_charging_enabled is True
 
     def test_get_pv_charging_enabled_property(
         self,

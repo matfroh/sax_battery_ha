@@ -531,6 +531,9 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
         """
         # Write-only registers: Return cached value
         if self._is_write_only:
+            written = getattr(self.coordinator, "last_written_power_control", None)
+            if isinstance(written, dict) and self._modbus_item.name in written:
+                return float(written[self._modbus_item.name])
             return self._local_value
 
         # Readable registers: Return from coordinator data
@@ -696,6 +699,9 @@ class SAXBatteryModbusNumber(CoordinatorEntity[SAXBatteryCoordinator], RestoreNu
         # This ensures UI shows the new value immediately, even if write is queued
         if self._is_write_only:
             self._local_value = value_to_validate
+            written = getattr(self.coordinator, "last_written_power_control", None)
+            if isinstance(written, dict):
+                written.pop(self._modbus_item.name, None)
             self.async_write_ha_state()  # Update UI immediately
 
         # Write to hardware via coordinator write queue

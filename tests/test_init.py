@@ -14,6 +14,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.sax_battery import (
     _async_register_sunspec_bess_device,
     _decode_sunspec_metadata_text,
+    _enable_development_sm_entities,
     _get_battery_configurations,
     _log_comprehensive_setup_summary,
     _log_registry_state_before_setup,
@@ -57,7 +58,7 @@ from custom_components.sax_battery.models import SAXBatteryData
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,6 +98,41 @@ class TestSunSpecDeviceMetadata:
         assert device.model == "HOME"
         assert device.serial_number == "1234"
         assert device.sw_version == "61 / 54"
+
+
+class TestDeveloperModeEntities:
+    """Test developer-only smart meter entity availability."""
+
+    async def test_enable_integration_disabled_sm_entities(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Developer mode re-enables integration-disabled, not user-disabled entities."""
+        entry = MockConfigEntry(domain=DOMAIN, data={})
+        entry.add_to_hass(hass)
+        registry = er.async_get(hass)
+        integration_disabled = registry.async_get_or_create(
+            "sensor", DOMAIN, "sax_sm_total_power", config_entry=entry
+        )
+        user_disabled = registry.async_get_or_create(
+            "sensor", DOMAIN, "sax_sm_voltage_l1", config_entry=entry
+        )
+        registry.async_update_entity(
+            integration_disabled.entity_id,
+            disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+        )
+        registry.async_update_entity(
+            user_disabled.entity_id,
+            disabled_by=er.RegistryEntryDisabler.USER,
+        )
+
+        _enable_development_sm_entities(hass, entry)
+
+        integration_entry = registry.async_get(integration_disabled.entity_id)
+        user_entry = registry.async_get(user_disabled.entity_id)
+        assert integration_entry is not None
+        assert user_entry is not None
+        assert integration_entry.disabled_by is None
+        assert user_entry.disabled_by == er.RegistryEntryDisabler.USER
 
 
 class TestAsyncSetupEntry:

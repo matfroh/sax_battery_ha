@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from custom_components.sax_battery.const import (
+    CONF_SM_CONNECTED,
     CONF_SM_TYPE,
     SAX_CAPACITY,
     SAX_CHARGE_POWER,
@@ -218,6 +219,23 @@ class TestSAXBatteryData:
         assert SAX_POWER in item_names
         assert SAX_CAPACITY in item_names
 
+    def test_developer_mode_keeps_sm_items_without_sm_connected(
+        self, mock_hass, mock_config_entry_single_battery
+    ) -> None:
+        """Developer mode creates SM items even when no SM is connected."""
+        mock_config_entry_single_battery.data[CONF_SM_CONNECTED] = False
+
+        normal = SAXBatteryData(mock_hass, mock_config_entry_single_battery)
+        dev = SAXBatteryData(
+            mock_hass, mock_config_entry_single_battery, developer_mode=True
+        )
+
+        def names(data: SAXBatteryData) -> set[str]:
+            return {item.name for item in data.batteries["bess_a"].get_modbus_items()}
+
+        assert SAX_SMARTMETER_TOTAL_POWER not in names(normal)
+        assert SAX_SMARTMETER_TOTAL_POWER in names(dev)
+
     def test_sax_battery_data_get_modbus_items_for_battery_sunspec_sm_other(
         self, mock_hass, mock_config_entry_single_battery
     ) -> None:
@@ -235,6 +253,24 @@ class TestSAXBatteryData:
         assert SAX_SMARTMETER_CURRENT_L1 not in item_names
         assert SAX_SMARTMETER_TOTAL_POWER not in item_names
         assert all(item.device != DeviceConstants.SM for item in master_items)
+
+    def test_developer_mode_keeps_sunspec_sm_items_for_other_meter(
+        self, mock_hass, mock_config_entry_single_battery
+    ) -> None:
+        """Developer mode exposes SAX meter telemetry alongside an external meter."""
+        mock_config_entry_single_battery.data[CONF_SM_TYPE] = SM_TYPE_OTHER
+        sax_data = SAXBatteryData(
+            mock_hass, mock_config_entry_single_battery, developer_mode=True
+        )
+        sax_data.coordinators = {
+            "bess_a": MagicMock(protocol_mode=ProtocolMode.SUNSPEC)
+        }
+
+        master_items = sax_data.get_modbus_items_for_battery("bess_a")
+        item_names = {item.name for item in master_items}
+
+        assert SAX_SMARTMETER_TOTAL_POWER in item_names
+        assert any(item.device == DeviceConstants.SM for item in master_items)
 
     def test_sax_battery_data_get_modbus_items_for_battery_sunspec_sm_none(
         self, mock_hass, mock_config_entry_single_battery
@@ -306,6 +342,17 @@ class TestSAXBatteryData:
         assert "bess_a" in sax_data.batteries
         assert sax_data.master_battery_id == "bess_a"
         assert sax_data.batteries["bess_a"].is_master is True
+
+    def test_get_item_by_name_unprefixed_key(
+        self, mock_hass, mock_config_entry_single_battery
+    ) -> None:
+        """Keys without the sax_ prefix (ac_power_total) must resolve."""
+        sax_data = SAXBatteryData(mock_hass, mock_config_entry_single_battery)
+
+        item = sax_data.get_item_by_name("ac_power_total")
+
+        assert item is not None
+        assert item.name == "ac_power_total"
 
     def test_sax_battery_data_with_pilot_enabled(
         self, mock_hass, mock_config_entry_pilot_enabled

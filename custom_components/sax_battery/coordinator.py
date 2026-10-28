@@ -96,6 +96,8 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.detected_device_id = detected_device_id
         self.data_provider: DataProvider = self._create_data_provider(protocol_mode)
         self.power_manager: Any | None = None
+        # Last values written to the write-only setpoint registers 41/42
+        self.last_written_power_control: dict[str, float] = {}
         self._sunspec_block_last_poll: dict[str, float] = {}
         self._sunspec_metadata_values: dict[str, Any] = {}
         self._sunspec_control_refresh_diag: dict[str, Any] = {
@@ -190,6 +192,9 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 modbus_api=self.modbus_api,
                 detected_device_id=self.detected_device_id,
                 sm_type=sm_type,
+                include_smart_meter=(
+                    getattr(self.sax_data, "developer_mode", False) is True
+                ),
             )
         return LegacyDataProvider(modbus_api=self.modbus_api)
 
@@ -1146,6 +1151,11 @@ class SAXBatteryCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
             if success:
+                self.last_written_power_control = {
+                    SAX_POWER_SETPOINT: power,
+                    SAX_POWER_SETPOINT_FACTOR: power_factor / 1000,
+                }
+                self.async_update_listeners()
                 _LOGGER.debug(
                     "Successfully wrote power control values atomically: power=%s, factor=%s",
                     power,

@@ -579,6 +579,8 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_SM_TYPE: new_sm_type,
                 CONF_SM_CONNECTED: new_sm_connected,
             }
+            if CONF_POWER_SENSOR in user_input:
+                result_data[CONF_POWER_SENSOR] = user_input[CONF_POWER_SENSOR]
 
             # Balanced loading via an external grid sensor only applies to
             # "Other". "None" and a recognized SAX meter support manual only.
@@ -622,12 +624,10 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
             if new_limit_power != current_limit_power:
                 await self._async_update_soc_manager_state(new_limit_power)
 
-            # Handle SM entity enable/disable when sm_connected changes
-            if new_sm_connected != current_sm_connected:
-                if new_sm_connected:
-                    await self._async_enable_sm_entities()
-                else:
-                    await self._async_disable_sm_entities()
+            # Never disable SM entities when selecting "Other"; developer mode may
+            # be polling them for observation.
+            if new_sm_connected and not current_sm_connected:
+                await self._async_enable_sm_entities()
 
             # Reload the integration to apply changes
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
@@ -688,14 +688,21 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
-        # Balanced loading via an external grid sensor only applies to "Other"
-        if current_sm_type == SM_TYPE_OTHER:
-            schema[
-                vol.Optional(
-                    CONF_BALANCED_LOADING,
-                    default=self.config_entry.data.get(CONF_BALANCED_LOADING, False),
-                )
-            ] = bool
+        schema[
+            vol.Optional(
+                CONF_BALANCED_LOADING,
+                default=self.config_entry.data.get(CONF_BALANCED_LOADING, False),
+            )
+        ] = bool
+        power_sensor = self.config_entry.data.get(CONF_POWER_SENSOR)
+        power_sensor_marker = (
+            vol.Optional(CONF_POWER_SENSOR, default=power_sensor)
+            if power_sensor is not None
+            else vol.Optional(CONF_POWER_SENSOR)
+        )
+        schema[power_sensor_marker] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", device_class="power")
+        )
 
         # Show control-power-specific options if power control is currently enabled
         if control_power_enabled:

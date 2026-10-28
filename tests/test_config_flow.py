@@ -819,6 +819,62 @@ class TestSAXBatteryOptionsFlowExtended:
     """Extended tests for SAX Battery options flow."""
 
     @pytest.mark.usefixtures("_mock_setup_integration")
+    async def test_other_meter_options_include_external_power_sensor(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The Other meter mode keeps its external balancing sensor configurable."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_CONTROL_POWER: True,
+                CONF_LIMIT_POWER: False,
+                CONF_SM_TYPE: SM_TYPE_ADW200,
+                CONF_SM_CONNECTED: True,
+            },
+            entry_id="test_other_meter_options",
+        )
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        data_schema = result["data_schema"]
+        assert data_schema is not None
+        schema = data_schema.schema
+        schema_keys = {str(key) for key in schema}
+        assert any(CONF_POWER_SENSOR in key for key in schema_keys)
+        assert any(CONF_BALANCED_LOADING in key for key in schema_keys)
+
+        with (
+            patch.object(
+                SAXBatteryOptionsFlowHandler,
+                "_async_disable_sm_entities",
+                new_callable=AsyncMock,
+            ) as disable_sm,
+            patch.object(
+                SAXBatteryOptionsFlowHandler,
+                "_async_enable_sm_entities",
+                new_callable=AsyncMock,
+            ),
+        ):
+            result = await hass.config_entries.options.async_configure(
+                result["flow_id"],
+                user_input={
+                    CONF_SM_TYPE: SM_TYPE_OTHER,
+                    CONF_BALANCED_LOADING: True,
+                    CONF_POWER_SENSOR: "sensor.tibber_power",
+                    CONF_CONTROL_POWER: True,
+                    CONF_LIMIT_POWER: False,
+                },
+            )
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert entry.data[CONF_SM_TYPE] == SM_TYPE_OTHER
+        assert entry.data[CONF_POWER_SENSOR] == "sensor.tibber_power"
+        assert entry.data[CONF_BALANCED_LOADING] is True
+        disable_sm.assert_not_awaited()
+
+    @pytest.mark.usefixtures("_mock_setup_integration")
     async def test_options_flow_init(
         self,
         hass: HomeAssistant,

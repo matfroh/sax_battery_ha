@@ -209,11 +209,13 @@ class SunSpecDataProvider(DataProvider):
         modbus_api: Any,
         detected_device_id: int,
         sm_type: str = "adw200",
+        include_smart_meter: bool = False,
     ) -> None:
         """Initialize the SunSpec provider with a Modbus API and device ID."""
         self._modbus_api = modbus_api
         self._detected_device_id = detected_device_id
         self._sm_type = sm_type
+        self._include_smart_meter = include_smart_meter
         self._block_cache: dict[str, list[int]] = {}
         self._block_status: dict[str, dict[str, Any]] = {
             block.name: {
@@ -293,7 +295,10 @@ class SunSpecDataProvider(DataProvider):
 
         "other" and "none" have no SM device entities and are skipped here too.
         """
-        if self._sm_type in _SM_TYPES_WITHOUT_SAX_METER:
+        if (
+            self._sm_type in _SM_TYPES_WITHOUT_SAX_METER
+            and not self._include_smart_meter
+        ):
             return {}
         return await self._get_values_for_block("smartmeter_data", items)
 

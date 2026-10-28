@@ -186,8 +186,13 @@ class PowerManager:
         self.sm_connected = self.config_entry.data.get(CONF_SM_CONNECTED, True)
         self.balanced_loading = self.config_entry.data.get(CONF_BALANCED_LOADING, False)
 
-        # Read switch entity states for runtime control (not config)
-        pv_enabled = self._get_switch_state(SAX_CHARGE_FROM_PV_SWITCH)
+        # The switch entity is unavailable during config reloads, so once running
+        # the manager's own state is authoritative.
+        pv_enabled = (
+            self._state.pv_charging_enabled
+            if self._running
+            else self._get_switch_state(SAX_CHARGE_FROM_PV_SWITCH)
+        )
         grid_enabled = bool(
             self.config_entry.data.get(CONF_ENABLE_GRID_CHARGING, False)
         )
@@ -439,7 +444,7 @@ class PowerManager:
         to achieve zero grid import/export.
 
         Formula:
-            target_battery_power = current_battery_power - grid_power
+            target_setpoint = current_battery_power + grid_power
 
         Grid power sign convention:
             - Negative grid_power = production/export to grid (surplus available,
@@ -477,8 +482,8 @@ class PowerManager:
             _LOGGER.warning("Battery power not available, skipping grid balance update")
             return
 
-        # Calculate target power to balance grid
-        target_power = current_battery_power - grid_power
+        # Battery power and setpoint are both positive for discharge; grid is positive for import.
+        target_power = current_battery_power + grid_power
 
         _LOGGER.debug(
             "Grid balance: grid_power=%.0fW, battery_power=%.0fW, target=%.0fW",
@@ -521,10 +526,10 @@ class PowerManager:
         when the SAX smart meter is connected via RS485.
 
         Formula:
-            target_battery_power = (-current_battery_power) - sm_total_power
+            target_battery_power = current_battery_power + sm_total_power
 
-        SAX legacy battery power is positive while charging and negative while
-        discharging, whereas the smart-meter value is positive for import.
+        Battery power and setpoint are positive for discharge, the smart-meter
+        value is positive for import.
 
         Security:
             OWASP A05: Validates coordinator data availability
@@ -545,7 +550,7 @@ class PowerManager:
             _LOGGER.warning("Battery power not available, skipping SM balanced update")
             return
 
-        target_power = (-current_battery_power) - sm_power_value
+        target_power = current_battery_power + sm_power_value
 
         # Pre-clamp to per-battery hardware limits
         target_power = max(

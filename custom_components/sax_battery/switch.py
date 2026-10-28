@@ -536,7 +536,10 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
 
         # Get state from coordinator data (stored by switch toggle actions)
         if self._sax_item.name == SAX_CHARGE_FROM_PV_SWITCH:
-            # Read switch state from coordinator data
+            # coordinator.data is rebuilt every refresh, so prefer the manager state
+            manager = getattr(self.coordinator, "power_manager", None)
+            if manager is not None:
+                return bool(manager.get_pv_charging_enabled)
             pv_enabled = bool(
                 self.coordinator.data.get(SAX_CHARGE_FROM_PV_SWITCH, False)
             )
@@ -560,9 +563,9 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
         power_manager = getattr(self.coordinator, "power_manager", None)
         if power_manager is not None:
             if self._sax_item.name == "pv_charging":
-                return bool(power_manager.get_pv_charging_enabled())
+                return bool(power_manager.get_pv_charging_enabled)
             if self._sax_item.name == "grid_charging":
-                return bool(power_manager.get_grid_charging_enabled())
+                return bool(power_manager.get_grid_charging_enabled)
         return False
 
     @property
@@ -584,9 +587,12 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
 
         # Mutual exclusion: Ensure only one control switch is active at a time
         if self._sax_item.name == SAX_CHARGE_FROM_PV_SWITCH:
-            # Check if grid control is currently enabled
+            # Grid state is persisted in the config entry, not coordinator.data
             grid_enabled = bool(
                 self.coordinator.data.get(SAX_CHARGE_FROM_GRID_SWITCH, False)
+                or self.coordinator.config_entry.data.get(
+                    CONF_ENABLE_GRID_CHARGING, False
+                )
             )
 
             if grid_enabled:
@@ -596,6 +602,13 @@ class SAXBatteryControlSwitch(CoordinatorEntity[SAXBatteryCoordinator], SwitchEn
                 )
                 # Auto-disable grid control
                 self.coordinator.data[SAX_CHARGE_FROM_GRID_SWITCH] = False
+                self.hass.config_entries.async_update_entry(
+                    self.coordinator.config_entry,
+                    data={
+                        **self.coordinator.config_entry.data,
+                        CONF_ENABLE_GRID_CHARGING: False,
+                    },
+                )
 
                 # Trigger power manager update if it exists
                 if (
