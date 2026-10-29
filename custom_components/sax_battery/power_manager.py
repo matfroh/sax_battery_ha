@@ -457,7 +457,11 @@ class PowerManager:
         Performance:
             Single entity state lookup, O(1) calculation
         """
-        # Get grid power sensor from config
+        if self.sm_connected:
+            await self._update_sm_balanced_power()
+            return
+
+        # Get external grid power sensor from config
         power_sensor_id = self.config_entry.data.get(CONF_POWER_SENSOR)
         if not power_sensor_id:
             _LOGGER.warning("Grid power sensor not configured")

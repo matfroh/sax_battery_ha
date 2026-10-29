@@ -37,6 +37,7 @@ from custom_components.sax_battery.const import (
     DEFAULT_MIN_SOC,
     DEFAULT_PORT,
     DOMAIN,
+    SM_TYPE_ADL400,
     SM_TYPE_ADW200,
     SM_TYPE_NONE,
     SM_TYPE_OTHER,
@@ -157,6 +158,7 @@ class TestSAXBatteryConfigFlowExtended:
         flow = SAXBatteryConfigFlow()
         flow.hass = hass
         flow._control_power = True
+        flow._sm_type = SM_TYPE_OTHER  # This line is retained for clarity
 
         result = await flow.async_step_sensors(
             {
@@ -453,6 +455,7 @@ class TestSAXBatteryConfigFlowExtended:
         flow = SAXBatteryConfigFlow()
         flow.hass = hass
         flow._control_power = True
+        flow._sm_type = SM_TYPE_OTHER
 
         # Test the uncovered lines 206-208: schema creation for pilot mode
         result = await flow.async_step_sensors(None)
@@ -473,6 +476,7 @@ class TestSAXBatteryConfigFlowExtended:
         flow = SAXBatteryConfigFlow()
         flow.hass = hass
         flow._control_power = True
+        flow._sm_type = SM_TYPE_OTHER
 
         # Test the uncovered line 227: return self.async_show_form with sensor schema
         result = await flow.async_step_sensors(None)
@@ -813,6 +817,38 @@ class TestSAXBatteryConfigFlowSmartMeterSelection:
         assert flow._data[CONF_SM_CONNECTED] is True
         assert flow._data[CONF_BALANCED_LOADING] is False
         assert result.get("step_id") == "protocol_options"
+
+    async def test_adl400_power_control_does_not_require_external_sensor(
+        self, hass: HomeAssistant
+    ) -> None:
+        """ADL400 uses its integrated SAX meter for balancing."""
+        flow = SAXBatteryConfigFlow()
+        flow.hass = hass
+        flow._control_power = True
+
+        result = await flow.async_step_power_options(
+            {CONF_SM_TYPE: SM_TYPE_ADL400, CONF_BALANCED_LOADING: False}
+        )
+
+        assert result.get("step_id") == "protocol_options"
+
+    async def test_other_meter_control_routes_to_required_external_sensor(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Other meter control asks for an external grid power sensor."""
+        flow = SAXBatteryConfigFlow()
+        flow.hass = hass
+        flow._control_power = True
+
+        result = await flow.async_step_power_options(
+            {CONF_SM_TYPE: SM_TYPE_OTHER, CONF_BALANCED_LOADING: False}
+        )
+
+        assert result.get("step_id") == "sensors"
+        data_schema = result["data_schema"]
+        assert data_schema is not None
+        sensor_schema = data_schema.schema
+        assert any(CONF_POWER_SENSOR in str(marker) for marker in sensor_schema)
 
 
 class TestSAXBatteryOptionsFlowExtended:
@@ -1769,6 +1805,7 @@ class TestSAXBatteryConfigFlowDeadCodeRemoval:
 
         # Case 1: Pilot enabled → Shows sensor form
         flow._control_power = True
+        flow._sm_type = SM_TYPE_OTHER
         result = await flow.async_step_sensors(None)
         assert result.get("type") == FlowResultType.FORM
         assert result.get("step_id") == "sensors"

@@ -67,6 +67,7 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._device_id: str = str(uuid.uuid4())  # Generate unique device ID
         self._control_power: bool = False
         self._limit_power: bool = False
+        self._sm_type: str = DEFAULT_SM_TYPE
         self._sm_connected: bool = True
         self._balanced_loading: bool = False
         self._protocol_mode: str = PROTOCOL_MODE_LEGACY
@@ -167,10 +168,10 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._sm_connected = self._sm_type in (SM_TYPE_ADW200, SM_TYPE_ADL400)
             # Balanced loading via an external grid sensor only applies to
             # "Other". "None" supports manual power control only.
-            self._balanced_loading = (
-                user_input.get(CONF_BALANCED_LOADING, False)
-                if self._sm_type == SM_TYPE_OTHER
-                else False
+            self._balanced_loading = bool(
+                self._control_power
+                and self._sm_type == SM_TYPE_OTHER
+                and user_input.get(CONF_BALANCED_LOADING, False)
             )
             self._data.update(user_input)
             self._data[CONF_SM_CONNECTED] = self._sm_connected
@@ -184,8 +185,8 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._balanced_loading,
             )
 
-            # Route based on selections
-            if not self._sm_connected and self._balanced_loading:
+            # External-meter balancing needs a configured grid power sensor.
+            if self._control_power and self._sm_type == SM_TYPE_OTHER:
                 return await self.async_step_sensors()
             return await self.async_step_protocol_options()
 
@@ -240,8 +241,8 @@ class SAXBatteryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Build schema based on current configuration
         schema = {}
-        needs_grid_sensor = self._control_power or (
-            not self._sm_connected and self._balanced_loading
+        needs_grid_sensor = self._control_power and (
+            getattr(self, "_sm_type", DEFAULT_SM_TYPE) == SM_TYPE_OTHER
         )
 
         if needs_grid_sensor:
@@ -550,7 +551,33 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
-        if user_input is not None:
+        control_power_for_input = (
+            user_input.get(
+                CONF_CONTROL_POWER,
+                self.config_entry.data.get(CONF_CONTROL_POWER, False),
+            )
+            if user_input is not None
+            else self.config_entry.data.get(CONF_CONTROL_POWER, False)
+        )
+        sm_type_for_input = (
+            user_input.get(
+                CONF_SM_TYPE, self.config_entry.data.get(CONF_SM_TYPE, DEFAULT_SM_TYPE)
+            )
+            if user_input is not None
+            else self.config_entry.data.get(CONF_SM_TYPE, DEFAULT_SM_TYPE)
+        )
+        missing_required_sensor = bool(
+            user_input is not None
+            and control_power_for_input
+            and sm_type_for_input == SM_TYPE_OTHER
+            and not user_input.get(CONF_POWER_SENSOR)
+            and not self.config_entry.data.get(CONF_POWER_SENSOR)
+        )
+        errors: dict[str, str] = {}
+        if missing_required_sensor:
+            errors["base"] = "power_sensor_required"
+
+        if user_input is not None and not missing_required_sensor:
             # Get the current configuration values
             current_control_power = self.config_entry.data.get(
                 CONF_CONTROL_POWER, False
@@ -586,7 +613,7 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
             # "Other". "None" and a recognized SAX meter support manual only.
             result_data[CONF_BALANCED_LOADING] = (
                 user_input.get(CONF_BALANCED_LOADING, False)
-                if new_sm_type == SM_TYPE_OTHER
+                if new_sm_type == SM_TYPE_OTHER and result_data[CONF_CONTROL_POWER]
                 else False
             )
 
@@ -637,12 +664,18 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=result_data)
 
         # Get current configuration for form display
-        control_power_enabled = self.config_entry.data.get(CONF_CONTROL_POWER, False)
-        limit_power_enabled = self.config_entry.data.get(CONF_LIMIT_POWER, False)
+        control_power_enabled = control_power_for_input
+        limit_power_enabled = (
+            user_input.get(
+                CONF_LIMIT_POWER, self.config_entry.data.get(CONF_LIMIT_POWER, False)
+            )
+            if user_input is not None
+            else self.config_entry.data.get(CONF_LIMIT_POWER, False)
+        )
 
         schema: dict[vol.Marker, Any] = {}
 
-        current_sm_type = self.config_entry.data.get(CONF_SM_TYPE, DEFAULT_SM_TYPE)
+        current_sm_type = sm_type_for_input
 
         # Always show feature toggle options
         schema.update(
@@ -742,6 +775,7 @@ class SAXBatteryOptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),
+            errors=errors,
             description_placeholders=description_placeholders,
         )
 

@@ -11,6 +11,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sax_battery.const import (
     CONF_POWER_SENSOR,
+    CONF_SM_CONNECTED,
     DOMAIN,
     GRID_CHARGING_MODE,
     LIMIT_MAX_CHARGE_PER_BATTERY,
@@ -549,6 +550,30 @@ class TestPvChargingMode:
 class TestGridBalanceMode:
     """Test grid power balancing mode."""
 
+    async def test_grid_balance_uses_internal_smart_meter_without_sensor(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator_master: SAXBatteryCoordinator,
+    ) -> None:
+        """ADW/ADL grid control uses SAX smart-meter data without a grid sensor."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={CONF_SM_CONNECTED: True},
+        )
+        entry.add_to_hass(hass)
+        power_manager = PowerManager(
+            hass=hass,
+            coordinator=mock_coordinator_master,
+            config_entry=entry,
+        )
+
+        with patch.object(
+            power_manager, "_update_sm_balanced_power", new_callable=AsyncMock
+        ) as update_sm:
+            await power_manager._update_grid_balance_mode()
+
+        update_sm.assert_awaited_once()
+
     async def test_grid_balance_with_import(
         self,
         hass: HomeAssistant,
@@ -559,6 +584,7 @@ class TestGridBalanceMode:
             domain=DOMAIN,
             data={
                 CONF_POWER_SENSOR: "sensor.grid_power",
+                CONF_SM_CONNECTED: False,
             },
         )
         entry.add_to_hass(hass)
@@ -592,6 +618,7 @@ class TestGridBalanceMode:
             domain=DOMAIN,
             data={
                 CONF_POWER_SENSOR: "sensor.grid_power",
+                CONF_SM_CONNECTED: False,
             },
         )
         entry.add_to_hass(hass)

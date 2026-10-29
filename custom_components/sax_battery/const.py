@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from homeassistant.components.binary_sensor import BinarySensorEntityDescription
 from homeassistant.components.number import (
     NumberDeviceClass,
     NumberEntityDescription,
@@ -63,7 +64,9 @@ from .entity_keys import (
     SAX_MIN_SOC,
     SAX_PHASE_CURRENTS_SUM,
     SAX_POWER,
+    SAX_POWER_CONTROL_CONFIGURED,
     SAX_POWER_FACTOR,
+    SAX_POWER_LIMITS_CONFIGURED,
     SAX_POWER_SETPOINT,
     SAX_POWER_SETPOINT_FACTOR,
     SAX_POWER_SM,
@@ -205,6 +208,20 @@ class SAXDeviceInfo:
 
 # Default device info instance
 DEFAULT_DEVICE_INFO = SAXDeviceInfo()
+
+DESCRIPTION_POWER_CONTROL_CONFIGURED = BinarySensorEntityDescription(
+    key=SAX_POWER_CONTROL_CONFIGURED,
+    translation_key="power_control_configured",
+    entity_category=EntityCategory.CONFIG,
+    icon="mdi:power-settings",
+)
+
+DESCRIPTION_POWER_LIMITS_CONFIGURED = BinarySensorEntityDescription(
+    key=SAX_POWER_LIMITS_CONFIGURED,
+    translation_key="power_limits_configured",
+    entity_category=EntityCategory.CONFIG,
+    icon="mdi:speedometer",
+)
 
 # Configuration constants
 CONF_BATTERY_COUNT = "battery_count"

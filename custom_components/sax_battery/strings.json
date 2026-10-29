@@ -16,6 +16,7 @@
       "invalid_master": "Selected master battery is not configured",
       "invalid_min_soc": "Minimum SOC must be between 0 and 100",
       "invalid_interval": "Update interval must be between 5 and 300 seconds",
+      "power_sensor_required": "Select an external power sensor for the Other smart-meter balancing mode.",
       "unknown": "Unexpected error"
     },
     "step": {
@@ -30,11 +31,11 @@
         "title": "Control Options",
         "description": "Configure how you want Home Assistant to interact with your SAX Battery system. You can continue without selecting any of these options, this will just add the sensors. The added options here require you to contact SAX's customer service.",
         "data": {
-          "control_power": "Control battery from Home Assistant replacing the SAX smartmeter (you need registers 41 and 42 set to write)",
+          "control_power": "Enable power setpoint control (registers 41 and 42 must be writable)",
           "limit_power": "Enable power limitations (you need registers 43 and 44 to be writable). Once setup, you can create automations that send the proper values to this number entity with your own rules"
         },
         "data_description": {
-          "control_power": "Enable mode to control battery charge/discharge power (registers 41, 42)",
+          "control_power": "Enable register-based setpoint control. ADW200/ADL400 balancing uses the SAX smart-meter reading; an external grid sensor is required for Other smart meters.",
           "limit_power": "Enable power limits to set max charge/discharge (registers 43, 44)"
         }
       },
@@ -47,17 +48,17 @@
         },
         "data_description": {
           "sm_type": "ADW200/ADL400: creates the Smart Meter device and uses it directly for balanced power control. Other Modbus Smart Meter: no Smart Meter device is created; an external grid power sensor can be configured for balanced or manual power control. None: no Smart Meter device is created and only manual power control is supported",
-          "balanced_loading": "Only applies when 'ADW200/ADL400' or 'Other Modbus Smart Meter' is selected. Enable balanced loading using an external grid power sensor. Negative grid power (production/export to grid) indicates surplus power available for charging — this typically means solar photovoltaic (PV) energy is available. Positive grid power (consumption/import from grid) means no surplus is available. Manual grid charging is always available independently"
+          "balanced_loading": "Only applies to Other Modbus Smart Meter. Negative external grid power (export) indicates surplus available for charging; positive power means import. ADW200/ADL400 uses its internal SAX smart-meter reading."
         }
       },
       "sensors": {
         "title": "Power Monitoring Sensors",
         "description": "Select the sensors that monitor your home's power usage for intelligent battery control.",
         "data": {
-          "power_sensor": "Grid power sensor (W)"
+          "power_sensor": "External grid power sensor (W)"
         },
         "data_description": {
-          "power_sensor": "Select the grid power sensor entity. Negative values (W) indicate power production/export to grid (typically from solar PV), positive values indicate power consumption/import from grid"
+          "power_sensor": "Required for Other smart-meter balancing. ADW200/ADL400 balancing uses the SAX smart-meter reading. Negative values mean export; positive values mean import."
         }
       },
       "priority_devices": {
@@ -123,27 +124,40 @@
     }
   },
   "options": {
+    "error": {
+      "power_sensor_required": "Select an external power sensor for the Other smart-meter balancing mode."
+    },
     "step": {
       "init": {
         "title": "SAX Battery Options",
         "description": "Update your SAX Battery configuration settings.",
         "data": {
-          "control_power": "Control battery from Home Assistant",
+          "control_power": "Enable Home Assistant power setpoint control",
           "limit_power": "Enable power limitations",
           "sm_type": "Smart Meter Model / Type",
           "balanced_loading": "Enable intelligent balanced loading (Other Smart Meter only)",
-          "min_soc": "Minimum State of Charge (%)"
+          "min_soc": "Minimum State of Charge (%)",
+          "power_sensor": "External grid power sensor (W)"
         },
         "data_description": {
-          "control_power": "Enable or disable power control mode (registers 41,42)",
+          "control_power": "Enable register-based setpoint control (registers 41/42 must be writable). ADW200/ADL400 balancing uses the SAX smart-meter reading; Other smart-meter balancing requires an external grid sensor.",
           "limit_power": "Enable or disable power limits (registers 43,44)",
           "sm_type": "ADW200/ADL400: creates the Smart Meter device and uses it directly for balanced power control. Other Modbus Smart Meter: no Smart Meter device is created; an external grid power sensor can be configured for balanced or manual power control. None: no Smart Meter device is created and only manual power control is supported",
-          "balanced_loading": "Only applies when 'ADW200/ADL400' or 'Other Modbus Smart Meter' is selected. Enable balanced loading using an external grid power sensor. Negative grid power (production/export) indicates surplus available for charging, typically from solar PV. Positive grid power (consumption/import) means no surplus"
+          "balanced_loading": "Only applies to Other Modbus Smart Meter. Uses external grid power; negative means export and positive means import.",
+          "power_sensor": "Required for Other smart-meter power control. ADW200/ADL400 balancing uses the internal SAX smart-meter reading."
         }
       }
     }
   },
   "entity": {
+    "binary_sensor": {
+      "power_control_configured": {
+        "name": "Power control configured"
+      },
+      "power_limits_configured": {
+        "name": "Power limits configured"
+      }
+    },
     "number": {
       "bms_max_charge": {
         "name": "Max Charge"

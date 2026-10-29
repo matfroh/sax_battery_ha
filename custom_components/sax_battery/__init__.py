@@ -64,6 +64,7 @@ _LOGGER = logging.getLogger(__name__)
 DEVELOPER_MODE = False
 
 PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
     Platform.NUMBER,
     Platform.SENSOR,
     Platform.SWITCH,
