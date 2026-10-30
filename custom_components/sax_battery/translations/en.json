@@ -150,11 +150,11 @@
   },
   "entity": {
     "binary_sensor": {
-      "power_control_configured": {
-        "name": "Power control configured"
+      "bms_power_control_configured": {
+        "name": "BMS Power control configured"
       },
-      "power_limits_configured": {
-        "name": "Power limits configured"
+      "bms_power_limits_configured": {
+        "name": "BMS Power limits configured"
       }
     },
     "number": {

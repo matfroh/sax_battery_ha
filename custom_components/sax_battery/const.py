@@ -211,15 +211,17 @@ DEFAULT_DEVICE_INFO = SAXDeviceInfo()
 
 DESCRIPTION_POWER_CONTROL_CONFIGURED = BinarySensorEntityDescription(
     key=SAX_POWER_CONTROL_CONFIGURED,
-    translation_key="power_control_configured",
-    entity_category=EntityCategory.CONFIG,
+    name="BMS Power Control Configured",
+    translation_key="bms_power_control_configured",
+    entity_category=EntityCategory.DIAGNOSTIC,
     icon="mdi:power-settings",
 )
 
 DESCRIPTION_POWER_LIMITS_CONFIGURED = BinarySensorEntityDescription(
     key=SAX_POWER_LIMITS_CONFIGURED,
-    translation_key="power_limits_configured",
-    entity_category=EntityCategory.CONFIG,
+    name="BMS Power Limits Configured",
+    translation_key="bms_power_limits_configured",
+    entity_category=EntityCategory.DIAGNOSTIC,
     icon="mdi:speedometer",
 )
 

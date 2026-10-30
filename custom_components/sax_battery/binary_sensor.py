@@ -76,6 +76,8 @@ class SAXBatteryConfiguredFeatureSensor(BinarySensorEntity):
         self._entry = entry
         self._config_key = feature.config_key
         self.entity_description = feature.description
+        if isinstance(feature.description.name, str):
+            self._attr_name = feature.description.name.removeprefix("Sax ")
         entity_item = SAXItem(
             name=feature.description.key,
             mtype=TypeConstants.SENSOR_CALC,
