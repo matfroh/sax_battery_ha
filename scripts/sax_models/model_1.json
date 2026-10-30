@@ -1,0 +1,96 @@
+{
+    "group": {
+        "desc": "All SunSpec compliant devices must include this as the first model",
+        "label": "Common",
+        "name": "common",
+        "points": [
+            {
+                "desc": "Model identifier",
+                "label": "Model ID",
+                "mandatory": "M",
+                "name": "ID",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 1,
+                "standards": [
+                    "IEEE 1547-2018"
+                ]
+            },
+            {
+                "desc": "Model length",
+                "label": "Model Length",
+                "mandatory": "M",
+                "name": "L",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "standards": [
+                    "IEEE 1547-2018"
+                ]
+            },
+            {
+                "desc": "SAX Power manufacturer identifier",
+                "label": "Hersteller",
+                "mandatory": "M",
+                "name": "Mn",
+                "size": 4,
+                "static": "S",
+                "type": "string",
+                "standards": [
+                    "IEEE 1547-2018"
+                ]
+            },
+            {
+                "desc": "SAX Power device model",
+                "label": "Geraetemodell",
+                "mandatory": "M",
+                "name": "Md",
+                "size": 3,
+                "static": "S",
+                "type": "string",
+                "standards": [
+                    "IEEE 1547-2018"
+                ]
+            },
+            {
+                "desc": "SAX Power master firmware version",
+                "label": "Version Master",
+                "name": "Vr_Master",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "standards": []
+            },
+            {
+                "desc": "SAX Power gateway firmware version",
+                "label": "Version Gateway",
+                "name": "Vr_Gateway",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "standards": []
+            },
+            {
+                "desc": "High word of the SAX Power serial number",
+                "label": "Seriennummer High",
+                "name": "SN_High",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "standards": []
+            },
+            {
+                "desc": "Low word of the SAX Power serial number",
+                "label": "Seriennummer Low",
+                "name": "SN_Low",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "standards": []
+            }
+        ],
+        "type": "group"
+    },
+    "id": 1
+}

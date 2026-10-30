@@ -1,0 +1,88 @@
+{
+  "chat.promptFilesLocations": {
+    "prompts": true
+  },
+  "chat.instructionsFilesLocations": {
+    "instructions": true
+  },
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false,
+    "editor.formatOnSave": true
+  },
+  "files.associations": {
+    "*.yaml": "home-assistant",
+    "*.chatmode.md": "markdown",
+    "*.instructions.md": "markdown",
+    "*.prompt.md": "markdown"
+  },
+  "editor.formatOnSave": true,
+  "python.testing.pytestArgs": ["tests"],
+  "python.terminal.activateEnvironment": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true,
+  // Pyright type checking is not compatible with mypy which Home Assistant uses for type checking
+  "python.analysis.typeCheckingMode": "off",                                            
+  "[python]": {
+    "editor.formatOnSave": false,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "cSpell.words": [
+    "abcn",
+    "caplog",
+    "codeowners",
+    "Cooldown",
+    "ECONNRESET",
+    "entitydescription",
+    "EPIPE",
+    "hostnames",
+    "IPPORT",
+    "mtype",
+    "Mult",
+    "mypy",
+    "pylint",
+    "pymodbus",
+    "pyproject",
+    "pytest",
+    "roundtrips",
+    "setpoint",
+    "STATUSANZEIGE",
+    "SUNSPEC",
+    "venv"
+  ],
+  "workbench.editor.restoreViewState": false,
+  "workbench.editor.enablePreview": true,
+  "workbench.editor.enablePreviewFromQuickOpen": false,
+  "[json]": {
+    "editor.formatOnSave": false
+  },
+  "json.schemas": [
+    {
+      "fileMatch": ["homeassistant/components/*/manifest.json"],
+      // This value differs between working with devcontainer and locally, therefore this value should NOT be in sync!
+      "url": "./scripts/json_schemas/manifest_schema.json"
+    },
+    {
+      "fileMatch": [
+        "${containerWorkspaceFolder}/custom_components/*/manifest.json"
+      ],
+      "url": "${containerWorkspaceFolder}/scripts/json_schemas/hacs_manifest_schema.json"
+    }
+  ],
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.{yml,yaml}",
+    "https://json.schemastore.org/dependabot-2.0.json": ".github/dependabot.yml"
+  },
+  "chat.tools.terminal.autoApprove": {
+    "./scripts/run_tests.sh": true,
+    "./scripts/run_ruff.sh": true,
+    "/^cd /workspaces/sax_battery_ha && source \"\\$VIRTUAL_ENV/bin/activate\" && \\./scripts/run_ruff\\.sh$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
+}

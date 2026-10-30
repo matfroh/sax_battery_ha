@@ -1,0 +1,428 @@
+{
+    "group": {
+        "desc": "SAX Power Home/Home Plus vendor-specific WYE Connect Three Phase Meter block (grid-side smart-meter values), as documented in the SAX Power Modbus-TCP SUNSPEC-Mode documentation. All registers in this model are measured by the ADW200 smart meter and are only available once the storage system has been connected to an ADW200. Registers 40054-40094, Slave-ID 100, Port 502.",
+        "label": "WYE Connect 3Ph Meter (Grid) - SAX Power variant",
+        "name": "meter_wye_3ph_sax",
+        "points": [
+            {
+                "desc": "Model identifier",
+                "label": "Model ID",
+                "mandatory": "M",
+                "name": "ID",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 203
+            },
+            {
+                "desc": "Model length",
+                "label": "Model Length",
+                "mandatory": "M",
+                "name": "L",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 41
+            },
+            {
+                "desc": "AC Strom Summe (Netz)",
+                "label": "AC Current Sum",
+                "mandatory": "M",
+                "name": "A",
+                "sf": "A_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "A",
+                "detail": "Register 40056"
+            },
+            {
+                "desc": "AC Strom Netz L1",
+                "label": "AC Current Phase A",
+                "mandatory": "M",
+                "name": "AphA",
+                "sf": "A_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "A",
+                "detail": "Register 40057"
+            },
+            {
+                "desc": "AC Strom Netz L2",
+                "label": "AC Current Phase B",
+                "mandatory": "M",
+                "name": "AphB",
+                "sf": "A_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "A",
+                "detail": "Register 40058"
+            },
+            {
+                "desc": "AC Strom Netz L3",
+                "label": "AC Current Phase C",
+                "mandatory": "M",
+                "name": "AphC",
+                "sf": "A_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "A",
+                "detail": "Register 40059"
+            },
+            {
+                "mandatory": "M",
+                "name": "A_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40060, documented well-known value -1"
+            },
+            {
+                "desc": "Durchschnitt Spannung Netz L-N",
+                "label": "Average Voltage L-N",
+                "mandatory": "M",
+                "name": "PhV",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40061"
+            },
+            {
+                "desc": "Netzspannung L1",
+                "label": "Voltage Phase A",
+                "mandatory": "M",
+                "name": "PhVphA",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40062"
+            },
+            {
+                "desc": "Netzspannung L2",
+                "label": "Voltage Phase B",
+                "mandatory": "M",
+                "name": "PhVphB",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40063"
+            },
+            {
+                "desc": "Netzspannung L3",
+                "label": "Voltage Phase C",
+                "mandatory": "M",
+                "name": "PhVphC",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40064"
+            },
+            {
+                "desc": "Durchschnitt Spannung L-L",
+                "label": "Average Voltage L-L",
+                "mandatory": "M",
+                "name": "PPV",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40065"
+            },
+            {
+                "desc": "Netzspannung L1-L2",
+                "label": "Voltage L1-L2",
+                "mandatory": "M",
+                "name": "PPVphAB",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40066"
+            },
+            {
+                "desc": "Netzspannung L2-L3",
+                "label": "Voltage L2-L3",
+                "mandatory": "M",
+                "name": "PPVphBC",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40067"
+            },
+            {
+                "desc": "Netzspannung L1-L3",
+                "label": "Voltage L1-L3",
+                "mandatory": "M",
+                "name": "PPVphAC",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40068. Note: the vendor documentation pairs this as L1-L3 (not the usual SunSpec L3-L1 convention)."
+            },
+            {
+                "mandatory": "M",
+                "name": "V_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40069, documented well-known value -1"
+            },
+            {
+                "desc": "Netzfrequenz",
+                "label": "Line Frequency",
+                "mandatory": "M",
+                "name": "Hz",
+                "sf": "Hz_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "Hz",
+                "detail": "Register 40070"
+            },
+            {
+                "mandatory": "M",
+                "name": "Hz_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40071, documented well-known value -2"
+            },
+            {
+                "desc": "Summenwirkleistung Netz",
+                "label": "Active Power Sum",
+                "mandatory": "M",
+                "name": "W",
+                "sf": "W_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "W",
+                "detail": "Register 40072"
+            },
+            {
+                "desc": "Netzleistung L1",
+                "label": "Active Power Phase A",
+                "mandatory": "M",
+                "name": "WphA",
+                "sf": "W_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "W",
+                "detail": "Register 40073"
+            },
+            {
+                "desc": "Netzleistung L2",
+                "label": "Active Power Phase B",
+                "mandatory": "M",
+                "name": "WphB",
+                "sf": "W_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "W",
+                "detail": "Register 40074"
+            },
+            {
+                "desc": "Netzleistung L3",
+                "label": "Active Power Phase C",
+                "mandatory": "M",
+                "name": "WphC",
+                "sf": "W_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "W",
+                "detail": "Register 40075"
+            },
+            {
+                "mandatory": "M",
+                "name": "W_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40076, documented well-known value 1"
+            },
+            {
+                "desc": "Summenscheinleistung Netz",
+                "label": "Apparent Power Sum",
+                "mandatory": "M",
+                "name": "VA",
+                "sf": "VA_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "VA",
+                "detail": "Register 40077"
+            },
+            {
+                "desc": "Scheinleistung Netz L1",
+                "label": "Apparent Power Phase A",
+                "mandatory": "M",
+                "name": "VAphA",
+                "sf": "VA_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "VA",
+                "detail": "Register 40078"
+            },
+            {
+                "desc": "Scheinleistung Netz L2",
+                "label": "Apparent Power Phase B",
+                "mandatory": "M",
+                "name": "VAphB",
+                "sf": "VA_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "VA",
+                "detail": "Register 40079"
+            },
+            {
+                "desc": "Scheinleistung Netz L3",
+                "label": "Apparent Power Phase C",
+                "mandatory": "M",
+                "name": "VAphC",
+                "sf": "VA_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "VA",
+                "detail": "Register 40080"
+            },
+            {
+                "mandatory": "M",
+                "name": "VA_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40081, documented well-known value 1"
+            },
+            {
+                "desc": "Summenblindleistung Netz",
+                "label": "Reactive Power Sum",
+                "mandatory": "M",
+                "name": "VAr",
+                "sf": "VAr_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "var",
+                "detail": "Register 40082"
+            },
+            {
+                "desc": "Blindleistung Netz L1",
+                "label": "Reactive Power Phase A",
+                "mandatory": "M",
+                "name": "VArphA",
+                "sf": "VAr_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "var",
+                "detail": "Register 40083"
+            },
+            {
+                "desc": "Blindleistung Netz L2",
+                "label": "Reactive Power Phase B",
+                "mandatory": "M",
+                "name": "VArphB",
+                "sf": "VAr_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "var",
+                "detail": "Register 40084"
+            },
+            {
+                "desc": "Blindleistung Netz L3",
+                "label": "Reactive Power Phase C",
+                "mandatory": "M",
+                "name": "VArphC",
+                "sf": "VAr_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "var",
+                "detail": "Register 40085"
+            },
+            {
+                "mandatory": "M",
+                "name": "VAr_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40086, documented well-known value 1"
+            },
+            {
+                "desc": "Leistungsfaktor Netz Summe",
+                "label": "Power Factor Sum",
+                "mandatory": "M",
+                "name": "PF",
+                "sf": "PF_SF",
+                "size": 1,
+                "type": "int16",
+                "detail": "Register 40087"
+            },
+            {
+                "desc": "Leistungsfaktor L1",
+                "label": "Power Factor Phase A",
+                "mandatory": "M",
+                "name": "PFphA",
+                "sf": "PF_SF",
+                "size": 1,
+                "type": "int16",
+                "detail": "Register 40088"
+            },
+            {
+                "desc": "Leistungsfaktor L2",
+                "label": "Power Factor Phase B",
+                "mandatory": "M",
+                "name": "PFphB",
+                "sf": "PF_SF",
+                "size": 1,
+                "type": "int16",
+                "detail": "Register 40089"
+            },
+            {
+                "desc": "Leistungsfaktor L3",
+                "label": "Power Factor Phase C",
+                "mandatory": "M",
+                "name": "PFphC",
+                "sf": "PF_SF",
+                "size": 1,
+                "type": "int16",
+                "detail": "Register 40090"
+            },
+            {
+                "mandatory": "M",
+                "name": "PF_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40091, documented well-known value -3"
+            },
+            {
+                "desc": "Reserve",
+                "label": "Reserved",
+                "mandatory": "M",
+                "name": "Rsvd1",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 0,
+                "detail": "Register 40092"
+            },
+            {
+                "desc": "Reserve",
+                "label": "Reserved",
+                "mandatory": "M",
+                "name": "Rsvd2",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 0,
+                "detail": "Register 40093"
+            },
+            {
+                "desc": "Reserve",
+                "label": "Reserved Scale Factor",
+                "mandatory": "M",
+                "name": "Rsvd_SF",
+                "size": 1,
+                "static": "S",
+                "type": "sunssf",
+                "value": 3,
+                "detail": "Register 40094, documented well-known value 3"
+            }
+        ],
+        "type": "group"
+    },
+    "id": 203
+}
