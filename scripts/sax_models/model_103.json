@@ -1,0 +1,337 @@
+{
+    "group": {
+        "desc": "SAX Power Home/Home Plus vendor-specific implementation of SunSpec Model 103 (Inverter Three Phase), as documented in the SAX Power Modbus-TCP SUNSPEC-Mode documentation. This is a reduced/modified variant of the standard SunSpec model 103 -- it omits DC and multi-sensor temperature points and adds a vendor-specific PV power pair (PV_W/PV_SF). Registers 40015-40046, Slave-ID 100, Port 502.",
+        "label": "Inverter (Three Phase) - SAX Power variant",
+        "name": "inverter_three_phase_sax",
+        "points": [
+            {
+                "desc": "Model identifier",
+                "label": "Model ID",
+                "mandatory": "M",
+                "name": "ID",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 103
+            },
+            {
+                "desc": "Model length as documented by SAX Power (register count as printed in the vendor documentation; the listed point table below only accounts for 30 registers after this one, addresses 40017-40046)",
+                "label": "Model Length",
+                "mandatory": "M",
+                "name": "L",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 32
+            },
+            {
+                "desc": "AC Strom Summe (Speicher)",
+                "label": "AC Current Sum",
+                "mandatory": "M",
+                "name": "A",
+                "sf": "A_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "A",
+                "detail": "Register 40017"
+            },
+            {
+                "desc": "AC Strom Speicher A",
+                "label": "AC Current Phase A",
+                "mandatory": "M",
+                "name": "AphA",
+                "sf": "A_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "A",
+                "detail": "Register 40018"
+            },
+            {
+                "desc": "AC Strom Speicher B",
+                "label": "AC Current Phase B",
+                "mandatory": "M",
+                "name": "AphB",
+                "sf": "A_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "A",
+                "detail": "Register 40019"
+            },
+            {
+                "desc": "AC Strom Speicher C",
+                "label": "AC Current Phase C",
+                "mandatory": "M",
+                "name": "AphC",
+                "sf": "A_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "A",
+                "detail": "Register 40020"
+            },
+            {
+                "mandatory": "M",
+                "name": "A_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40021, documented well-known value -2"
+            },
+            {
+                "desc": "Spannung Speicher L1-L2",
+                "label": "Voltage L1-L2",
+                "mandatory": "M",
+                "name": "PPVphAB",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40022"
+            },
+            {
+                "desc": "Spannung Speicher L2-L3",
+                "label": "Voltage L2-L3",
+                "mandatory": "M",
+                "name": "PPVphBC",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40023"
+            },
+            {
+                "desc": "Spannung Speicher L3-L1",
+                "label": "Voltage L3-L1",
+                "mandatory": "M",
+                "name": "PPVphCA",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40024"
+            },
+            {
+                "desc": "Spannung Speicher A",
+                "label": "Voltage Phase A",
+                "mandatory": "M",
+                "name": "PhVphA",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40025"
+            },
+            {
+                "desc": "Spannung Speicher B",
+                "label": "Voltage Phase B",
+                "mandatory": "M",
+                "name": "PhVphB",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40026"
+            },
+            {
+                "desc": "Spannung Speicher C",
+                "label": "Voltage Phase C",
+                "mandatory": "M",
+                "name": "PhVphC",
+                "sf": "V_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "V",
+                "detail": "Register 40027"
+            },
+            {
+                "mandatory": "M",
+                "name": "V_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40028, documented well-known value -1"
+            },
+            {
+                "desc": "Wirkleistung Speicher Summe",
+                "label": "Active Power Sum",
+                "mandatory": "M",
+                "name": "W",
+                "sf": "W_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "W",
+                "detail": "Register 40029"
+            },
+            {
+                "mandatory": "M",
+                "name": "W_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40030, documented well-known value 0"
+            },
+            {
+                "desc": "Netzfrequenz",
+                "label": "Line Frequency",
+                "mandatory": "M",
+                "name": "Hz",
+                "sf": "Hz_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "Hz",
+                "detail": "Register 40031"
+            },
+            {
+                "mandatory": "M",
+                "name": "Hz_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40032, documented well-known value -2"
+            },
+            {
+                "desc": "Scheinleistung Speicher Summe",
+                "label": "Apparent Power Sum",
+                "mandatory": "M",
+                "name": "VA",
+                "sf": "VA_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "VA",
+                "detail": "Register 40033"
+            },
+            {
+                "mandatory": "M",
+                "name": "VA_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40034, documented well-known value 0"
+            },
+            {
+                "desc": "Blindleistung Speicher Summe",
+                "label": "Reactive Power Sum",
+                "mandatory": "M",
+                "name": "VAr",
+                "sf": "VAr_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "var",
+                "detail": "Register 40035"
+            },
+            {
+                "mandatory": "M",
+                "name": "VAr_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40036, documented well-known value 0"
+            },
+            {
+                "desc": "Leistungsfaktor Speicher Summe",
+                "label": "Power Factor Sum",
+                "mandatory": "M",
+                "name": "PF",
+                "sf": "PF_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "Pct",
+                "detail": "Register 40037"
+            },
+            {
+                "mandatory": "M",
+                "name": "PF_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40038, documented well-known value -3"
+            },
+            {
+                "desc": "Reserve",
+                "label": "Reserved",
+                "mandatory": "M",
+                "name": "Rsvd1",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 0,
+                "detail": "Register 40039"
+            },
+            {
+                "desc": "Reserve",
+                "label": "Reserved",
+                "mandatory": "M",
+                "name": "Rsvd2",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 0,
+                "detail": "Register 40040"
+            },
+            {
+                "desc": "Maximale Zellentemperatur",
+                "label": "Max Cell Temperature",
+                "mandatory": "M",
+                "name": "TmpMax",
+                "sf": "Tmp_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "C",
+                "detail": "Register 40041"
+            },
+            {
+                "mandatory": "M",
+                "name": "Tmp_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40042, documented well-known value 0"
+            },
+            {
+                "desc": "Enumerated value. Zustand (documented in the PDF as type int16/sunsf, which appears to be a documentation error; treated here as enum16)",
+                "label": "State",
+                "mandatory": "M",
+                "name": "St",
+                "size": 1,
+                "symbols": [
+                    {"name": "OFF", "value": 1},
+                    {"name": "STANDBY", "value": 2},
+                    {"name": "WAITING", "value": 3},
+                    {"name": "ON", "value": 4},
+                    {"name": "SM_FAULT", "value": 7}
+                ],
+                "type": "enum16",
+                "detail": "Register 40043 -- 1: Aus, 2: Standby, 3: Wartezeit, 4: Ein, 7: SM-Fehler"
+            },
+            {
+                "desc": "Enumerated value. Event / Zustand code",
+                "label": "Event",
+                "mandatory": "M",
+                "name": "Evt",
+                "size": 1,
+                "symbols": [
+                    {"name": "NORMAL", "value": 0},
+                    {"name": "ISLAND_FAULT", "value": 4},
+                    {"name": "OVER_FREQUENCY", "value": 8},
+                    {"name": "UNDER_FREQUENCY", "value": 9},
+                    {"name": "OVER_VOLTAGE", "value": 10},
+                    {"name": "UNDER_VOLTAGE", "value": 11},
+                    {"name": "HW_FAULT", "value": 15}
+                ],
+                "type": "enum16",
+                "detail": "Register 40044 -- 0: Normalbetrieb, 4: Insel-Fehler, 8/9/10/11: reserved (NA), 15: Hardwarefehler"
+            },
+            {
+                "desc": "PV-Leistung",
+                "label": "PV Power",
+                "mandatory": "M",
+                "name": "PV_W",
+                "sf": "PV_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "W",
+                "detail": "Register 40045. Only available when the storage system is connected to an ADW200 smart meter."
+            },
+            {
+                "mandatory": "M",
+                "name": "PV_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40046, documented well-known value 1"
+            }
+        ],
+        "type": "group"
+    },
+    "id": 103
+}

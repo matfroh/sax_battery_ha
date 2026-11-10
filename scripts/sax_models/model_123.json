@@ -1,0 +1,85 @@
+{
+    "group": {
+        "desc": "SAX Power Home/Home Plus vendor-specific Immediate Controls block, as documented in the SAX Power Modbus-TCP SUNSPEC-Mode documentation. This is a reduced variant of the standard SunSpec model 123 -- it only exposes a percentage power setpoint, a timeout, and a control-mode switch, plus the reference power the percentage is relative to. To command a power level independent of smart-meter zero-export regulation, set Steuermodus/CtrlMode to SETPOINT (1) first, then write the percentage. After the timeout elapses (300s max, or the value written to Tms) the device reverts to smart-meter zero-export control. Registers 40047-40053, Slave-ID 100, Port 502.",
+        "label": "Immediate Controls - SAX Power variant",
+        "name": "controls_sax",
+        "points": [
+            {
+                "desc": "Model identifier",
+                "label": "Model ID",
+                "mandatory": "M",
+                "name": "ID",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 123
+            },
+            {
+                "desc": "Model length as documented by SAX Power (register count as printed in the vendor documentation; the listed point table below only accounts for 5 registers after this one, addresses 40049-40053)",
+                "label": "Model Length",
+                "mandatory": "M",
+                "name": "L",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 7
+            },
+            {
+                "access": "RW",
+                "desc": "Leistungsvorgabe prozentual der Maximalleistung",
+                "label": "Power Setpoint Percent",
+                "mandatory": "M",
+                "name": "WSetPct",
+                "sf": "WSetPct_SF",
+                "size": 1,
+                "type": "int16",
+                "units": "%",
+                "detail": "Register 40049. Range -100*SF to +100*SF, relative to WMaxRef. Only takes effect once CtrlMode is set to SETPOINT (1)."
+            },
+            {
+                "access": "RW",
+                "desc": "Timeout der Leistungsvorgabe in Sekunden",
+                "label": "Setpoint Timeout",
+                "mandatory": "M",
+                "name": "Tms",
+                "size": 1,
+                "type": "uint16",
+                "units": "Secs",
+                "detail": "Register 40050. After this many seconds without a refresh, control reverts to smart-meter zero-export regulation. Maximum 300 seconds; defaults to 300s if not explicitly set."
+            },
+            {
+                "access": "RW",
+                "desc": "Enumerated value. Steuermodus",
+                "label": "Control Mode",
+                "mandatory": "M",
+                "name": "CtrlMode",
+                "size": 1,
+                "symbols": [
+                    {"name": "SMARTMETER_ZERO_EXPORT", "value": 0},
+                    {"name": "SETPOINT", "value": 1}
+                ],
+                "type": "enum16",
+                "detail": "Register 40051 -- 0: SmartMeter Nullregelung, 1: Sollwertvorgabe. Must be set to SETPOINT before WSetPct takes effect."
+            },
+            {
+                "mandatory": "M",
+                "name": "WSetPct_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40052, documented well-known value -2 (100 -> 10000 = 100%)"
+            },
+            {
+                "desc": "Referenzwert Maximalleistung",
+                "label": "Max Power Reference",
+                "mandatory": "M",
+                "name": "WMaxRef",
+                "size": 1,
+                "type": "uint16",
+                "units": "W",
+                "detail": "Register 40053. Reference point for 100% power. Documented well-known values: 4600 / 9200 / 13800 W, depending on device variant."
+            }
+        ],
+        "type": "group"
+    },
+    "id": 123
+}
