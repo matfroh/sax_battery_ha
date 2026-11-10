@@ -16,6 +16,9 @@ coverage.xml
 .vs
 .venv
 
+# Linux environment
+.env
+
 # Home Assistant configuration
 config/*
 !config/configuration.yaml
@@ -32,3 +35,11 @@ home-assistant.log
 home-assistant_v2.db
 home-assistant.log.1
 documentation/*
+ARCHITECTURE_UPDATE.md
+POLLING_OPTIMIZATION.md
+
+# Quality scale rule status
+quality_scale.yaml
+Connection-Fehler-Endladen.png
+.claude/
+.devcontainer/devcontainer-lock.json

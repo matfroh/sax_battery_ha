@@ -1,0 +1,218 @@
+{
+    "group": {
+        "desc": "SAX Power Home/Home Plus vendor-specific Battery Base Model block (cell/storage-system values), as documented in the SAX Power Modbus-TCP SUNSPEC-Mode documentation. Registers 40095-40114, Slave-ID 100, Port 502.",
+        "label": "Battery Base Model - SAX Power variant",
+        "name": "battery_base_sax",
+        "points": [
+            {
+                "desc": "Model identifier",
+                "label": "Model ID",
+                "mandatory": "M",
+                "name": "ID",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 802
+            },
+            {
+                "desc": "Model length",
+                "label": "Model Length",
+                "mandatory": "M",
+                "name": "L",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 20
+            },
+            {
+                "desc": "Kapazität Speichersystem",
+                "label": "Storage System Capacity",
+                "mandatory": "M",
+                "name": "Cap",
+                "sf": "Cap_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "Wh",
+                "detail": "Register 40097"
+            },
+            {
+                "desc": "Verfügbare Ladeleistung Speichersystem",
+                "label": "Available Charge Power",
+                "mandatory": "M",
+                "name": "WChaMax",
+                "sf": "WChaDis_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "W",
+                "detail": "Register 40098"
+            },
+            {
+                "desc": "Verfügbare Entladeleistung Speichersystem",
+                "label": "Available Discharge Power",
+                "mandatory": "M",
+                "name": "WDisChaMax",
+                "sf": "WChaDis_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "W",
+                "detail": "Register 40099"
+            },
+            {
+                "desc": "Maximaler SoC",
+                "label": "Maximum SoC",
+                "mandatory": "M",
+                "name": "SoCMax",
+                "sf": "SoC_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "%",
+                "detail": "Register 40100"
+            },
+            {
+                "desc": "Minimaler SoC",
+                "label": "Minimum SoC",
+                "mandatory": "M",
+                "name": "SoCMin",
+                "sf": "SoC_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "%",
+                "detail": "Register 40101"
+            },
+            {
+                "desc": "Aktueller SoC",
+                "label": "Current SoC",
+                "mandatory": "M",
+                "name": "SoC",
+                "sf": "SoC_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "%",
+                "detail": "Register 40102"
+            },
+            {
+                "desc": "Entladetiefe",
+                "label": "Depth of Discharge",
+                "mandatory": "M",
+                "name": "DoD",
+                "sf": "SoC_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "%",
+                "detail": "Register 40103"
+            },
+            {
+                "desc": "Reserve",
+                "label": "Reserved",
+                "mandatory": "M",
+                "name": "Rsvd1",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 0,
+                "detail": "Register 40104"
+            },
+            {
+                "desc": "Reserve",
+                "label": "Reserved",
+                "mandatory": "M",
+                "name": "Rsvd2",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 0,
+                "detail": "Register 40105"
+            },
+            {
+                "desc": "Enumerated value. Ladestatus Akku",
+                "label": "Charge Status",
+                "mandatory": "M",
+                "name": "ChaSt",
+                "size": 1,
+                "symbols": [
+                    {"name": "NO_POWER", "value": 0},
+                    {"name": "POWER_ACTIVE", "value": 1}
+                ],
+                "type": "enum16",
+                "detail": "Register 40106 -- 0: keine Leistung, 1: Leistung anliegend"
+            },
+            {
+                "desc": "Reserve",
+                "label": "Reserved",
+                "mandatory": "M",
+                "name": "Rsvd3",
+                "size": 1,
+                "static": "S",
+                "type": "uint16",
+                "value": 0,
+                "detail": "Register 40107"
+            },
+            {
+                "desc": "Enumerated value. Event",
+                "label": "Event",
+                "mandatory": "M",
+                "name": "Evt",
+                "size": 1,
+                "symbols": [
+                    {"name": "NORMAL", "value": 0},
+                    {"name": "OVER_TEMPERATURE", "value": 3},
+                    {"name": "UNDER_TEMPERATURE", "value": 4}
+                ],
+                "type": "enum16",
+                "detail": "Register 40108 -- 0: Normalbetrieb, 3: Übertemperatur, 4: Untertemperatur"
+            },
+            {
+                "desc": "Durchschnittliche Zellspannung",
+                "label": "Average Cell Voltage",
+                "mandatory": "M",
+                "name": "CellV",
+                "sf": "CellV_SF",
+                "size": 1,
+                "type": "uint16",
+                "units": "mV",
+                "detail": "Register 40109"
+            },
+            {
+                "mandatory": "M",
+                "name": "Cap_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40110, documented well-known value 0"
+            },
+            {
+                "mandatory": "M",
+                "name": "WChaDis_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40111, documented well-known value 0. Shared scale factor for WChaMax and WDisChaMax."
+            },
+            {
+                "mandatory": "M",
+                "name": "SoC_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40112, documented well-known value 0. Shared scale factor for SoCMax, SoCMin, SoC and DoD."
+            },
+            {
+                "desc": "Reserve",
+                "label": "Reserved Scale Factor",
+                "mandatory": "M",
+                "name": "Rsvd_SF",
+                "size": 1,
+                "static": "S",
+                "type": "sunssf",
+                "value": 0,
+                "detail": "Register 40113"
+            },
+            {
+                "mandatory": "M",
+                "name": "CellV_SF",
+                "size": 1,
+                "type": "sunssf",
+                "detail": "Register 40114, documented well-known value 0"
+            }
+        ],
+        "type": "group"
+    },
+    "id": 802
+}
